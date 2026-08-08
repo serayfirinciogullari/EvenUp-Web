@@ -1,15 +1,13 @@
-'use strict';
-
-const app = require('./app');
-const config = require('./config');
-const logger = require('./utils/logger');
+import app from './app';
+import config from './config/env';
+import logger from './utils/logger';
 
 const server = app.listen(config.port, () => {
   logger.info(`EvenUp API calisiyor -> http://localhost:${config.port} (${config.env})`);
   logger.info(`Health check      -> http://localhost:${config.port}/health`);
 });
 
-const shutdown = (signal) => {
+const shutdown = (signal: string): void => {
   logger.info(`${signal} alindi, server kapatiliyor...`);
   server.close(() => {
     logger.info('Server kapandi.');
@@ -20,7 +18,7 @@ const shutdown = (signal) => {
   setTimeout(() => process.exit(1), 10000).unref();
 };
 
-['SIGINT', 'SIGTERM'].forEach((signal) => {
+(['SIGINT', 'SIGTERM'] as const).forEach((signal) => {
   process.on(signal, () => shutdown(signal));
 });
 
@@ -34,4 +32,4 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-module.exports = server;
+export default server;

@@ -1,14 +1,12 @@
-'use strict';
+import cors from 'cors';
+import express from 'express';
+import helmet from 'helmet';
+import morgan from 'morgan';
 
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-
-const config = require('./config');
-const routes = require('./routes');
-const notFound = require('./middlewares/notFound');
-const errorHandler = require('./middlewares/errorHandler');
+import config from './config/env';
+import errorHandler from './middlewares/errorHandler.middleware';
+import notFound from './middlewares/notFound.middleware';
+import routes from './routes';
 
 const app = express();
 
@@ -29,4 +27,4 @@ app.use('/', routes);
 app.use(notFound);
 app.use(errorHandler);
 
-module.exports = app;
+export default app;

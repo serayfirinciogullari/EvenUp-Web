@@ -1,0 +1,10 @@
+{
+  // Build disi kalan kok dosyalari (knexfile.ts) da tip kontrolunden gecirir.
+  // Emit yok; `npm run typecheck` ikisini birden calistirir.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "knexfile.ts"]
+}

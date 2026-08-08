@@ -1,10 +1,8 @@
-'use strict';
+import { Router } from 'express';
 
-const express = require('express');
+import healthRoutes from './health.routes';
 
-const healthRoutes = require('./health.routes');
-
-const router = express.Router();
+const router = Router();
 
 router.use('/health', healthRoutes);
 
@@ -13,4 +11,4 @@ router.use('/health', healthRoutes);
 // router.use('/groups', groupRoutes);
 // router.use('/expenses', expenseRoutes);
 
-module.exports = router;
+export default router;

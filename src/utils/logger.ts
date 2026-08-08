@@ -1,12 +1,17 @@
-'use strict';
-
 /* eslint-disable no-console */
 
-const config = require('../config');
+import config from '../config/env';
 
-const timestamp = () => new Date().toISOString();
+const timestamp = (): string => new Date().toISOString();
 
-const logger = {
+export interface Logger {
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+  debug: (...args: unknown[]) => void;
+}
+
+const logger: Logger = {
   info: (...args) => console.log(`[${timestamp()}] [INFO]`, ...args),
   warn: (...args) => console.warn(`[${timestamp()}] [WARN]`, ...args),
   error: (...args) => console.error(`[${timestamp()}] [ERROR]`, ...args),
@@ -17,4 +22,4 @@ const logger = {
   },
 };
 
-module.exports = logger;
+export default logger;
