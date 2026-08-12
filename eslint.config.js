@@ -54,6 +54,18 @@ module.exports = tseslint.config(
     },
   },
   {
+    // Test dosyalari: jest global'leri ve testte okunabilir cikti icin console
+    files: ['tests/**/*.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.jest,
+      },
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  {
     // Config dosyalari hala CommonJS JavaScript
     ...tseslint.configs.disableTypeChecked,
     files: ['**/*.js'],

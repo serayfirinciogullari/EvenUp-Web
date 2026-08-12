@@ -4,7 +4,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
-    "noEmit": true
+    "noEmit": true,
+    "types": ["node", "jest"]
   },
-  "include": ["src/**/*.ts", "knexfile.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "knexfile.ts"]
 }
