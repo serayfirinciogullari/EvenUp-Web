@@ -19,6 +19,9 @@ export type Decimal = string;
 export type MoneyInput = Decimal | number;
 
 export type UserRole = 'admin' | 'user';
+/** Grup **ici** rol. `UserRole` (uygulama rolu) ile karistirilmamali:
+ *  bir kullanici A grubunda owner, B grubunda member olabilir. */
+export type GroupMemberRole = 'owner' | 'member';
 export type SettlementStatus = 'pending' | 'confirmed';
 
 /* ------------------------------------------------------------------ users */
@@ -52,14 +55,19 @@ export type UserUpdate = Partial<Omit<UserInsert, 'id'>>;
 export interface GroupRow {
   id: string;
   name: string;
+  description: string | null;
   created_by: string;
+  /** Soft delete: dolu ise grup silinmis sayilir ve hicbir sorguda gorunmez. */
+  deleted_at: Date | null;
   created_at: Date;
 }
 
 export interface GroupInsert {
   id?: string;
   name: string;
+  description?: string | null;
   created_by: string;
+  deleted_at?: Date | null;
   created_at?: Date;
 }
 
@@ -71,6 +79,7 @@ export interface GroupMemberRow {
   id: string;
   group_id: string;
   user_id: string;
+  role: GroupMemberRole;
   joined_at: Date;
 }
 
@@ -78,10 +87,41 @@ export interface GroupMemberInsert {
   id?: string;
   group_id: string;
   user_id: string;
+  role?: GroupMemberRole;
   joined_at?: Date;
 }
 
 export type GroupMemberUpdate = Partial<Omit<GroupMemberInsert, 'id'>>;
+
+/* ---------------------------------------------------------- group_invites */
+
+export interface GroupInviteRow {
+  id: string;
+  group_id: string;
+  created_by: string;
+  /** crypto.randomBytes(16) -> base64url. Sirali ID degil. */
+  code: string;
+  expires_at: Date;
+  /** NULL = sinirsiz kullanim; 1 = tek kullanimlik davet. */
+  max_uses: number | null;
+  use_count: number;
+  revoked_at: Date | null;
+  created_at: Date;
+}
+
+export interface GroupInviteInsert {
+  id?: string;
+  group_id: string;
+  created_by: string;
+  code: string;
+  expires_at: Date;
+  max_uses?: number | null;
+  use_count?: number;
+  revoked_at?: Date | null;
+  created_at?: Date;
+}
+
+export type GroupInviteUpdate = Partial<Omit<GroupInviteInsert, 'id'>>;
 
 /* --------------------------------------------------------------- expenses */
 
@@ -166,6 +206,7 @@ declare module 'knex/types/tables' {
     users: Knex.CompositeTableType<UserRow, UserInsert, UserUpdate>;
     groups: Knex.CompositeTableType<GroupRow, GroupInsert, GroupUpdate>;
     group_members: Knex.CompositeTableType<GroupMemberRow, GroupMemberInsert, GroupMemberUpdate>;
+    group_invites: Knex.CompositeTableType<GroupInviteRow, GroupInviteInsert, GroupInviteUpdate>;
     expenses: Knex.CompositeTableType<ExpenseRow, ExpenseInsert, ExpenseUpdate>;
     expense_shares: Knex.CompositeTableType<
       ExpenseShareRow,

@@ -38,6 +38,7 @@ export async function seed(knex: Knex): Promise<void> {
   await knex('settlements').del();
   await knex('expense_shares').del();
   await knex('expenses').del();
+  await knex('group_invites').del();
   await knex('group_members').del();
   await knex('groups').del();
   await knex('users').del();
@@ -80,14 +81,17 @@ export async function seed(knex: Knex): Promise<void> {
   const group: GroupInsert = {
     id: GROUP_ID,
     name: 'Ev Arkadaslari',
+    description: 'Kira, fatura ve market giderleri',
     created_by: USER_IDS.admin,
   };
 
   await knex('groups').insert(group);
 
+  // Grubu kuran kisi owner; kalan herkes member (grup basina tek owner kurali).
   const members: GroupMemberInsert[] = Object.values(USER_IDS).map((userId) => ({
     group_id: GROUP_ID,
     user_id: userId,
+    role: userId === USER_IDS.admin ? 'owner' : 'member',
   }));
 
   await knex('group_members').insert(members);

@@ -8,6 +8,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 export interface Config {
   env: string;
   port: number;
+  appUrl: string;
   databaseUrl: string | null;
   databaseSsl: boolean;
   jwtSecret: string | null;
@@ -27,10 +28,14 @@ const toNumber = (value: string | undefined, fallback: number): number => {
 const clampSaltRounds = (value: number): number => Math.min(12, Math.max(10, value));
 
 const env = process.env.NODE_ENV || 'development';
+const port = toNumber(process.env.PORT, 3000);
 
 const config: Config = {
   env,
-  port: toNumber(process.env.PORT, 3000),
+  port,
+  // Davet linki gibi disariya verilen mutlak adreslerin koku. Uretimde gercek
+  // alan adi verilmeli; sondaki '/' varsa kirpilir ki link '//' ile olusmasin.
+  appUrl: (process.env.APP_URL || `http://localhost:${port}`).replace(/\/+$/, ''),
   databaseUrl: process.env.DATABASE_URL || null,
   // Yonetilen PostgreSQL servisleri (Render, Heroku, Supabase...) SSL ister
   databaseSsl: process.env.DATABASE_SSL === 'true',
