@@ -1,11 +1,13 @@
 # models
 
-PostgreSQL modelleri / query katmani buraya gelecek.
+PostgreSQL veri erisim katmani. Modeller sadece sorgu calistirir; is mantigi
+`src/services` altinda kalir.
 
-Plan:
+Mevcut:
 
-- `src/config/database.js` icinde `pg` Pool (veya Prisma/Sequelize client) kurulacak,
-  `config.databaseUrl` uzerinden baglanacak.
-- Her tablo icin bir dosya: `user.model.js`, `group.model.js`, `expense.model.js`,
-  `settlement.model.js`.
-- Modeller sadece veri erisiminden sorumlu; is mantigi `src/services` altinda kalir.
+- `user.model.ts` — users tablosu. `PUBLIC_USER_COLUMNS` disariya donen sorgularda
+  `password_hash`'in sizmasini engeller; hash yalnizca `findByEmail` ile doner
+  (login'de karsilastirmak icin).
+
+Plan: her tablo icin bir dosya — `group.model.ts`, `expense.model.ts`,
+`settlement.model.ts`. Baglanti `src/db/connection.ts` uzerindeki tek Knex ornegidir.

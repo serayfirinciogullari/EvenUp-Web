@@ -1,0 +1,42 @@
+import db from '../db/connection';
+
+import type { UserInsert, UserRow } from '../types/models';
+
+/**
+ * users tablosu icin veri erisim katmani. Is mantigi yok, sadece sorgu.
+ *
+ * Onemli kural: `password_hash` yalnizca `findByEmail` ile doner (login'de
+ * karsilastirmak icin gerekli). Disariya cikan her sorgu PUBLIC_USER_COLUMNS
+ * kullanir, boylece hash'in response'a sizmasi tesadufe birakilmaz.
+ */
+
+export const PUBLIC_USER_COLUMNS = [
+  'id',
+  'email',
+  'name',
+  'role',
+  'is_active',
+  'created_at',
+] as const;
+
+/** Response'a konulabilecek kullanici gorunumu — password_hash icermez. */
+export type PublicUser = Pick<UserRow, (typeof PUBLIC_USER_COLUMNS)[number]>;
+
+const publicColumns = [...PUBLIC_USER_COLUMNS];
+
+/** Login icin: hash dahil tam satir. Sadece auth servisi cagirmali. */
+const findByEmail = async (email: string): Promise<UserRow | undefined> =>
+  db('users').where({ email }).first();
+
+const findPublicById = async (id: string): Promise<PublicUser | undefined> =>
+  db('users').select(publicColumns).where({ id }).first();
+
+const create = async (data: UserInsert): Promise<PublicUser> => {
+  const [created] = await db('users').insert(data).returning(publicColumns);
+  return created as PublicUser;
+};
+
+const listPublic = async (): Promise<PublicUser[]> =>
+  db('users').select(publicColumns).orderBy('created_at', 'desc');
+
+export default { findByEmail, findPublicById, create, listPublic };

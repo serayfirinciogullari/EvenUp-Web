@@ -10,6 +10,8 @@
 module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
+  // Test ortami degiskenleri (JWT_SECRET vb.) uygulama modulleri yuklenmeden once set edilir
+  setupFiles: ['<rootDir>/tests/setup.ts'],
   testMatch: ['**/*.test.ts'],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.typecheck.json' }],

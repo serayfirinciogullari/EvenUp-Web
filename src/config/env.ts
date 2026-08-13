@@ -11,6 +11,8 @@ export interface Config {
   databaseUrl: string | null;
   databaseSsl: boolean;
   jwtSecret: string | null;
+  jwtExpiresIn: string;
+  bcryptSaltRounds: number;
   logLevel: string;
   isProduction: boolean;
   isDevelopment: boolean;
@@ -21,6 +23,9 @@ const toNumber = (value: string | undefined, fallback: number): number => {
   return Number.isNaN(parsed) ? fallback : parsed;
 };
 
+/** bcrypt maliyeti: 10'un altina inmek guvenlik, 12'nin ustune cikmak istek suresi maliyetli. */
+const clampSaltRounds = (value: number): number => Math.min(12, Math.max(10, value));
+
 const env = process.env.NODE_ENV || 'development';
 
 const config: Config = {
@@ -29,7 +34,11 @@ const config: Config = {
   databaseUrl: process.env.DATABASE_URL || null,
   // Yonetilen PostgreSQL servisleri (Render, Heroku, Supabase...) SSL ister
   databaseSsl: process.env.DATABASE_SSL === 'true',
+  // Secret koda gomulmez; yoksa null kalir ve token ureten/dogrulayan kod hata firlatir
   jwtSecret: process.env.JWT_SECRET || null,
+  // jsonwebtoken sozdizimi: '7d', '12h', '30m' ya da saniye cinsinden sayi
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  bcryptSaltRounds: clampSaltRounds(toNumber(process.env.BCRYPT_SALT_ROUNDS, 12)),
   logLevel: process.env.LOG_LEVEL || 'dev',
   isProduction: env === 'production',
   isDevelopment: env === 'development',

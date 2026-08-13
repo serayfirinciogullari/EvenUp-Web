@@ -16,7 +16,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-if (!config.isProduction) {
+// Testte kapali: supertest her istegi log'lasa test ciktisi okunmaz hale gelir
+if (!config.isProduction && config.env !== 'test') {
   app.use(morgan(config.logLevel));
 }
 
