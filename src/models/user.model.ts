@@ -39,4 +39,24 @@ const create = async (data: UserInsert): Promise<PublicUser> => {
 const listPublic = async (): Promise<PublicUser[]> =>
   db('users').select(publicColumns).orderBy('created_at', 'desc');
 
-export default { findByEmail, findPublicById, create, listPublic };
+/**
+ * Kullaniciyi devre disi birakir ya da yeniden aktiflestirir (1.8).
+ *
+ * Kullanici **silinmez**: `expenses.paid_by` ve `settlements.from_user`
+ * RESTRICT ile bagli, yani silme zaten mumkun degil — pasiflestirme bu
+ * tasarimin dogal karsiligi. Pasif kullanicinin gecmisi yerinde kalir,
+ * yalnizca login edemez (bkz. auth.service.login).
+ *
+ * Zaten istenen durumda olan bir kullanici icin de satiri doner; cagiran
+ * katman "degisiklik oldu mu" bilgisini `is_active`'e bakarak verir.
+ */
+const setActive = async (userId: string, isActive: boolean): Promise<PublicUser | undefined> => {
+  const [updated] = await db('users')
+    .where({ id: userId })
+    .update({ is_active: isActive })
+    .returning(publicColumns);
+
+  return updated as PublicUser | undefined;
+};
+
+export default { findByEmail, findPublicById, create, listPublic, setActive };

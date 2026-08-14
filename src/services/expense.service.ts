@@ -2,12 +2,19 @@ import expenseModel from '../models/expense.model';
 import groupModel from '../models/group.model';
 import ApiError from '../utils/ApiError';
 import { parseAmountToCents, parsePercentageToBasisPoints } from '../utils/money';
+import {
+  buildPagination,
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  parsePagination,
+} from '../utils/pagination';
 import { isUuid } from '../utils/uuid';
 import { ACCESS_DENIED, requireMembership } from './group.service';
 import { computeShares, SplitError, SPLIT_TYPES } from './split.service';
 
 import type { ExpenseWithShares } from '../models/expense.model';
 import type { GroupMemberRow } from '../types/models';
+import type { PageQuery, Pagination } from '../utils/pagination';
 import type { ShareAllocation, SplitInput, SplitType } from './split.service';
 
 /**
@@ -31,9 +38,6 @@ const MAX_DESCRIPTION_LENGTH = 255; // expenses.description kolonu ile ayni
 const MAX_CATEGORY_LENGTH = 60; // expenses.category kolonu ile ayni
 const DEFAULT_CATEGORY = 'genel';
 
-const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
-
 /** Duzenleme/silme yetkisi olmayan uyeye donen mesaj. */
 const NOT_EDITABLE = 'Bu harcamayi yalnizca ekleyen kisi ya da grup sahibi degistirebilir';
 
@@ -42,24 +46,12 @@ const NOT_EDITABLE = 'Bu harcamayi yalnizca ekleyen kisi ya da grup sahibi degis
 /** Response'a konulabilecek harcama gorunumu — `deleted_at` disarida kalir. */
 export type PublicExpense = Omit<ExpenseWithShares, 'deleted_at'>;
 
-export interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-  has_next: boolean;
-  has_previous: boolean;
-}
-
 export interface ExpenseListResult {
   expenses: PublicExpense[];
   pagination: Pagination;
 }
 
-export interface ListQuery {
-  page?: unknown;
-  limit?: unknown;
-}
+export type ListQuery = PageQuery;
 
 /* ---------------------------------------------------------- yardimcilar */
 
@@ -373,40 +365,12 @@ const createExpense = async (
 };
 
 /**
- * Sayfalama parametreleri. Ust sinir var: `limit=100000` gonderen bir istek
- * tum tabloyu bellege alirdi.
+ * GET /groups/:id/expenses?page=1&limit=20
+ *
+ * Sayfalama dogrulamasi 1.8'de `utils/pagination`'a tasindi: ayni mantik admin
+ * listelerinde de gerekiyordu ve iki kopya, ust sinir degistiginde birinin
+ * geride kalmasi demekti.
  */
-const parsePagination = (query: ListQuery): { page: number; limit: number } => {
-  const errors: Record<string, string> = {};
-
-  let page = 1;
-  if (query.page !== undefined) {
-    const value = Number(query.page);
-    if (!Number.isInteger(value) || value < 1) {
-      errors.page = "page 1'den kucuk olmayan bir tam sayi olmali";
-    } else {
-      page = value;
-    }
-  }
-
-  let limit = DEFAULT_PAGE_SIZE;
-  if (query.limit !== undefined) {
-    const value = Number(query.limit);
-    if (!Number.isInteger(value) || value < 1 || value > MAX_PAGE_SIZE) {
-      errors.limit = `limit 1 ile ${MAX_PAGE_SIZE} arasinda bir tam sayi olmali`;
-    } else {
-      limit = value;
-    }
-  }
-
-  if (Object.keys(errors).length > 0) {
-    fail(errors, 'Gecersiz sayfalama parametreleri');
-  }
-
-  return { page, limit };
-};
-
-/** GET /groups/:id/expenses?page=1&limit=20 */
 const listExpenses = async (
   groupId: string,
   userId: string,
@@ -414,23 +378,15 @@ const listExpenses = async (
 ): Promise<ExpenseListResult> => {
   await requireMembership(groupId, userId);
 
-  const { page, limit } = parsePagination(query);
+  const page = parsePagination(query);
   const { expenses, total } = await expenseModel.listByGroup(groupId, {
-    limit,
-    offset: (page - 1) * limit,
+    limit: page.limit,
+    offset: page.offset,
   });
 
   return {
     expenses: expenses.map(toPublicExpense),
-    pagination: {
-      page,
-      limit,
-      total,
-      // Bos listede de en az bir sayfa vardir; arayuz 0'a bolmesin.
-      total_pages: Math.max(1, Math.ceil(total / limit)),
-      has_next: page * limit < total,
-      has_previous: page > 1,
-    },
+    pagination: buildPagination(page, total),
   };
 };
 
@@ -490,7 +446,10 @@ const updateExpense = async (
   if (touchesMoney) {
     if (body.amount === undefined || body.splitType === undefined) {
       const together = 'Tutar ya da bolusme degisiyorsa amount ve splitType birlikte gonderilmeli';
-      fail({ ...errors, amount: together, splitType: together }, 'Tutar ve bolusme birlikte guncellenmeli');
+      fail(
+        { ...errors, amount: together, splitType: together },
+        'Tutar ve bolusme birlikte guncellenmeli'
+      );
     }
 
     patch.amount_cents = validateAmount(body.amount, errors);

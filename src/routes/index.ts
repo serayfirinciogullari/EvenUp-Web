@@ -1,5 +1,6 @@
 import { Router } from 'express';
 
+import adminRoutes from './admin.routes';
 import authRoutes from './auth.routes';
 import expenseRoutes from './expense.routes';
 import groupRoutes from './group.routes';
@@ -13,6 +14,7 @@ router.use('/auth', authRoutes);
 router.use('/groups', groupRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/settlements', settlementRoutes);
+router.use('/admin', adminRoutes);
 
 // Yeni modul route'lari buraya eklenir:
 // router.use('/reports', reportRoutes);

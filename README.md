@@ -157,8 +157,11 @@ yapti"): duzenleme yetkisinin odeyene degil **girene** baktigi seed verisinde de
 | POST   | `/auth/register`  | yok                            | 201 `{ user, token, expiresIn }`              |
 | POST   | `/auth/login`     | yok                            | 200 `{ user, token, expiresIn }`              |
 | GET    | `/auth/me`        | `requireAuth`                  | 200 `{ user }`                                |
-| GET    | `/auth/users`     | `requireAuth` + `requireAdmin` | 200 `{ users }`                               |
+| GET    | `/auth/users`     | `requireAuth` + `requireAdmin` | 200 `{ users }` (\*)                          |
 | \*     | diger hepsi       | —                              | `404` — merkezi error handler formatinda JSON |
+
+(\*) `/auth/users` yerini 1.8'deki `/admin/users`'a birakti (arama + filtre + sayfalama
+ile). Geriye donuk uyumluluk icin duruyor; bir sonraki adimda kaldirilacak.
 
 ### Gruplar
 
@@ -300,6 +303,43 @@ Dort davranis karari (detay: `docs/decisions/1.7.md`):
 - **Red bir durumdur, silme degil.** Reddedilen kayit `rejected` olarak durur; "odedim
   dedi / almadim dedi" anlasmazligi grubun gecmisinin parcasi.
 
+### Admin
+
+Tumu `requireAuth` + `requireAdmin` arkasinda (router seviyesinde, bu sirayla).
+
+| Method | Path                          | Yanit                                            |
+| ------ | ----------------------------- | ------------------------------------------------ |
+| GET    | `/admin/users`                | 200 `{ users, pagination }`                      |
+| PUT    | `/admin/users/:id/disable`    | 200 `{ user, changed }`                          |
+| PUT    | `/admin/users/:id/enable`     | 200 `{ user, changed }`                          |
+| GET    | `/admin/groups`               | 200 `{ groups, pagination }` — **yalnizca ust veri** |
+| GET    | `/admin/stats`               | 200 toplamlar + 7/30 gun trendi                  |
+
+`/admin/users` filtreleri: `?search=` (e-posta veya isim), `?status=active|inactive`,
+`?role=admin|user`, `?page=&limit=` (varsayilan 20, ust sinir 100).
+
+**GIZLILIK SINIRI — admin harcama/grup icerigine mudahale etmez.** Bu karar
+**sorgu seviyesinde** uygulanir, response kirpilarak degil:
+
+- `/admin/groups` her grup icin **tam olarak** `id`, `name`, `created_at`, `member_count`
+  doner. Sorgu yalnizca `groups` + `group_members` tablolarina dokunur; `expenses` ve
+  `expense_shares` o sorguda **hic gecmez**. Grup aciklamasi ve uye kimlikleri de donmez.
+- `/admin/stats` `expenses` tablosunu yalnizca `COUNT`/`SUM` icin okur ve tek satirlik
+  toplam uretir. `GROUP BY group_id` bilincli olarak yok: grup basina hacim, "hangi ev ne
+  kadar harciyor" demek olurdu.
+- `admin.service` icinde `expense.model` ve `settlement.model` **import bile edilmemistir**.
+
+Gerekce ve "sorgu seviyesi vs. serialization seviyesi" karsilastirmasi:
+`docs/decisions/1.8.md`.
+
+`is_active` icin yeni migration gerekmedi: kolon 1.2'de (`01_users.ts`), login'deki
+kontrol 1.3'te (`auth.service.ts`) zaten vardi. Pasif kullanici login olamaz ve
+"kullanici yok" ile ayni mesaji alir.
+
+> **Bilinen acik:** devre disi birakma **login'i** engeller, mevcut **token'i**
+> gecersizlestirmez — JWT geri alinamaz (1.3 karari). Kapatilan kullanici elindeki
+> token'la `JWT_EXPIRES_IN` suresi boyunca API'yi kullanmaya devam eder.
+
 ## Klasor yapisi
 
 ```
@@ -337,13 +377,15 @@ src/
 │   ├── auth.routes.ts
 │   ├── group.routes.ts              # requireAuth router seviyesinde takili
 │   ├── expense.routes.ts            # /expenses/:id islemleri
-│   └── settlement.routes.ts         # /settlements/:id onay & red
+│   ├── settlement.routes.ts         # /settlements/:id onay & red
+│   └── admin.routes.ts              # requireAuth + requireAdmin router seviyesinde
 ├── controllers/
 │   ├── health.controller.ts         # req/res isleme, servis cagirma
 │   ├── auth.controller.ts
 │   ├── group.controller.ts          # yetki karari yok, servise devreder
 │   ├── expense.controller.ts
-│   └── settlement.controller.ts     # odeme + bakiye uc noktalari
+│   ├── settlement.controller.ts     # odeme + bakiye uc noktalari
+│   └── admin.controller.ts
 ├── services/
 │   ├── health.service.ts            # is mantigi (HTTP'den bagimsiz)
 │   ├── auth.service.ts
@@ -352,12 +394,14 @@ src/
 │   ├── split.service.ts             # bolusme algoritmalari (saf, I/O yok)
 │   ├── settlement.service.ts        # odeme akisi: borclu acar, alacakli onaylar
 │   ├── balance.service.ts           # harcama + onayli odeme -> netlestirme
-│   └── netting.service.ts           # borc netlestirme (saf, I/O yok)
+│   ├── netting.service.ts           # borc netlestirme (saf, I/O yok)
+│   └── admin.service.ts             # harcama servislerine BAGLANMAZ (gizlilik siniri)
 ├── models/                          # veri erisim katmani (repository'ler)
 │   ├── user.model.ts
 │   ├── group.model.ts
 │   ├── expense.model.ts             # harcama + paylar tek transaction
-│   └── settlement.model.ts          # yalnizca confirmed kayitlar bakiyeye girer
+│   ├── settlement.model.ts          # yalnizca confirmed kayitlar bakiyeye girer
+│   └── admin.model.ts               # yalnizca ust veri / COUNT / SUM sorgulari
 ├── middlewares/
 │   ├── auth.middleware.ts           # requireAuth, requireAdmin
 │   ├── errorHandler.middleware.ts   # merkezi hata yonetimi
@@ -366,6 +410,7 @@ src/
     ├── ApiError.ts                  # HTTP hata sinifi
     ├── asyncHandler.ts              # async controller sarmalayici
     ├── money.ts                     # TL <-> kurus cevriminin tek kapisi
+    ├── pagination.ts                # sayfalama dogrulamasinin tek kapisi
     ├── uuid.ts                      # UUID bicim kontrolu
     └── logger.ts
 ```
