@@ -25,7 +25,9 @@ export type GroupMemberRole = 'owner' | 'member';
 /** Harcamanin nasil bolundugu. Paylar `expense_shares`'te; bu kolon **yontemi**
  *  saklar — sonuc satirlarindan yontem geri okunamaz. */
 export type ExpenseSplitType = 'equal' | 'exact' | 'percentage';
-export type SettlementStatus = 'pending' | 'confirmed';
+/** Odeme kaydinin durumu. `pending` **bakiyeyi etkilemez**; yalnizca alacaklinin
+ *  onayladigi (`confirmed`) kayitlar netlestirmeye girer (bkz. docs/decisions/1.7.md). */
+export type SettlementStatus = 'pending' | 'confirmed' | 'rejected';
 
 /* ------------------------------------------------------------------ users */
 
@@ -185,12 +187,15 @@ export type ExpenseShareUpdate = Partial<Omit<ExpenseShareInsert, 'id'>>;
 export interface SettlementRow {
   id: string;
   group_id: string;
+  /** Odemeyi **yapan** (borclu) taraf. Kaydi yalnizca bu kisi olusturabilir. */
   from_user: string;
+  /** Odemeyi **alan** (alacakli) taraf. Onay/red yalnizca bu kisiye ait. */
   to_user: string;
   amount: Decimal;
   status: SettlementStatus;
   created_at: Date;
   confirmed_at: Date | null;
+  rejected_at: Date | null;
 }
 
 export interface SettlementInsert {
@@ -202,6 +207,7 @@ export interface SettlementInsert {
   status?: SettlementStatus;
   created_at?: Date;
   confirmed_at?: Date | null;
+  rejected_at?: Date | null;
 }
 
 export type SettlementUpdate = Partial<Omit<SettlementInsert, 'id'>>;

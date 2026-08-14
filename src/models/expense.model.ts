@@ -67,6 +67,24 @@ export interface ExpensePage {
   total: number;
 }
 
+/** Netlestirmeye beslenecek minimal harcama gorunumu (bkz. `listForNetting`). */
+export interface NettingExpense {
+  id: string;
+  paid_by: string;
+  amount: string;
+}
+
+export interface NettingShare {
+  expense_id: string;
+  user_id: string;
+  share_amount: string;
+}
+
+export interface NettingData {
+  expenses: NettingExpense[];
+  shares: NettingShare[];
+}
+
 /* -------------------------------------------------------------- yardimcilar */
 
 /** Canli harcamalar icin temel sorgu. Silinmis grubun harcamasi da gelmez. */
@@ -172,6 +190,31 @@ const listByGroup = async (groupId: string, page: Page): Promise<ExpensePage> =>
   };
 };
 
+/**
+ * Bakiye hesabi icin grubun **tum** canli harcamalari ve paylari.
+ *
+ * Neden sayfalanmiyor: netlestirme kismi veriyle calisamaz. Bir sayfa harcama
+ * ile hesaplanan bakiye "kim kime ne kadar borclu" sorusuna yanlis cevap verir;
+ * tanim geregi butun gecmise bakmak gerekir.
+ *
+ * Doner alan adlari `netting.service`'in bekledigi bicimde (snake_case), yani
+ * cikti donusum yapilmadan dogrudan `calculateNetBalances`'a verilebilir.
+ */
+const listForNetting = async (groupId: string): Promise<NettingData> => {
+  const expenses = (await aliveExpenses()
+    .where('expenses.group_id', groupId)
+    .select('expenses.id', 'expenses.paid_by', 'expenses.amount')) as unknown as NettingExpense[];
+
+  const shares = (await db('expense_shares')
+    .whereIn(
+      'expense_id',
+      expenses.map((expense) => expense.id)
+    )
+    .select('expense_id', 'user_id', 'share_amount')) as unknown as NettingShare[];
+
+  return { expenses, shares };
+};
+
 /* ------------------------------------------------------------------ yazma */
 
 /**
@@ -270,6 +313,7 @@ export default {
   findById,
   findWithShares,
   listByGroup,
+  listForNetting,
   create,
   update,
   softDelete,

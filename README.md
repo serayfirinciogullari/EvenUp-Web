@@ -82,6 +82,7 @@ Iki kural kismi unique index ile DB seviyesinde zorunlu:
 | ------------------------------------ | -------------------------------------------- |
 | `group_members_single_owner_unique`  | Bir grubun en fazla bir `owner`'i olur       |
 | `group_invites_single_active_unique` | Bir grubun en fazla bir **aktif** daveti olur |
+| `settlements_single_pending_unique`  | Ayni (borclu -> alacakli) cifti icin ayni anda en fazla bir **bekleyen** odeme olur |
 
 `group_members.role` (`owner`/`member`) grup **ici** roldur; `users.role`
 (`admin`/`user`) uygulama rolu. Bir kullanici A grubunda owner, B grubunda member olabilir.
@@ -245,6 +246,60 @@ Bes davranis karari (detay: `docs/decisions/1.5.md`):
   "gruba uye degilsin" ayni 403'u doner. Yalnizca "uyesin ama duzenleyemezsin" durumu
   ayri mesaj alir — o kullanici harcamayi zaten gorebiliyor, sizacak bilgi yok.
 
+### Odemeler ve bakiye
+
+Tumu `requireAuth` arkasinda; hepsi ayrica grup **uyeligi** ister.
+
+| Method | Path                           | Ek yetki              | Yanit                               |
+| ------ | ------------------------------ | --------------------- | ----------------------------------- |
+| POST   | `/groups/:id/settlements`      | borclu = istek sahibi | 201 `{ settlement }` (`pending`)    |
+| PUT    | `/settlements/:id/confirm`     | alacakli              | 200 `{ settlement }` (`confirmed`)  |
+| PUT    | `/settlements/:id/reject`      | alacakli              | 200 `{ settlement }` (`rejected`)   |
+| GET    | `/groups/:id/balances`         | uyelik                | 200 `{ balances, transfers, meta }` |
+
+Odeme kaydinin **iki ayri sahibi** var: kaydi yalnizca borclu acar, yalnizca alacakli
+sonuclandirir. Borclu kendi kaydini onaylayamaz.
+
+```jsonc
+POST /groups/:id/settlements
+{
+  "toUserId": "<uuid>",   // odemeyi alan; grup uyesi olmali
+  "amount": "100.00",     // en fazla iki ondalik, > 0
+  "fromUserId": "<uuid>"  // opsiyonel; verilirse istek sahibiyle ayni olmali
+}
+```
+
+`GET /groups/:id/balances` cevabi:
+
+```jsonc
+{
+  "balances": [{ "user_id": "…", "name": "Ali", "net_balance": "200.00" }],
+  "transfers": [{ "from_user": "…", "to_user": "…", "amount": "100.00" }],
+  "meta": {
+    "expense_count": 3,
+    "confirmed_settlement_count": 1,
+    "pending_settlement_count": 2,   // bakiyeye DAHIL DEGIL
+    "rejected_settlement_count": 0,
+    "algorithm": "optimal"           // optimal | greedy
+  }
+}
+```
+
+Dort davranis karari (detay: `docs/decisions/1.7.md`):
+
+- **Iki tarafli onay.** Para hareketi uygulamanin disinda gerceklestigi icin "odedim"
+  bir kanit degil iddiadir; bakiyeyi degistirmesi icin parayi ALAN tarafin onaylamasi
+  gerekir. Tek tarafli bildirimde yanlis ya da kotu niyetli tek bir tik, alacaklinin
+  alacagini sessizce sifirlardi.
+- **`pending` bakiyeyi ETKILEMEZ.** Bu filtre tek bir sorguda (`listConfirmed`) uygulanir;
+  bakiye servisi onaylanmamis bir kaydi gorebilecegi baska bir kapiya sahip degil.
+  Bekleyenler yalnizca `meta.pending_settlement_count` icinde sayi olarak gorunur.
+- **Onaylanmis odeme = sanal harcama.** Netlestirmeye ayri bir aritmetik yazilmadi:
+  "A odedi, tamami B'nin payi" harcamasi ile ayni sey oldugu icin odemeler dogrudan
+  1.6'daki `calculateNetBalances`'a beslenir. Para hesabi tek modulde kalir.
+- **Red bir durumdur, silme degil.** Reddedilen kayit `rejected` olarak durur; "odedim
+  dedi / almadim dedi" anlasmazligi grubun gecmisinin parcasi.
+
 ## Klasor yapisi
 
 ```
@@ -268,7 +323,8 @@ src/
 │   │   ├── 07_groups_description_and_soft_delete.ts
 │   │   ├── 08_group_member_roles.ts  # grup ici rol + tek owner kurali
 │   │   ├── 09_group_invites.ts       # davet kodlari
-│   │   └── 10_expenses_split_and_soft_delete.ts  # split_type, created_by, soft delete
+│   │   ├── 10_expenses_split_and_soft_delete.ts  # split_type, created_by, soft delete
+│   │   └── 11_settlements_reject_flow.ts         # rejected durumu, tek bekleyen kayit kurali
 │   └── seeds/
 │       └── 01_demo_data.ts          # ornek kullanici / grup / harcama verisi
 ├── types/
@@ -280,23 +336,28 @@ src/
 │   ├── health.routes.ts
 │   ├── auth.routes.ts
 │   ├── group.routes.ts              # requireAuth router seviyesinde takili
-│   └── expense.routes.ts            # /expenses/:id islemleri
+│   ├── expense.routes.ts            # /expenses/:id islemleri
+│   └── settlement.routes.ts         # /settlements/:id onay & red
 ├── controllers/
 │   ├── health.controller.ts         # req/res isleme, servis cagirma
 │   ├── auth.controller.ts
 │   ├── group.controller.ts          # yetki karari yok, servise devreder
-│   └── expense.controller.ts
+│   ├── expense.controller.ts
+│   └── settlement.controller.ts     # odeme + bakiye uc noktalari
 ├── services/
 │   ├── health.service.ts            # is mantigi (HTTP'den bagimsiz)
 │   ├── auth.service.ts
 │   ├── group.service.ts             # tum grup yetki kararlari burada
 │   ├── expense.service.ts           # harcama validasyonu + yetki kararlari
 │   ├── split.service.ts             # bolusme algoritmalari (saf, I/O yok)
+│   ├── settlement.service.ts        # odeme akisi: borclu acar, alacakli onaylar
+│   ├── balance.service.ts           # harcama + onayli odeme -> netlestirme
 │   └── netting.service.ts           # borc netlestirme (saf, I/O yok)
 ├── models/                          # veri erisim katmani (repository'ler)
 │   ├── user.model.ts
 │   ├── group.model.ts
-│   └── expense.model.ts             # harcama + paylar tek transaction
+│   ├── expense.model.ts             # harcama + paylar tek transaction
+│   └── settlement.model.ts          # yalnizca confirmed kayitlar bakiyeye girer
 ├── middlewares/
 │   ├── auth.middleware.ts           # requireAuth, requireAdmin
 │   ├── errorHandler.middleware.ts   # merkezi hata yonetimi
