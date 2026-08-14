@@ -99,6 +99,7 @@ Kural: **iliski satirlari** CASCADE, **finansal kayitlar** RESTRICT.
 | `group_invites.created_by`      | CASCADE  | Ayni gerekce: davet bir iliski verisi, kanit degil  |
 | `expenses.group_id`             | CASCADE  | Harcama grubun yasam dongusune bagli                |
 | `expenses.paid_by`              | RESTRICT | Odeyen silinirse bakiye hesabi sessizce bozulur     |
+| `expenses.created_by`           | RESTRICT | Harcamayi giren kisi de kaydin bir parcasi          |
 | `expense_shares.expense_id`     | CASCADE  | Pay, harcamanin parcasi (kompozisyon)               |
 | `expense_shares.user_id`        | RESTRICT | "Kim ne kadar borclu" kaydi kaybolmamali            |
 | `settlements.group_id`          | CASCADE  | Odeme kaydi grup baglaminda anlamli                 |
@@ -110,6 +111,11 @@ Kullanicilar silinmek yerine `is_active = false` ile pasiflestirilir.
 CASCADE zinciri tam da bu yuzden bir API ucu olarak acilmadi: `DELETE FROM groups`
 calissaydi tek istek grubun tum harcama ve odeme gecmisini geri donusu olmadan silerdi.
 Gerekce `docs/decisions/1.4.md` icinde.
+
+**Harcamalar icin de ayni kural**: `expenses.deleted_at` doldurulur, `expense_shares`
+satirlarina dokunulmaz. Paylar yalnizca canli harcama uzerinden okundugu icin silinmis
+harcama hicbir sorguda ve hicbir bakiye hesabinda gorunmez; yanlislikla silineni geri
+almak tek `UPDATE`. Gerekce `docs/decisions/1.5.md` icinde.
 
 ### Tip guvenli sorgular
 
@@ -128,13 +134,18 @@ const user = await db('users').where({ email }).first(); // UserRow | undefined
 ```
 
 `NUMERIC` kolonlari (`amount`, `share_amount`) pg surucusunden **string** doner;
-tipler bunu `Decimal = string` olarak yansitir. Float'a cevirmeyin.
+tipler bunu `Decimal = string` olarak yansitir. Float'a cevirmeyin: para hesaplari
+tam sayi kurus uzerinden yapilir ve TL <-> kurus cevrimi yalnizca `src/utils/money.ts`
+icinde olur (`parseAmountToCents` / `formatCents`). Gerekce `docs/decisions/1.5.md`.
 
 ### Seed verisi
 
 1 admin + 3 kullanici, 1 grup (`Ev Arkadaslari`), 4 uyelik (admin `owner`, digerleri
 `member`), 3 harcama ve 11 pay. Tum seed kullanicilarinin sifresi `Password123!`
 (bcrypt ile hashlenir). ID'ler sabit UUID oldugundan seed tekrar calistirilabilir.
+
+Ucuncu harcamada `paid_by` ve `created_by` bilerek farkli ("Ece odedi, girisi admin
+yapti"): duzenleme yetkisinin odeyene degil **girene** baktigi seed verisinde de gorunur.
 
 ## Endpoint'ler
 
@@ -175,6 +186,65 @@ Uc davranis karari (detay: `docs/decisions/1.4.md`):
   ayni 403'u ve ayni mesaji doner — aksi halde uc nokta hangi gruplarin var oldugunu
   sizdiran bir oracle olurdu.
 
+### Harcamalar
+
+Tumu `requireAuth` arkasinda; hepsi ayrica grup **uyeligi** ister.
+
+| Method | Path                        | Ek yetki            | Yanit                          |
+| ------ | --------------------------- | ------------------- | ------------------------------ |
+| POST   | `/groups/:id/expenses`      | uyelik              | 201 `{ expense }`              |
+| GET    | `/groups/:id/expenses`      | uyelik              | 200 `{ expenses, pagination }` |
+| GET    | `/expenses/:id`             | uyelik              | 200 `{ expense }`              |
+| PUT    | `/expenses/:id`             | ekleyen ya da owner | 200 `{ expense }`              |
+| DELETE | `/expenses/:id`             | ekleyen ya da owner | 200 `{ expense }` (soft delete)|
+
+Liste ve olusturma grup baglaminda anlamli oldugu icin `/groups/:id/...` altinda; tek bir
+harcama uzerindeki islemler `/expenses/:id` altinda. `/groups/:id/expenses/:expenseId`
+secilmedi — iki ID'nin tutarliligini her istekte ayrica dogrulamak gerekirdi.
+
+Liste sayfalanmis: `?page=1&limit=20` (varsayilan 20, ust sinir 100), siralama
+`created_at DESC, id DESC`.
+
+Ornek istek (esit bolusme, katilimci verilmezse tum gruba bolunur):
+
+```jsonc
+POST /groups/:id/expenses
+{
+  "description": "Haftalik market",
+  "amount": "300.00",       // en fazla iki ondalik
+  "category": "market",     // opsiyonel, varsayilan "genel"
+  "paidBy": "<uuid>",       // opsiyonel, varsayilan istegi yapan kisi
+  "splitType": "equal",     // equal | exact | percentage
+  "splitDetails": { "participants": ["<uuid>", "<uuid>"] }
+}
+```
+
+`splitDetails` bicimi bolusme tipine gore degisir:
+
+| `splitType`  | `splitDetails`                                          |
+| ------------ | ------------------------------------------------------- |
+| `equal`      | `{ participants: [uuid, ...] }` — verilmezse tum uyeler  |
+| `exact`      | `{ shares: [{ userId, amount: "33.34" }] }`             |
+| `percentage` | `{ shares: [{ userId, percentage: 33.34 }] }`           |
+
+Bes davranis karari (detay: `docs/decisions/1.5.md`):
+
+- **Para tam sayi kurus uzerinden hesaplanir.** Tutarlarda en fazla iki ondalik kabul
+  edilir; `12.345` ya da float artigi tasiyan bir deger sessizce yuvarlanmaz, 400 doner.
+  Yuzdeler de baz puana cevrilir (33.33% -> 3333), boylece "toplam tam %100 mu" sorusu
+  tam sayi karsilastirmasiyla yanitlanir.
+- **Paylarin toplami her zaman harcama tutarina esittir.** Kurus artigi "en buyuk artik"
+  yontemiyle dagitilir: `100.00 / 3` -> `33.34 + 33.33 + 33.33`. Kimse digerinden 1
+  kurustan fazla farkli odemez ve sonuc katilimci sirasindan bagimsizdir.
+- **Duzenleme/silme yetkisi ekleyene ya da grup sahibine ait.** Bu yuzden `expenses`
+  tablosunda odeyenden (`paid_by`) ayri bir `created_by` kolonu var.
+- **Tutar ve bolusme birlikte guncellenir.** `amount`, `splitType` veya `splitDetails`
+  alanlarindan biri gonderildiginde `amount` ve `splitType` zorunlu olur; yoksa paylar
+  eski tutara gore kalir ve toplam esitligi sessizce bozulurdu.
+- **IDOR korumasi gruplardaki ile ayni**: "harcama yok", "silinmis", "ID bicimsiz" ve
+  "gruba uye degilsin" ayni 403'u doner. Yalnizca "uyesin ama duzenleyemezsin" durumu
+  ayri mesaj alir — o kullanici harcamayi zaten gorebiliyor, sizacak bilgi yok.
+
 ## Klasor yapisi
 
 ```
@@ -197,7 +267,8 @@ src/
 │   │   ├── 06_settlements.ts
 │   │   ├── 07_groups_description_and_soft_delete.ts
 │   │   ├── 08_group_member_roles.ts  # grup ici rol + tek owner kurali
-│   │   └── 09_group_invites.ts       # davet kodlari
+│   │   ├── 09_group_invites.ts       # davet kodlari
+│   │   └── 10_expenses_split_and_soft_delete.ts  # split_type, created_by, soft delete
 │   └── seeds/
 │       └── 01_demo_data.ts          # ornek kullanici / grup / harcama verisi
 ├── types/
@@ -208,19 +279,24 @@ src/
 │   ├── index.ts                     # kok router, modul route'larini baglar
 │   ├── health.routes.ts
 │   ├── auth.routes.ts
-│   └── group.routes.ts              # requireAuth router seviyesinde takili
+│   ├── group.routes.ts              # requireAuth router seviyesinde takili
+│   └── expense.routes.ts            # /expenses/:id islemleri
 ├── controllers/
 │   ├── health.controller.ts         # req/res isleme, servis cagirma
 │   ├── auth.controller.ts
-│   └── group.controller.ts          # yetki karari yok, servise devreder
+│   ├── group.controller.ts          # yetki karari yok, servise devreder
+│   └── expense.controller.ts
 ├── services/
 │   ├── health.service.ts            # is mantigi (HTTP'den bagimsiz)
 │   ├── auth.service.ts
 │   ├── group.service.ts             # tum grup yetki kararlari burada
+│   ├── expense.service.ts           # harcama validasyonu + yetki kararlari
+│   ├── split.service.ts             # bolusme algoritmalari (saf, I/O yok)
 │   └── netting.service.ts           # borc netlestirme (saf, I/O yok)
 ├── models/                          # veri erisim katmani (repository'ler)
 │   ├── user.model.ts
-│   └── group.model.ts
+│   ├── group.model.ts
+│   └── expense.model.ts             # harcama + paylar tek transaction
 ├── middlewares/
 │   ├── auth.middleware.ts           # requireAuth, requireAdmin
 │   ├── errorHandler.middleware.ts   # merkezi hata yonetimi
@@ -228,6 +304,8 @@ src/
 └── utils/
     ├── ApiError.ts                  # HTTP hata sinifi
     ├── asyncHandler.ts              # async controller sarmalayici
+    ├── money.ts                     # TL <-> kurus cevriminin tek kapisi
+    ├── uuid.ts                      # UUID bicim kontrolu
     └── logger.ts
 ```
 

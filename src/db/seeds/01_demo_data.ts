@@ -96,30 +96,39 @@ export async function seed(knex: Knex): Promise<void> {
 
   await knex('group_members').insert(members);
 
+  // created_by = harcamayi giren, paid_by = odeyen. Ucuncu kayitta bilerek
+  // farklilar: "Ece odedi, girisi admin yapti" gercek bir senaryo ve duzenleme
+  // yetkisinin hangisine baktigini seed verisinde de gorunur kilar.
   const expenses: ExpenseInsert[] = [
     {
       id: EXPENSE_IDS.market,
       group_id: GROUP_ID,
       paid_by: USER_IDS.admin,
+      created_by: USER_IDS.admin,
       amount: '300.00',
       description: 'Haftalik market alisverisi',
       category: 'market',
+      split_type: 'equal',
     },
     {
       id: EXPENSE_IDS.internet,
       group_id: GROUP_ID,
       paid_by: USER_IDS.deniz,
+      created_by: USER_IDS.deniz,
       amount: '240.00',
       description: 'Internet faturasi',
       category: 'fatura',
+      split_type: 'equal',
     },
     {
       id: EXPENSE_IDS.yemek,
       group_id: GROUP_ID,
       paid_by: USER_IDS.ece,
+      created_by: USER_IDS.admin,
       amount: '180.00',
       description: 'Cuma aksami pizza',
       category: 'yemek',
+      split_type: 'equal',
     },
   ];
 

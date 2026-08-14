@@ -22,6 +22,9 @@ export type UserRole = 'admin' | 'user';
 /** Grup **ici** rol. `UserRole` (uygulama rolu) ile karistirilmamali:
  *  bir kullanici A grubunda owner, B grubunda member olabilir. */
 export type GroupMemberRole = 'owner' | 'member';
+/** Harcamanin nasil bolundugu. Paylar `expense_shares`'te; bu kolon **yontemi**
+ *  saklar — sonuc satirlarindan yontem geri okunamaz. */
+export type ExpenseSplitType = 'equal' | 'exact' | 'percentage';
 export type SettlementStatus = 'pending' | 'confirmed';
 
 /* ------------------------------------------------------------------ users */
@@ -128,21 +131,33 @@ export type GroupInviteUpdate = Partial<Omit<GroupInviteInsert, 'id'>>;
 export interface ExpenseRow {
   id: string;
   group_id: string;
+  /** Parayi **odeyen** kisi. */
   paid_by: string;
+  /** Harcamayi **giren** kisi. Odeyenden farkli olabilir; duzenleme yetkisi
+   *  buna bakar (bkz. docs/decisions/1.5.md). */
+  created_by: string;
   amount: Decimal;
   description: string;
   category: string;
+  split_type: ExpenseSplitType;
   created_at: Date;
+  updated_at: Date;
+  /** Soft delete: dolu ise harcama silinmis sayilir ve hicbir sorguda gorunmez. */
+  deleted_at: Date | null;
 }
 
 export interface ExpenseInsert {
   id?: string;
   group_id: string;
   paid_by: string;
+  created_by: string;
   amount: MoneyInput;
   description: string;
-  category: string;
+  category?: string;
+  split_type?: ExpenseSplitType;
   created_at?: Date;
+  updated_at?: Date;
+  deleted_at?: Date | null;
 }
 
 export type ExpenseUpdate = Partial<Omit<ExpenseInsert, 'id'>>;

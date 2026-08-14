@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import config from '../config/env';
 import groupModel from '../models/group.model';
 import ApiError from '../utils/ApiError';
+import { isUuid } from '../utils/uuid';
 
 import type { GroupMemberView, GroupSummary } from '../models/group.model';
 import type { GroupInviteRow, GroupMemberRow, GroupRow } from '../types/models';
@@ -36,8 +37,6 @@ const MAX_INVITE_USES = 1000;
 
 /** Uyelik/varlik ayrimini sizdirmamak icin tek metin. */
 const ACCESS_DENIED = 'Bu gruba erisim yetkiniz yok';
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* -------------------------------------------------------------- tipler */
 
@@ -187,7 +186,7 @@ const requireMembership = async (
   groupId: string,
   userId: string
 ): Promise<{ group: GroupRow; membership: GroupMemberRow }> => {
-  if (!UUID_PATTERN.test(groupId)) {
+  if (!isUuid(groupId)) {
     throw ApiError.forbidden(ACCESS_DENIED);
   }
 
@@ -336,7 +335,7 @@ const removeMember = async (
     );
   }
 
-  if (!UUID_PATTERN.test(targetUserId)) {
+  if (!isUuid(targetUserId)) {
     throw ApiError.notFound('Kullanici bu grubun uyesi degil');
   }
 

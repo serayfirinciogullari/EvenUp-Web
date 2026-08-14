@@ -1,0 +1,563 @@
+import expenseModel from '../models/expense.model';
+import groupModel from '../models/group.model';
+import ApiError from '../utils/ApiError';
+import { parseAmountToCents, parsePercentageToBasisPoints } from '../utils/money';
+import { isUuid } from '../utils/uuid';
+import { ACCESS_DENIED, requireMembership } from './group.service';
+import { computeShares, SplitError, SPLIT_TYPES } from './split.service';
+
+import type { ExpenseWithShares } from '../models/expense.model';
+import type { GroupMemberRow } from '../types/models';
+import type { ShareAllocation, SplitInput, SplitType } from './split.service';
+
+/**
+ * Harcama is mantigi: validasyon, yetkilendirme ve bolusturme.
+ *
+ * YETKILENDIRME
+ * -------------
+ * 1.4'te kurulan kapidan gecer: grup baglami isteyen her islem once
+ * `requireMembership` cagirir. Yani grubun uyesi olmayan biri harcamalari
+ * ne gorebilir ne de ekleyebilir; sadece "uye degilsin" degil, harcamanin
+ * varligi bile sizmaz (bkz. asagidaki `loadEditable`).
+ *
+ * PARA
+ * ----
+ * Hesaplarin tamami tam sayi kurus uzerinden yapilir; TL <-> kurus cevrimi
+ * `utils/money` icinde tek noktada. Bolusturme algoritmalari saf
+ * `split.service` modulunde. Gerekce: docs/decisions/1.5.md
+ */
+
+const MAX_DESCRIPTION_LENGTH = 255; // expenses.description kolonu ile ayni
+const MAX_CATEGORY_LENGTH = 60; // expenses.category kolonu ile ayni
+const DEFAULT_CATEGORY = 'genel';
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+/** Duzenleme/silme yetkisi olmayan uyeye donen mesaj. */
+const NOT_EDITABLE = 'Bu harcamayi yalnizca ekleyen kisi ya da grup sahibi degistirebilir';
+
+/* --------------------------------------------------------------- tipler */
+
+/** Response'a konulabilecek harcama gorunumu — `deleted_at` disarida kalir. */
+export type PublicExpense = Omit<ExpenseWithShares, 'deleted_at'>;
+
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+export interface ExpenseListResult {
+  expenses: PublicExpense[];
+  pagination: Pagination;
+}
+
+export interface ListQuery {
+  page?: unknown;
+  limit?: unknown;
+}
+
+/* ---------------------------------------------------------- yardimcilar */
+
+const asString = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+const toPublicExpense = (expense: ExpenseWithShares): PublicExpense => {
+  const { deleted_at: _deletedAt, ...publicFields } = expense;
+  return publicFields;
+};
+
+/** Toplanan alan hatalariyla 400 firlatir. Fonksiyon bildirimi olarak yazildi
+ *  ki TypeScript cagriden sonrasini erisilemez kabul etsin. */
+function fail(errors: Record<string, string>, message = 'Gecersiz harcama bilgileri'): never {
+  throw ApiError.badRequest(message, errors);
+}
+
+/* ------------------------------------------------------------ validasyon */
+
+const validateDescription = (value: unknown, errors: Record<string, string>): string => {
+  const description = asString(value).trim();
+
+  if (!description) {
+    errors.description = 'Aciklama zorunlu';
+  } else if (description.length > MAX_DESCRIPTION_LENGTH) {
+    errors.description = `Aciklama en fazla ${MAX_DESCRIPTION_LENGTH} karakter olabilir`;
+  }
+
+  return description;
+};
+
+const validateCategory = (value: unknown, errors: Record<string, string>): string => {
+  const category = asString(value).trim();
+
+  if (!category) {
+    // Her harcamayi siniflandirmaya zorlamak giris akisini yavaslatir.
+    return DEFAULT_CATEGORY;
+  }
+
+  if (category.length > MAX_CATEGORY_LENGTH) {
+    errors.category = `Kategori en fazla ${MAX_CATEGORY_LENGTH} karakter olabilir`;
+  }
+
+  return category;
+};
+
+/**
+ * Tutari kurusa cevirir. `parseAmountToCents` 2 ondalikten fazlasini ve
+ * float artigi tasiyan degerleri (`0.30000000000000004`) reddeder; sessizce
+ * yuvarlamak, kullanicinin gordugu tutarla kaydedilen tutari ayirirdi.
+ */
+const validateAmount = (value: unknown, errors: Record<string, string>): number => {
+  const cents = parseAmountToCents(value);
+
+  if (cents === null) {
+    errors.amount = 'Tutar en fazla iki ondalikli pozitif bir sayi olmali';
+    return 0;
+  }
+
+  if (cents === 0) {
+    errors.amount = 'Tutar sifirdan buyuk olmali';
+  }
+
+  return cents;
+};
+
+const validateSplitType = (value: unknown, errors: Record<string, string>): SplitType => {
+  const splitType = asString(value).trim() as SplitType;
+
+  if (!SPLIT_TYPES.includes(splitType)) {
+    errors.splitType = `Bolusme tipi ${SPLIT_TYPES.join(' | ')} degerlerinden biri olmali`;
+    return 'equal';
+  }
+
+  return splitType;
+};
+
+/** Katilimcinin bicimi dogru ve grubun uyesi olmasi sart. */
+const validateParticipant = (
+  value: unknown,
+  memberIds: ReadonlySet<string>,
+  errors: Record<string, string>,
+  field: string
+): string => {
+  const userId = asString(value).trim();
+
+  if (!isUuid(userId)) {
+    errors[field] = 'Gecersiz kullanici ID';
+    return userId;
+  }
+
+  // Grup uyesi olmayan birine borc yazilamaz: o kisi harcamayi hic goremez,
+  // ama bakiyesinde borc birikirdi.
+  if (!memberIds.has(userId)) {
+    errors[field] = 'Katilimci grubun uyesi degil';
+  }
+
+  return userId;
+};
+
+/**
+ * `splitDetails` govdesini `split.service`'in bekledigi girdiye cevirir.
+ *
+ * Beklenen bicimler:
+ *   equal      -> { participants: [userId, ...] }   (verilmezse tum uyeler)
+ *   exact      -> { shares: [{ userId, amount }] }
+ *   percentage -> { shares: [{ userId, percentage }] }
+ */
+const buildSplitInput = (
+  splitType: SplitType,
+  rawDetails: unknown,
+  memberIds: ReadonlySet<string>
+): SplitInput => {
+  const details = asRecord(rawDetails);
+  const errors: Record<string, string> = {};
+
+  if (splitType === 'equal') {
+    const raw = details.participants;
+
+    // Katilimci verilmezse harcama tum gruba esit bolunur — en sik senaryo.
+    if (raw === undefined) {
+      return { type: 'equal', participants: [...memberIds] };
+    }
+
+    if (!Array.isArray(raw) || raw.length === 0) {
+      fail({ splitDetails: 'participants bos olmayan bir dizi olmali' });
+    }
+
+    const participants = (raw as unknown[]).map((value, index) =>
+      validateParticipant(value, memberIds, errors, `splitDetails.participants[${index}]`)
+    );
+
+    if (Object.keys(errors).length > 0) {
+      fail(errors);
+    }
+
+    return { type: 'equal', participants };
+  }
+
+  const raw = details.shares;
+
+  if (!Array.isArray(raw) || raw.length === 0) {
+    fail({ splitDetails: 'shares bos olmayan bir dizi olmali' });
+  }
+
+  const rows = raw as unknown[];
+
+  if (splitType === 'exact') {
+    const shares: ShareAllocation[] = rows.map((row, index) => {
+      const share = asRecord(row);
+      const userId = validateParticipant(
+        share.userId,
+        memberIds,
+        errors,
+        `splitDetails.shares[${index}].userId`
+      );
+
+      const cents = parseAmountToCents(share.amount);
+      if (cents === null) {
+        errors[`splitDetails.shares[${index}].amount`] =
+          'Pay tutari en fazla iki ondalikli, negatif olmayan bir sayi olmali';
+      }
+
+      return { userId, cents: cents ?? 0 };
+    });
+
+    if (Object.keys(errors).length > 0) {
+      fail(errors);
+    }
+
+    return { type: 'exact', shares };
+  }
+
+  const shares = rows.map((row, index) => {
+    const share = asRecord(row);
+    const userId = validateParticipant(
+      share.userId,
+      memberIds,
+      errors,
+      `splitDetails.shares[${index}].userId`
+    );
+
+    const basisPoints = parsePercentageToBasisPoints(share.percentage);
+    if (basisPoints === null) {
+      errors[`splitDetails.shares[${index}].percentage`] =
+        'Yuzde 0 ile 100 arasinda, en fazla iki ondalikli olmali';
+    }
+
+    return { userId, basisPoints: basisPoints ?? 0 };
+  });
+
+  if (Object.keys(errors).length > 0) {
+    fail(errors);
+  }
+
+  return { type: 'percentage', shares };
+};
+
+/**
+ * Bolusturmeyi calistirir ve `SplitError`'i HTTP 400'e cevirir.
+ * `split.service` HTTP'den bagimsiz kalsin diye cevrim burada yapilir.
+ */
+const runSplit = (amountCents: number, input: SplitInput): ShareAllocation[] => {
+  try {
+    return computeShares(amountCents, input);
+  } catch (error) {
+    if (error instanceof SplitError) {
+      throw ApiError.badRequest(error.message, error.details);
+    }
+    throw error;
+  }
+};
+
+/* ------------------------------------------------------- grup baglami */
+
+/** Grup uyeligini dogrular ve uye ID kumesini doner (katilimci kontrolu icin). */
+const loadGroupContext = async (
+  groupId: string,
+  userId: string
+): Promise<{ membership: GroupMemberRow; memberIds: Set<string> }> => {
+  const { membership } = await requireMembership(groupId, userId);
+  const members = await groupModel.listMembers(groupId);
+
+  return { membership, memberIds: new Set(members.map((member) => member.user_id)) };
+};
+
+/**
+ * Harcamayi yukler ve **degistirme** yetkisini dogrular.
+ *
+ * Sirali kontrol:
+ *   1. Bicimsiz ID / olmayan harcama / silinmis harcama -> 403 (grup uc
+ *      noktalariyla ayni mesaj). Ayrisirsa uc nokta "bu ID'de bir harcama var
+ *      mi?" sorusunu yanitlayan bir oracle olur.
+ *   2. Harcamanin grubuna uye olmayan -> ayni 403.
+ *   3. Uye ama ne ekleyen ne owner -> farkli mesajla 403: bu kisi harcamayi
+ *      zaten gorebiliyor, sizacak bilgi yok.
+ */
+const loadEditable = async (
+  expenseId: string,
+  userId: string
+): Promise<{ expense: ExpenseWithShares; membership: GroupMemberRow; memberIds: Set<string> }> => {
+  if (!isUuid(expenseId)) {
+    throw ApiError.forbidden(ACCESS_DENIED);
+  }
+
+  const expense = await expenseModel.findWithShares(expenseId);
+
+  if (!expense) {
+    throw ApiError.forbidden(ACCESS_DENIED);
+  }
+
+  const { membership, memberIds } = await loadGroupContext(expense.group_id, userId);
+
+  if (expense.created_by !== userId && membership.role !== 'owner') {
+    throw ApiError.forbidden(NOT_EDITABLE);
+  }
+
+  return { expense, membership, memberIds };
+};
+
+/* -------------------------------------------------------------- islemler */
+
+/**
+ * POST /groups/:id/expenses
+ *
+ * `paidBy` verilmezse istegi yapan kisi kabul edilir ("ben odedim" en sik
+ * durum). Odeyen kisinin grup uyesi olmasi sart; ayrica odeyenin paylasima
+ * dahil olmasi **zorunlu degil** — birinin baskasi adina odeme yapmasi
+ * (dogum gunu hediyesi) gecerli bir senaryo.
+ */
+const createExpense = async (
+  groupId: string,
+  userId: string,
+  body: Record<string, unknown>
+): Promise<PublicExpense> => {
+  const { memberIds } = await loadGroupContext(groupId, userId);
+
+  const errors: Record<string, string> = {};
+  const description = validateDescription(body.description, errors);
+  const category = validateCategory(body.category, errors);
+  const amountCents = validateAmount(body.amount, errors);
+  const splitType = validateSplitType(body.splitType, errors);
+
+  const paidBy =
+    body.paidBy === undefined || body.paidBy === null
+      ? userId
+      : validateParticipant(body.paidBy, memberIds, errors, 'paidBy');
+
+  if (Object.keys(errors).length > 0) {
+    fail(errors);
+  }
+
+  const shares = runSplit(amountCents, buildSplitInput(splitType, body.splitDetails, memberIds));
+
+  const expense = await expenseModel.create({
+    group_id: groupId,
+    paid_by: paidBy,
+    created_by: userId,
+    amount_cents: amountCents,
+    description,
+    category,
+    split_type: splitType,
+    shares,
+  });
+
+  return toPublicExpense(expense);
+};
+
+/**
+ * Sayfalama parametreleri. Ust sinir var: `limit=100000` gonderen bir istek
+ * tum tabloyu bellege alirdi.
+ */
+const parsePagination = (query: ListQuery): { page: number; limit: number } => {
+  const errors: Record<string, string> = {};
+
+  let page = 1;
+  if (query.page !== undefined) {
+    const value = Number(query.page);
+    if (!Number.isInteger(value) || value < 1) {
+      errors.page = "page 1'den kucuk olmayan bir tam sayi olmali";
+    } else {
+      page = value;
+    }
+  }
+
+  let limit = DEFAULT_PAGE_SIZE;
+  if (query.limit !== undefined) {
+    const value = Number(query.limit);
+    if (!Number.isInteger(value) || value < 1 || value > MAX_PAGE_SIZE) {
+      errors.limit = `limit 1 ile ${MAX_PAGE_SIZE} arasinda bir tam sayi olmali`;
+    } else {
+      limit = value;
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    fail(errors, 'Gecersiz sayfalama parametreleri');
+  }
+
+  return { page, limit };
+};
+
+/** GET /groups/:id/expenses?page=1&limit=20 */
+const listExpenses = async (
+  groupId: string,
+  userId: string,
+  query: ListQuery = {}
+): Promise<ExpenseListResult> => {
+  await requireMembership(groupId, userId);
+
+  const { page, limit } = parsePagination(query);
+  const { expenses, total } = await expenseModel.listByGroup(groupId, {
+    limit,
+    offset: (page - 1) * limit,
+  });
+
+  return {
+    expenses: expenses.map(toPublicExpense),
+    pagination: {
+      page,
+      limit,
+      total,
+      // Bos listede de en az bir sayfa vardir; arayuz 0'a bolmesin.
+      total_pages: Math.max(1, Math.ceil(total / limit)),
+      has_next: page * limit < total,
+      has_previous: page > 1,
+    },
+  };
+};
+
+/** GET /expenses/:id — grubun her uyesi gorebilir. */
+const getExpense = async (expenseId: string, userId: string): Promise<PublicExpense> => {
+  if (!isUuid(expenseId)) {
+    throw ApiError.forbidden(ACCESS_DENIED);
+  }
+
+  const expense = await expenseModel.findWithShares(expenseId);
+
+  if (!expense) {
+    throw ApiError.forbidden(ACCESS_DENIED);
+  }
+
+  await requireMembership(expense.group_id, userId);
+
+  return toPublicExpense(expense);
+};
+
+/**
+ * PUT /expenses/:id
+ *
+ * Kismi guncelleme yapilabilir, tek istisna **para blogu**: `amount`,
+ * `splitType`, `splitDetails` alanlarindan biri gonderildiginde `amount` ve
+ * `splitType` birlikte gonderilmek zorunda (`splitDetails` yalnizca `equal`
+ * icin opsiyonel). Tek basina tutari degistirmeye izin verilseydi paylar eski
+ * tutara gore kalir ve "paylarin toplami = harcama" invaryanti sessizce
+ * bozulurdu. Gerekce docs/decisions/1.5.md icinde.
+ */
+const updateExpense = async (
+  expenseId: string,
+  userId: string,
+  body: Record<string, unknown>
+): Promise<PublicExpense> => {
+  const { expense, memberIds } = await loadEditable(expenseId, userId);
+
+  const touchesMoney = ['amount', 'splitType', 'splitDetails'].some(
+    (field) => body[field] !== undefined
+  );
+
+  const errors: Record<string, string> = {};
+  const patch: Parameters<typeof expenseModel.update>[1] = {};
+
+  if (body.description !== undefined) {
+    patch.description = validateDescription(body.description, errors);
+  }
+
+  if (body.category !== undefined) {
+    patch.category = validateCategory(body.category, errors);
+  }
+
+  if (body.paidBy !== undefined) {
+    patch.paid_by = validateParticipant(body.paidBy, memberIds, errors, 'paidBy');
+  }
+
+  if (touchesMoney) {
+    if (body.amount === undefined || body.splitType === undefined) {
+      const together = 'Tutar ya da bolusme degisiyorsa amount ve splitType birlikte gonderilmeli';
+      fail({ ...errors, amount: together, splitType: together }, 'Tutar ve bolusme birlikte guncellenmeli');
+    }
+
+    patch.amount_cents = validateAmount(body.amount, errors);
+    patch.split_type = validateSplitType(body.splitType, errors);
+  }
+
+  if (Object.keys(errors).length > 0) {
+    fail(errors);
+  }
+
+  if (touchesMoney) {
+    patch.shares = runSplit(
+      patch.amount_cents as number,
+      buildSplitInput(patch.split_type as SplitType, body.splitDetails, memberIds)
+    );
+  }
+
+  if (Object.keys(patch).length === 0) {
+    throw ApiError.badRequest('Guncellenecek alan gonderilmedi');
+  }
+
+  const updated = await expenseModel.update(expense.id, patch);
+
+  // Araya baska bir istek girip harcamayi silmis olabilir (yaris). Sonuc yine
+  // "harcama yok" — ve o durumda ayni 403 doner.
+  if (!updated) {
+    throw ApiError.forbidden(ACCESS_DENIED);
+  }
+
+  return toPublicExpense(updated);
+};
+
+/**
+ * DELETE /expenses/:id — soft delete.
+ * `expense_shares` satirlari yerinde kalir ama harcama silindigi icin hicbir
+ * sorguda gorunmez; bakiye hesabina da girmez.
+ */
+const deleteExpense = async (
+  expenseId: string,
+  userId: string
+): Promise<{ id: string; deleted_at: Date }> => {
+  const { expense } = await loadEditable(expenseId, userId);
+
+  const deleted = await expenseModel.softDelete(expense.id);
+
+  if (!deleted || !deleted.deleted_at) {
+    throw ApiError.forbidden(ACCESS_DENIED);
+  }
+
+  return { id: deleted.id, deleted_at: deleted.deleted_at };
+};
+
+export default {
+  createExpense,
+  listExpenses,
+  getExpense,
+  updateExpense,
+  deleteExpense,
+};
+
+export {
+  createExpense,
+  listExpenses,
+  getExpense,
+  updateExpense,
+  deleteExpense,
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  NOT_EDITABLE,
+};
