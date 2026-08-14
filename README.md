@@ -3,6 +3,14 @@
 Gider/borc takip uygulamasinin REST API iskeleti.
 Node.js + Express + TypeScript + Knex + PostgreSQL.
 
+> **Frontend `web/` altinda** ayri bir Vite + React + TypeScript projesidir; kendi
+> `package.json`'i ve README'si vardir (`web/README.md`). Bu dosya backend'i anlatir.
+>
+> ```bash
+> npm run dev            # backend  -> http://localhost:3000
+> cd web && npm run dev  # frontend -> http://localhost:5173
+> ```
+
 ## Kurulum
 
 ```bash
@@ -344,6 +352,7 @@ kontrol 1.3'te (`auth.service.ts`) zaten vardi. Pasif kullanici login olamaz ve
 
 ```
 knexfile.ts                          # knex CLI giris noktasi (config/database.ts'i re-export eder)
+web/                                 # frontend (Vite + React + TS) — bkz. web/README.md
 src/
 ├── app.ts                           # Express app: middleware + route + error handler zinciri
 ├── server.ts                        # listen + graceful shutdown

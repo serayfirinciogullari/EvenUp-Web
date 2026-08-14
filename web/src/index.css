@@ -1,0 +1,130 @@
+/* 2.1 iskelet stilleri: okunabilir bir taban, tasarim sistemi degil. */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #d9dde3;
+  --text: #1b1f24;
+  --muted: #6b7480;
+  --accent: #2f6feb;
+  --danger: #c0392b;
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+}
+
+button {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+input {
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+/* ------------------------------------------------------------------ layout */
+
+.layout__header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.layout__brand {
+  font-weight: 700;
+}
+
+.layout__nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.layout__user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.layout__main {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+/* -------------------------------------------------------------- form / auth */
+
+.auth-page {
+  max-width: 22rem;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.auth-page form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.auth-page label {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.auth-page button {
+  margin-top: 1.25rem;
+}
+
+.field-error,
+.form-error {
+  margin: 0.25rem 0 0;
+  color: var(--danger);
+  font-size: 0.875rem;
+}
+
+.field-hint,
+.placeholder {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.route-fallback {
+  padding: 3rem;
+  text-align: center;
+  color: var(--muted);
+}
