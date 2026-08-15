@@ -71,6 +71,24 @@ export interface GroupDetail {
   members: GroupMember[];
 }
 
+/** `PublicInvite` — kodun kendisi duz metin doner (bkz. docs/decisions/1.4.md). */
+export interface Invite {
+  code: string;
+  /** Backend'in `APP_URL`inden uretilir; su an API adresini gosteriyor. */
+  join_url: string;
+  expires_at: string;
+  /** `null` = sinirsiz kullanim. */
+  max_uses: number | null;
+  use_count: number;
+}
+
+/** `POST /groups/:id/invite` cevabi. */
+export interface InviteResult {
+  invite: Invite;
+  /** false ise mevcut aktif davet aynen dondu, yeni kod uretilmedi. */
+  rotated: boolean;
+}
+
 export interface ExpenseShare {
   user_id: string;
   name: string;

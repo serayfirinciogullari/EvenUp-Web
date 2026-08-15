@@ -27,6 +27,19 @@ vi.mock('./api/auth', () => ({
   },
 }));
 
+// /groups sayfasi artik gercek veri cekiyor (2.3). Bu dosyanin derdi rota
+// korumasi oldugu icin grup API'si bos liste dondurecek sekilde sabitleniyor;
+// aksi halde her rota testi bir de ag istegi denerdi.
+vi.mock('./api/groups', () => ({
+  __esModule: true,
+  default: {
+    listGroups: vi.fn().mockResolvedValue([]),
+    createGroup: vi.fn(),
+    createInvite: vi.fn(),
+    getGroupBalances: vi.fn(),
+  },
+}));
+
 // `vi.mock` vitest tarafindan dosyanin en ustune tasinir, bu yuzden asagidaki
 // import mock'lanmis modulu alir.
 import authApi from './api/auth';
@@ -128,7 +141,8 @@ describe('giris yapmis kullanici', () => {
     renderAt('/groups');
 
     expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
-    expect(screen.getByText('Hos geldin, Burak.')).toBeInTheDocument();
+    // Kullanici adi Layout basliginda duruyor.
+    expect(screen.getByText('Burak')).toBeInTheDocument();
   });
 
   it('kok adres /groups sayfasina yonlenir', async () => {

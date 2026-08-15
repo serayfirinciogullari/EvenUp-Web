@@ -255,7 +255,9 @@ describe('kayit ekrani gercek backend ile', () => {
     // KARAR: kayit cevabindaki token dogrudan kullanilir; login ekranina
     // yonlendirme yok (bkz. docs/decisions/2.2.md).
     expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
-    expect(screen.getByText('Hos geldin, E2E Kullanici.')).toBeInTheDocument();
+    // Kullanici adi Layout basliginda; yeni kullanicinin hic grubu olmadigi icin
+    // liste bos durum gosterecek (2.3).
+    expect(screen.getByText('E2E Kullanici')).toBeInTheDocument();
 
     const stored = window.localStorage.getItem(TOKEN_KEY);
     expect(stored).toBeTruthy();

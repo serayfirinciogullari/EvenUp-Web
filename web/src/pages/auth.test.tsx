@@ -27,6 +27,18 @@ vi.mock('../api/auth', () => ({
   },
 }));
 
+// Basarili giris /groups'a duser ve o sayfa artik gercek veri cekiyor (2.3);
+// bu dosyanin derdi form davranisi oldugu icin grup API'si sabitleniyor.
+vi.mock('../api/groups', () => ({
+  __esModule: true,
+  default: {
+    listGroups: vi.fn().mockResolvedValue([]),
+    createGroup: vi.fn(),
+    createInvite: vi.fn(),
+    getGroupBalances: vi.fn(),
+  },
+}));
+
 import authApi from '../api/auth';
 
 const mockedAuthApi = vi.mocked(authApi);
@@ -381,7 +393,8 @@ describe('basarili akis', () => {
 
     // Karar: kayit cevabindaki token dogrudan kullanilir.
     expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
-    expect(screen.getByText('Hos geldin, Deniz.')).toBeInTheDocument();
+    // Kullanici adi Layout basliginda duruyor.
+    expect(screen.getByText('Deniz')).toBeInTheDocument();
     expect(window.localStorage.getItem(TOKEN_KEY)).toBe('yeni.jwt.token');
     expect(screen.queryByRole('heading', { name: 'Giris yap' })).not.toBeInTheDocument();
   });

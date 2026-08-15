@@ -1,6 +1,6 @@
 # EvenUp — Karar Özeti
 
-`docs/decisions/` altındaki 8 dosyanın (1.1–2.2) tek dosyada özeti. Amaç: projeye,
+`docs/decisions/` altındaki 9 dosyanın (1.1–2.3) tek dosyada özeti. Amaç: projeye,
 koda ve fonksiyonlara hâkim olmak — **ne yapıldı** değil, **neden öyle yapıldı**.
 
 Ayrıntı gerekirse ilgili görev dosyasına bak; her bölümün başında kaynağı yazıyor.
@@ -54,6 +54,7 @@ Görevlerin ilerleyişi:
 | 1.8   | Admin paneli + gizlilik sınırı              |
 | 2.1   | Frontend iskeleti, rota koruma, token saklama |
 | 2.2   | Giriş/kayıt ekranları, iki katmanlı validasyon |
+| 2.3   | Gruplarım ekranı, bakiye renklendirmesi, durum yönetimi |
 
 ---
 
@@ -116,6 +117,9 @@ Bir kural birden çok yerde tekrarlanırsa biri güncellenirken diğeri unutulur
 | Onaylı ödeme okuma | `settlement.model.ts` (`listConfirmed`)        |
 | Token saklama      | `web/src/api/tokenStorage.ts`                  |
 | İstemci validasyonu| `web/src/utils/validation.ts`                  |
+| Para (istemci)     | `web/src/utils/money.ts`                       |
+| Bakiye renk kuralı | `web/src/utils/balance.ts`                     |
+| Sunucu durumu      | `web/src/hooks/useAsync.ts`                    |
 
 ### İlke 5 — Koruma route seviyesinde takılır
 
@@ -771,11 +775,45 @@ metin yalnızca backend hiç mesaj döndürmediğinde. Frontend bu mesajı yorum
 backend "kullanıcı yok" ile "şifre yanlış"ı bilerek ayırmıyor, frontend ayırsaydı ayrımı
 arka kapıdan geri getirirdi. Ağ hatası ayrı ele alınıyor — kullanıcının yapacağı şey farklı.
 
+### Gruplarım ekranı (2.3)
+
+**Bakiye renklendirmesi: işaret yönü belirler, renk yalnızca onu tekrarlar.**
+`> 0` yeşil "Sana borçlular", `< 0` kırmızı "Sen borçlusun", `= 0` nötr "Hesap kapalı".
+İşaretin anlamı backend'den geliyor (`net = ödediği − payına düşen`, 1.6).
+
+Karşılaştırma **kuruş üzerinden**: `Number("-0.004") < 0` true döner ve ekranda kırmızı bir
+"0,00 ₺ borcun var" çıkardı — renk ile yazılan tutar çelişirdi. Kuruşa çevirmek ikisini aynı
+kaynağa bağlıyor. Ayrıştırılamayan değer sessizce 0 sayılmıyor; bilinmeyen bakiye ile
+dengede olan bakiye aynı şey değil.
+
+**Renk tek başına bilgi taşımıyor** — her tonun metni her zaman yazılı, artı sol renk şeridi.
+Kırmızı-yeşil en yaygın renk körlüğünün ayıramadığı ayrım; renk bilgiyi taşımıyor,
+hızlandırıyor. Tutar işaretsiz gösteriliyor: yön zaten metinle söyleniyor.
+
+**Durum yönetimi: kütüphane değil, `useAsync`.** React Query'nin asıl kazancı paylaşılan
+sunucu durumu; şu an tek ekran ve iki uç nokta var. Ama "useState yeterli" demek de yanlış
+olurdu — kütüphanesiz çözümün gerçek tuzağı **yarış koşulu**: `reload` iki kez çağrılırsa
+hangi cevabın önce döneceği garanti değil ve eski cevap yeninin üzerine yazabilir, hiçbir
+hata görünmeden. `useAsync` istek numarası tutarak bunu kapatıyor. Geçiş sinyali: aynı
+veriyi iki ekran okumaya başlayınca (2.4 grup detayı).
+
+**Bakiye kart başına ayrı istek.** Toplu uç nokta yok; sayfada toplansaydı liste en yavaş
+bakiye kadar geç görünür, biri hata verse tüm ekran boş kalırdı. Kart başına bağımsız
+istekte tek bir grubun hatası yalnızca o kartı etkiliyor.
+
+**Dört durum ayrı:** iskelet / hata / boş / dolu. Boş ile hatayı aynı göstermek, sunucuya
+ulaşılamadığında "gruplarım silinmiş" izlenimi verirdi.
+
+**Davet linki istemci origin'inden kuruluyor.** Backend'in `join_url`i `APP_URL`den
+üretiliyor ve varsayılanı API adresi; oradaki `/groups/join/:code` bir POST uç noktası,
+tarayıcıda 404 verir. Pano başarısız olabilir (izin/güvenli bağlam) — o durumda link
+ekranda gösteriliyor, sessizce "kopyalandı" denmiyor.
+
 ---
 
 ## 10. Test stratejisi
 
-**Varsayılan koşuda 206 test + gerçek backend'e karşı 14 test.**
+**Varsayılan koşuda 229 test + gerçek backend'e karşı 20 test.**
 
 | Dosya | Test | Yaklaşım |
 | --- | --- | --- |
@@ -787,7 +825,9 @@ arka kapıdan geri getirirdi. Ağ hatası ayrı ele alınıyor — kullanıcın�
 | `tests/admin.test.ts` | 29 | supertest + **kaynak taraması** |
 | `web/src/routes.test.tsx` | 16 | ağ katmanı mock, geri kalan gerçek |
 | `web/src/pages/auth.test.tsx` | 17 | ağ katmanı mock; validasyon/loading/çift submit |
+| `web/src/pages/groups.test.tsx` | 23 | ağ katmanı mock; renklendirme/durumlar/modal/davet |
 | `web/src/auth.integration.test.tsx` | 14 | **hiç mock yok — gerçek backend** (`npm run test:api`) |
+| `web/src/groups.integration.test.tsx` | 6 | **hiç mock yok — gerçek backend** |
 
 **Ortak desen:** yalnızca **veri katmanı** mock'lanır, yerine bellek içi tablolar konur.
 Mock'lanmayan her şey gerçek kod: routing, `requireAuth`, validasyon, **tüm yetki
@@ -851,6 +891,10 @@ Görevler arası devreden maddeler — hangisi hangi görevde açıldı:
 | 18 | **"Şifremi unuttum" akışı yok** — backend'de de karşılığı yok | 2.2 | ayrı görev |
 | 19 | **Şifre kuralı iki yerde elle senkron** (`utils/validation.ts` ↔ `auth.service.ts`) | 2.2 | sapma güvenlik açığı üretmez ama tutarsız mesaj üretebilir; #11 ile aynı kök |
 | 20 | **`e2e-*` test kullanıcıları veritabanında birikiyor** | 2.2 | temizlik elle: `npm run db:reset` |
+| 21 | **`/groups/join/:code` rotası frontend'de yok** — kopyalanan link 404 verir | 2.3 | sonraki görevin doğal parçası |
+| 22 | **Backend `APP_URL` API adresini gösteriyor** — `join_url` bu yüzden kullanılamıyor | 2.3 | frontend origin'ine çekilirse elle link kurma kalkar |
+| 23 | **Bakiye için toplu uç nokta yok** — N grup, N istek | 2.3 | `GET /groups?include=balance` benzeri |
+| 24 | **Modal odak tuzağı (focus trap) yok** — Tab ile arkadaki sayfaya çıkılabiliyor | 2.3 | `inert` ya da odak tuzağı |
 
 ---
 

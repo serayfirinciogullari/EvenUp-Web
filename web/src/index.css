@@ -128,3 +128,238 @@ input {
   text-align: center;
   color: var(--muted);
 }
+
+/* ---------------------------------------------------------- gruplar ekrani */
+
+.groups-page__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.group-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.group-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.group-card__title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.group-card__meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.group-card__balance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.25rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  /* Renk tek basina bilgi tasimaz; sol serit yalnizca ikinci bir ipucu. */
+  border-left: 4px solid var(--border);
+  background: #f2f4f7;
+}
+
+.group-card__amount {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.group-card__tone {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+/*
+  Bakiye tonlari. Renkler AA kontrast esigini beyaz/acik zeminde gecen
+  koyu tonlardan secildi; ayrica her tonun yaninda metin var.
+*/
+.balance--credit {
+  border-left-color: #1e7a4b;
+  background: #eaf6ef;
+}
+
+.balance--credit .group-card__amount {
+  color: #1e7a4b;
+}
+
+.balance--debt {
+  border-left-color: var(--danger);
+  background: #fdecea;
+}
+
+.balance--debt .group-card__amount {
+  color: var(--danger);
+}
+
+.balance--settled {
+  border-left-color: var(--border);
+}
+
+.group-card__balance--unknown {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.group-card__actions {
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+
+.group-card__note {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.group-card__link {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+
+.badge {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.link-button {
+  padding: 0;
+  margin-left: 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.button--ghost {
+  background: transparent;
+  color: var(--text);
+}
+
+/* --------------------------------------------------------- durum kutulari */
+
+.state-box {
+  margin-top: 1rem;
+  padding: 2rem 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.state-box--error {
+  border-color: var(--danger);
+}
+
+.state-box p {
+  margin: 0 0 0.5rem;
+}
+
+/* ------------------------------------------------------------- iskeletler */
+
+.skeleton-line {
+  display: block;
+  height: 0.85rem;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #e7eaee 25%, #f1f3f6 50%, #e7eaee 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s infinite linear;
+}
+
+.skeleton-line--title {
+  height: 1.1rem;
+  width: 60%;
+}
+
+.skeleton-line--short {
+  width: 40%;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Hareketi azalt tercihine saygi: sonsuz parlama animasyonu kapatilir. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------- modal */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 45%);
+}
+
+.modal {
+  width: min(24rem, 100%);
+  padding: 1.5rem;
+  background: var(--surface);
+  border-radius: 10px;
+}
+
+.modal h2 {
+  margin-top: 0;
+}
+
+.modal form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.modal label {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
