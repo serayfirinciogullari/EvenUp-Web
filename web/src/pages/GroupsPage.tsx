@@ -1,8 +1,8 @@
 import useAuth from '../hooks/useAuth';
 
 /**
- * Grup listesi — 2.1'de iskelet. Veri cekme (`GET /groups`) 2.2'de eklenecek;
- * bu asamanin amaci rota ve oturum altyapisinin ayakta oldugunu gostermek.
+ * Grup listesi — hala iskelet. 2.1 rota/oturum altyapisini, 2.2 giris ve kayit
+ * ekranlarini kurdu; veri cekme (`GET /groups`) sonraki goreve ait.
  */
 const GroupsPage = () => {
   const { user } = useAuth();
@@ -11,7 +11,7 @@ const GroupsPage = () => {
     <section>
       <h1>Gruplar</h1>
       <p>Hos geldin, {user?.name}.</p>
-      <p className="placeholder">Grup listesi 2.2'de baglanacak (GET /groups).</p>
+      <p className="placeholder">Grup listesi sonraki gorevde baglanacak (GET /groups).</p>
     </section>
   );
 };

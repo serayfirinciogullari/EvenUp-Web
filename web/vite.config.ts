@@ -9,5 +9,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // Gercek backend isteyen testler burada calismaz; ayri komutu var
+    // (`npm run test:api`, vitest.api.config.ts). Gerekcesi o dosyada.
+    exclude: ['node_modules/**', 'dist/**', 'src/**/*.integration.test.{ts,tsx}'],
   },
 });

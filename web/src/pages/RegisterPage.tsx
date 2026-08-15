@@ -1,41 +1,41 @@
-import { useState } from 'react';
+import { useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { getErrorDetails, getErrorMessage } from '../api/client';
 import useAuth from '../hooks/useAuth';
+import useAuthForm from '../hooks/useAuthForm';
+import { MIN_PASSWORD_LENGTH, validateRegisterForm } from '../utils/validation';
 
-import type { FormEvent } from 'react';
+import type { RegisterFormValues } from '../utils/validation';
 
-/** Backend ile ayni sinir (`auth.service.ts` -> MIN_PASSWORD_LENGTH). */
-const MIN_PASSWORD_LENGTH = 8;
-
+/**
+ * Kayit ekrani — gercek `POST /auth/register` cagrisina bagli.
+ *
+ * KAYIT SONRASI: OTOMATIK GIRIS
+ * -----------------------------
+ * Backend `/auth/register` cevabinda zaten kullanilabilir bir `token` donuyor
+ * (`AuthResult`). Kullaniciyi login ekranina yollamak, elimizdeki gecerli
+ * token'i cope atip az once yazdigi bilgileri tekrar yazdirmak olurdu.
+ * Ayrintili gerekce ve hangi kosulda degisecegi: docs/decisions/2.2.md
+ */
 const RegisterPage = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [pending, setPending] = useState(false);
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setFieldErrors({});
-    setPending(true);
-
-    try {
-      await register({ name, email, password });
+  const handleRegister = useCallback(
+    async (values: RegisterFormValues) => {
+      await register(values);
       navigate('/groups', { replace: true });
-    } catch (caught) {
-      setError(getErrorMessage(caught, 'Kayit olusturulamadi'));
-      setFieldErrors(getErrorDetails(caught));
-    } finally {
-      setPending(false);
-    }
-  };
+    },
+    [navigate, register]
+  );
+
+  const { values, setField, fieldErrors, formError, pending, handleSubmit } =
+    useAuthForm<RegisterFormValues>({
+      initialValues: { name: '', email: '', password: '' },
+      validate: validateRegisterForm,
+      onSubmit: handleRegister,
+      fallbackMessage: 'Kayit olusturulamadi',
+    });
 
   return (
     <div className="auth-page">
@@ -45,42 +45,68 @@ const RegisterPage = () => {
         <label htmlFor="name">Ad</label>
         <input
           id="name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
+          name="name"
+          value={values.name}
+          onChange={(event) => setField('name', event.target.value)}
           autoComplete="name"
-          required
+          aria-invalid={fieldErrors.name ? true : undefined}
+          aria-describedby={fieldErrors.name ? 'name-error' : undefined}
+          disabled={pending}
         />
-        {fieldErrors.name && <p className="field-error">{fieldErrors.name}</p>}
+        {fieldErrors.name && (
+          <p className="field-error" id="name-error">
+            {fieldErrors.name}
+          </p>
+        )}
 
         <label htmlFor="email">E-posta</label>
         <input
           id="email"
+          name="email"
           type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          value={values.email}
+          onChange={(event) => setField('email', event.target.value)}
           autoComplete="email"
-          required
+          aria-invalid={fieldErrors.email ? true : undefined}
+          aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+          disabled={pending}
         />
-        {fieldErrors.email && <p className="field-error">{fieldErrors.email}</p>}
+        {fieldErrors.email && (
+          <p className="field-error" id="email-error">
+            {fieldErrors.email}
+          </p>
+        )}
 
         <label htmlFor="password">Sifre</label>
         <input
           id="password"
+          name="password"
           type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          value={values.password}
+          onChange={(event) => setField('password', event.target.value)}
           autoComplete="new-password"
-          minLength={MIN_PASSWORD_LENGTH}
-          required
+          aria-invalid={fieldErrors.password ? true : undefined}
+          aria-describedby={fieldErrors.password ? 'password-error' : 'password-hint'}
+          disabled={pending}
         />
-        {/* Istemci tarafi kontrol yalnizca erken geri bildirim; asil dogrulama
-            backend'de (buyuk/kucuk harf ve rakam kurallari dahil). */}
-        <p className="field-hint">En az {MIN_PASSWORD_LENGTH} karakter</p>
-        {fieldErrors.password && <p className="field-error">{fieldErrors.password}</p>}
+        {/*
+          Kural, hata olmadan once de yaziyor: kullaniciya "once yanlis yap,
+          sonra ogren" dedirtmemek icin.
+        */}
+        {!fieldErrors.password && (
+          <p className="field-hint" id="password-hint">
+            En az {MIN_PASSWORD_LENGTH} karakter
+          </p>
+        )}
+        {fieldErrors.password && (
+          <p className="field-error" id="password-error">
+            {fieldErrors.password}
+          </p>
+        )}
 
-        {error && (
+        {formError && (
           <p className="form-error" role="alert">
-            {error}
+            {formError}
           </p>
         )}
 

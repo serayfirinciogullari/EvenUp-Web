@@ -10,6 +10,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:api": "vitest run --config vitest.api.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {
