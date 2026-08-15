@@ -1,0 +1,1152 @@
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import App from '../App';
+import { AuthProvider } from '../context/AuthProvider';
+import { formatExpenseDate } from '../utils/datetime';
+import { formatBasisPoints, parseInputToCents, parsePercentageToBasisPoints } from '../utils/money';
+import { equalShares, validateExact, validatePercentage, toSplitDetails } from '../utils/split';
+import { dative } from '../utils/turkish';
+
+import type {
+  BalanceResult,
+  Expense,
+  ExpenseListResult,
+  GroupDetail,
+  SettlementListResult,
+  SettlementView,
+  User,
+} from '../types/models';
+
+/**
+ * Grup detay ekrani testleri.
+ *
+ * Yalnizca ag katmani mock'lanir (`api/auth`, `api/groups`, `api/expenses`,
+ * `api/settlements`). `useAsync`, `useExpenseFeed`, `utils/split`,
+ * `utils/money`, `utils/turkish`, Radix sekmeleri ve React Router gercek kod.
+ *
+ * Dosyanin asil derdi iki sey:
+ *   1. bolusme formunun ANLIK toplam dogrulamasi (eksik/fazla/tam)
+ *   2. uctan uca akis: harcama ekle -> bakiye guncellenir -> ode -> onayla
+ */
+vi.mock('../api/auth', () => ({
+  __esModule: true,
+  default: { login: vi.fn(), register: vi.fn(), getMe: vi.fn() },
+}));
+
+vi.mock('../api/groups', () => ({
+  __esModule: true,
+  default: {
+    listGroups: vi.fn(),
+    createGroup: vi.fn(),
+    getGroup: vi.fn(),
+    createInvite: vi.fn(),
+    getGroupBalances: vi.fn(),
+  },
+}));
+
+vi.mock('../api/expenses', () => ({
+  __esModule: true,
+  default: { listExpenses: vi.fn(), createExpense: vi.fn() },
+}));
+
+vi.mock('../api/settlements', () => ({
+  __esModule: true,
+  default: {
+    listSettlements: vi.fn(),
+    createSettlement: vi.fn(),
+    confirmSettlement: vi.fn(),
+    rejectSettlement: vi.fn(),
+  },
+}));
+
+import authApi from '../api/auth';
+import expensesApi from '../api/expenses';
+import groupsApi from '../api/groups';
+import settlementsApi from '../api/settlements';
+
+const mockedAuth = vi.mocked(authApi);
+const mockedGroups = vi.mocked(groupsApi);
+const mockedExpenses = vi.mocked(expensesApi);
+const mockedSettlements = vi.mocked(settlementsApi);
+
+/* ------------------------------------------------------------------ veri */
+
+const TOKEN_KEY = 'evenup.token';
+const GROUP_ID = 'gggggggg-0000-4000-8000-000000000001';
+const ME_ID = '11111111-1111-4111-8111-111111111111';
+const ECE_ID = '22222222-2222-4222-8222-222222222222';
+const ALI_ID = '33333333-3333-4333-8333-333333333333';
+
+const me: User = {
+  id: ME_ID,
+  email: 'deniz@evenup.dev',
+  name: 'Deniz',
+  role: 'user',
+  is_active: true,
+  created_at: '2026-08-01T10:00:00.000Z',
+};
+
+const groupDetail: GroupDetail = {
+  group: {
+    id: GROUP_ID,
+    name: 'Ev Arkadaslari',
+    description: null,
+    created_by: ME_ID,
+    created_at: '2026-08-01T10:00:00.000Z',
+  },
+  role: 'owner',
+  members: [
+    {
+      user_id: ME_ID,
+      name: 'Deniz',
+      email: 'deniz@evenup.dev',
+      role: 'owner',
+      joined_at: '2026-08-01T10:00:00.000Z',
+    },
+    {
+      user_id: ECE_ID,
+      name: 'Ece',
+      email: 'ece@evenup.dev',
+      role: 'member',
+      joined_at: '2026-08-01T10:00:00.000Z',
+    },
+    {
+      user_id: ALI_ID,
+      name: 'Ali',
+      email: 'ali@evenup.dev',
+      role: 'member',
+      joined_at: '2026-08-01T10:00:00.000Z',
+    },
+  ],
+};
+
+const expense = (over: Partial<Expense> = {}): Expense => ({
+  id: 'eeeeeeee-0000-4000-8000-000000000001',
+  group_id: GROUP_ID,
+  paid_by: ECE_ID,
+  created_by: ECE_ID,
+  amount: '90.00',
+  description: 'Market alisverisi',
+  category: 'market',
+  split_type: 'equal',
+  created_at: '2026-08-14T10:00:00.000Z',
+  updated_at: '2026-08-14T10:00:00.000Z',
+  payer_name: 'Ece',
+  creator_name: 'Ece',
+  shares: [
+    { user_id: ME_ID, name: 'Deniz', share_amount: '30.00' },
+    { user_id: ECE_ID, name: 'Ece', share_amount: '30.00' },
+    { user_id: ALI_ID, name: 'Ali', share_amount: '30.00' },
+  ],
+  ...over,
+});
+
+const expensePage = (
+  expenses: Expense[],
+  over: Partial<ExpenseListResult['pagination']> = {}
+): ExpenseListResult => ({
+  expenses,
+  pagination: {
+    page: 1,
+    limit: 10,
+    total: expenses.length,
+    total_pages: 1,
+    has_next: false,
+    has_previous: false,
+    ...over,
+  },
+});
+
+/** Deniz 30 borclu, Ece 30 alacakli. */
+const owingBalances: BalanceResult = {
+  balances: [
+    { user_id: ECE_ID, name: 'Ece', net_balance: '30.00' },
+    { user_id: ME_ID, name: 'Deniz', net_balance: '-30.00' },
+  ],
+  transfers: [{ from_user: ME_ID, to_user: ECE_ID, amount: '30.00' }],
+  meta: {
+    expense_count: 1,
+    confirmed_settlement_count: 0,
+    pending_settlement_count: 0,
+    rejected_settlement_count: 0,
+    algorithm: 'optimal',
+  },
+};
+
+/** Herkes dengede. */
+const settledBalances: BalanceResult = {
+  balances: [
+    { user_id: ECE_ID, name: 'Ece', net_balance: '0.00' },
+    { user_id: ME_ID, name: 'Deniz', net_balance: '0.00' },
+  ],
+  transfers: [],
+  meta: {
+    expense_count: 1,
+    confirmed_settlement_count: 1,
+    pending_settlement_count: 0,
+    rejected_settlement_count: 0,
+    algorithm: 'optimal',
+  },
+};
+
+const settlement = (over: Partial<SettlementView> = {}): SettlementView => ({
+  id: 'ssssssss-0000-4000-8000-000000000001',
+  group_id: GROUP_ID,
+  from_user: ALI_ID,
+  to_user: ME_ID,
+  from_name: 'Ali',
+  to_name: 'Deniz',
+  amount: '45.00',
+  status: 'pending',
+  created_at: '2026-08-15T09:00:00.000Z',
+  confirmed_at: null,
+  rejected_at: null,
+  ...over,
+});
+
+const settlementPage = (settlements: SettlementView[]): SettlementListResult => ({
+  settlements,
+  pagination: {
+    page: 1,
+    limit: 50,
+    total: settlements.length,
+    total_pages: 1,
+    has_next: false,
+    has_previous: false,
+  },
+});
+
+const apiError = (statusCode: number, message: string, details?: Record<string, string>) =>
+  Object.assign(new Error(message), {
+    isAxiosError: true,
+    response: { status: statusCode, data: { status: 'error', statusCode, message, details } },
+  });
+
+/* ------------------------------------------------------------- yardimcilar */
+
+const renderDetail = () => {
+  window.localStorage.setItem(TOKEN_KEY, 'gecerli.jwt.token');
+  mockedAuth.getMe.mockResolvedValue(me);
+
+  return render(
+    <MemoryRouter initialEntries={[`/groups/${GROUP_ID}`]}>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </MemoryRouter>
+  );
+};
+
+/** Grup basligi gelene kadar bekle: sayfanin hazir oldugunun isareti. */
+const waitForPage = async () => screen.findByRole('heading', { name: 'Ev Arkadaslari' });
+
+/**
+ * Sekme degistirir.
+ *
+ * `click` degil `mouseDown`: Radix sekmeyi **mousedown** aninda degistiriyor
+ * (gercek kullanicida da secim tusa basar basmaz oluyor). `fireEvent.click`
+ * mousedown uretmedigi icin sekme sessizce degismezdi.
+ */
+const selectTab = (name: RegExp | string) => {
+  fireEvent.mouseDown(screen.getByRole('tab', { name }), { button: 0 });
+};
+
+const openBalances = async () => {
+  await waitForPage();
+  selectTab(/Bakiyeler/);
+  return screen.findByText('Kim kime odeyecek');
+};
+
+const openExpenseModal = async () => {
+  await waitForPage();
+  fireEvent.click(screen.getByRole('button', { name: 'Harcama Ekle' }));
+  return screen.findByRole('dialog');
+};
+
+/** Modal'da ortak alanlari doldurur. */
+const fillBasics = (amount: string, description = 'Yemek') => {
+  fireEvent.change(screen.getByLabelText('Aciklama'), { target: { value: description } });
+  fireEvent.change(screen.getByLabelText('Tutar (₺)'), { target: { value: amount } });
+};
+
+const chooseSplit = (label: string) => {
+  fireEvent.click(screen.getByLabelText(label));
+};
+
+const submitExpense = () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  window.localStorage.clear();
+
+  mockedGroups.getGroup.mockResolvedValue(groupDetail);
+  mockedGroups.getGroupBalances.mockResolvedValue(owingBalances);
+  mockedExpenses.listExpenses.mockResolvedValue(expensePage([expense()]));
+  mockedSettlements.listSettlements.mockResolvedValue(settlementPage([]));
+});
+
+/* ============================================================== sekmeler */
+
+describe('sekmeli gorunum', () => {
+  it('iki sekme gosterilir ve varsayilan Harcamalar', async () => {
+    renderDetail();
+    await waitForPage();
+
+    expect(screen.getByRole('tab', { name: 'Harcamalar' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByRole('tab', { name: /Bakiyeler/ })).toBeInTheDocument();
+    expect(screen.getByText('Market alisverisi')).toBeInTheDocument();
+  });
+
+  it('Bakiyeler sekmesine gecilebilir', async () => {
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByRole('tab', { name: /Bakiyeler/ })).toHaveAttribute('data-state', 'active');
+  });
+
+  it('onay bekleyen kayit sayisi sekmede rozet olarak gorunur', async () => {
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+
+    renderDetail();
+    await waitForPage();
+
+    // Ali -> Deniz bekleyen odeme: onaylamasi gereken kisi Deniz.
+    const tab = await screen.findByRole('tab', { name: /Bakiyeler/ });
+    await waitFor(() => expect(within(tab).getByText('1')).toBeInTheDocument());
+  });
+
+  it('grup bulunamazsa hata gosterilir', async () => {
+    mockedGroups.getGroup.mockRejectedValue(apiError(403, 'Bu gruba erisim yetkiniz yok'));
+
+    renderDetail();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Bu gruba erisim yetkiniz yok');
+  });
+});
+
+/* ====================================================== harcama listesi */
+
+describe('harcamalar sekmesi', () => {
+  it('satirda kim odedi, ne kadar ve senin payin yazili', async () => {
+    renderDetail();
+    await waitForPage();
+
+    const row = screen.getByText('Market alisverisi').closest('li') as HTMLElement;
+
+    expect(within(row).getByText(/Ece odedi/)).toBeInTheDocument();
+    expect(within(row).getByText('90,00 ₺')).toBeInTheDocument();
+    expect(within(row).getByText('Senin payin 30,00 ₺')).toBeInTheDocument();
+    expect(within(row).getByText('market')).toBeInTheDocument();
+  });
+
+  it('kendi odedigin harcamada "Sen odedin" yazar', async () => {
+    mockedExpenses.listExpenses.mockResolvedValue(
+      expensePage([expense({ paid_by: ME_ID, payer_name: 'Deniz' })])
+    );
+
+    renderDetail();
+    await waitForPage();
+
+    expect(await screen.findByText(/Sen odedin/)).toBeInTheDocument();
+  });
+
+  it('harcama yoksa bos durum gosterilir', async () => {
+    mockedExpenses.listExpenses.mockResolvedValue(expensePage([]));
+
+    renderDetail();
+    await waitForPage();
+
+    expect(await screen.findByText('Bu grupta henuz harcama yok.')).toBeInTheDocument();
+  });
+
+  it('liste hatasi bos durumdan ayri gosterilir', async () => {
+    mockedExpenses.listExpenses.mockRejectedValue(apiError(500, 'Sunucu hatasi'));
+
+    renderDetail();
+    await waitForPage();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Sunucu hatasi');
+    expect(screen.queryByText('Bu grupta henuz harcama yok.')).not.toBeInTheDocument();
+  });
+});
+
+/* ======================================================== sayfalama */
+
+describe('sayfalama', () => {
+  it('daha fazla yukle ikinci sayfayi listeye ekler', async () => {
+    const second = expense({
+      id: 'eeeeeeee-0000-4000-8000-000000000002',
+      description: 'Tren bileti',
+    });
+
+    mockedExpenses.listExpenses.mockResolvedValueOnce(
+      expensePage([expense()], { total: 2, total_pages: 2, has_next: true })
+    );
+    mockedExpenses.listExpenses.mockResolvedValueOnce({
+      expenses: [second],
+      pagination: {
+        page: 2,
+        limit: 10,
+        total: 2,
+        total_pages: 2,
+        has_next: false,
+        has_previous: true,
+      },
+    });
+
+    renderDetail();
+    await waitForPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Daha fazla yukle' }));
+
+    // Ekleme: ilk sayfa ekranda kaliyor.
+    expect(await screen.findByText('Tren bileti')).toBeInTheDocument();
+    expect(screen.getByText('Market alisverisi')).toBeInTheDocument();
+    expect(mockedExpenses.listExpenses).toHaveBeenLastCalledWith(GROUP_ID, {
+      page: 2,
+      limit: 10,
+    });
+  });
+
+  it('son sayfada buton gosterilmez', async () => {
+    renderDetail();
+    await waitForPage();
+
+    expect(screen.queryByRole('button', { name: 'Daha fazla yukle' })).not.toBeInTheDocument();
+    expect(screen.getByText('1 / 1 harcama')).toBeInTheDocument();
+  });
+});
+
+/* ============================================ harcama ekleme: esit bolme */
+
+describe('harcama ekleme - esit bolme', () => {
+  it('yalnizca kimler dahil listesi gosterilir, tutar alani yok', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    expect(screen.getByLabelText('Ece dahil')).toBeChecked();
+    expect(screen.queryByLabelText('Ece tutari')).not.toBeInTheDocument();
+  });
+
+  it('kisi basi tutar aninda onizlenir ve kurus artigi dagitilir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+
+    // 100,00 / 3 = 33,34 + 33,33 + 33,33 (artik en kucuk userId'ye).
+    await waitFor(() => expect(screen.getByText('33,34 ₺')).toBeInTheDocument());
+    expect(screen.getAllByText('33,33 ₺')).toHaveLength(2);
+  });
+
+  it('secim kaldirilinca onizleme yeniden hesaplanir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    fireEvent.click(screen.getByLabelText('Ali dahil'));
+
+    await waitFor(() =>
+      expect(screen.getByText('2 kisi arasinda esit bolunuyor')).toBeInTheDocument()
+    );
+    expect(screen.getAllByText('50,00 ₺')).toHaveLength(2);
+  });
+
+  it('kimse secili degilse istek atilmaz', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    for (const name of ['Deniz', 'Ece', 'Ali']) {
+      fireEvent.click(screen.getByLabelText(`${name} dahil`));
+    }
+
+    submitExpense();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('En az bir kisi secilmeli');
+    expect(mockedExpenses.createExpense).not.toHaveBeenCalled();
+  });
+
+  it('dogru govde ile gonderilir', async () => {
+    mockedExpenses.createExpense.mockResolvedValue(expense());
+
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100', 'Pizza');
+    fireEvent.change(screen.getByLabelText('Kim odedi'), { target: { value: ECE_ID } });
+    fireEvent.change(screen.getByLabelText('Kategori'), { target: { value: 'yemek' } });
+    submitExpense();
+
+    await waitFor(() =>
+      expect(mockedExpenses.createExpense).toHaveBeenCalledWith(GROUP_ID, {
+        amount: '100.00',
+        description: 'Pizza',
+        category: 'yemek',
+        paidBy: ECE_ID,
+        splitType: 'equal',
+        splitDetails: { participants: [ME_ID, ECE_ID, ALI_ID] },
+      })
+    );
+  });
+});
+
+/* =========================================== harcama ekleme: ozel tutar */
+
+describe('harcama ekleme - ozel tutar (anlik toplam)', () => {
+  it('eksik toplam ANINDA gosterilir ve istek atilmaz', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    chooseSplit('Ozel tutar');
+
+    fireEvent.change(screen.getByLabelText('Deniz tutari'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Ece tutari'), { target: { value: '20' } });
+    fireEvent.change(screen.getByLabelText('Ali tutari'), { target: { value: '8' } });
+
+    // Hicbir istek atilmadan, tusa basildigi anda.
+    expect(await screen.findByText('42,00 ₺ eksik')).toBeInTheDocument();
+
+    submitExpense();
+
+    expect(mockedExpenses.createExpense).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent('42,00 ₺ eksik');
+  });
+
+  it('fazla toplam da yonuyle birlikte soylenir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('50');
+    chooseSplit('Ozel tutar');
+
+    fireEvent.change(screen.getByLabelText('Deniz tutari'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Ece tutari'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Ali tutari'), { target: { value: '0' } });
+
+    expect(await screen.findByText('10,00 ₺ fazla')).toBeInTheDocument();
+  });
+
+  it('toplam tutunca gonderilir ve paylar kurus kaybi olmadan gider', async () => {
+    mockedExpenses.createExpense.mockResolvedValue(expense());
+
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100', 'Tatil');
+    chooseSplit('Ozel tutar');
+
+    fireEvent.change(screen.getByLabelText('Deniz tutari'), { target: { value: '33,34' } });
+    fireEvent.change(screen.getByLabelText('Ece tutari'), { target: { value: '33.33' } });
+    fireEvent.change(screen.getByLabelText('Ali tutari'), { target: { value: '33.33' } });
+
+    // Virgul ve nokta ayni sekilde okunuyor; float toplaminda 100.00000000000001
+    // olan girdi kurusta tam tutuyor.
+    expect(await screen.findByText('Toplam tutuyor: 100,00 ₺')).toBeInTheDocument();
+
+    submitExpense();
+
+    await waitFor(() =>
+      expect(mockedExpenses.createExpense).toHaveBeenCalledWith(
+        GROUP_ID,
+        expect.objectContaining({
+          splitType: 'exact',
+          splitDetails: {
+            shares: [
+              { userId: ME_ID, amount: '33.34' },
+              { userId: ECE_ID, amount: '33.33' },
+              { userId: ALI_ID, amount: '33.33' },
+            ],
+          },
+        })
+      )
+    );
+  });
+
+  it('"Esit dagit" alanlari doldurur ve toplam tutar', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    chooseSplit('Ozel tutar');
+    fireEvent.click(screen.getByRole('button', { name: 'Esit dagit' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Deniz tutari')).toHaveValue('33.34'));
+    expect(screen.getByText('Toplam tutuyor: 100,00 ₺')).toBeInTheDocument();
+  });
+
+  it('tutar girilmeden pay yazilirsa hedef bilinmedigi soylenir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    chooseSplit('Ozel tutar');
+
+    expect(await screen.findByText('Once harcama tutarini gir')).toBeInTheDocument();
+  });
+});
+
+/* ============================================== harcama ekleme: yuzde */
+
+describe('harcama ekleme - yuzde (anlik toplam)', () => {
+  it('%100 olmayan toplam aninda gosterilir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    chooseSplit('Yuzde');
+
+    fireEvent.change(screen.getByLabelText('Deniz yuzdesi'), { target: { value: '50' } });
+    fireEvent.change(screen.getByLabelText('Ece yuzdesi'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Ali yuzdesi'), { target: { value: '10' } });
+
+    expect(await screen.findByText('Toplam %90,00 - %10,00 eksik')).toBeInTheDocument();
+
+    submitExpense();
+    expect(mockedExpenses.createExpense).not.toHaveBeenCalled();
+  });
+
+  it('toplam %100 olunca gonderilir', async () => {
+    mockedExpenses.createExpense.mockResolvedValue(expense());
+
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100', 'Kira');
+    chooseSplit('Yuzde');
+
+    fireEvent.change(screen.getByLabelText('Deniz yuzdesi'), { target: { value: '50' } });
+    fireEvent.change(screen.getByLabelText('Ece yuzdesi'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Ali yuzdesi'), { target: { value: '20' } });
+
+    expect(await screen.findByText('Toplam %100')).toBeInTheDocument();
+
+    submitExpense();
+
+    await waitFor(() =>
+      expect(mockedExpenses.createExpense).toHaveBeenCalledWith(
+        GROUP_ID,
+        expect.objectContaining({
+          splitType: 'percentage',
+          splitDetails: {
+            shares: [
+              { userId: ME_ID, percentage: '50.00' },
+              { userId: ECE_ID, percentage: '30.00' },
+              { userId: ALI_ID, percentage: '20.00' },
+            ],
+          },
+        })
+      )
+    );
+  });
+
+  it('33,33 x 3 = %99,99 kabul edilmez', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    chooseSplit('Yuzde');
+
+    for (const name of ['Deniz', 'Ece', 'Ali']) {
+      fireEvent.change(screen.getByLabelText(`${name} yuzdesi`), { target: { value: '33,33' } });
+    }
+
+    // Float toplaminda "99.99000000000001" cikardi; baz puanda 9999 - kesin.
+    expect(await screen.findByText('Toplam %99,99 - %0,01 eksik')).toBeInTheDocument();
+  });
+});
+
+/* ===================================================== form dogrulama */
+
+describe('harcama formu alan dogrulamasi', () => {
+  it('aciklama bos birakilamaz', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fireEvent.change(screen.getByLabelText('Tutar (₺)'), { target: { value: '10' } });
+    submitExpense();
+
+    expect(await screen.findByText('Aciklama zorunlu')).toBeInTheDocument();
+    expect(mockedExpenses.createExpense).not.toHaveBeenCalled();
+  });
+
+  it('bozuk tutar reddedilir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('1.005');
+    submitExpense();
+
+    expect(
+      await screen.findByText('Tutar en fazla iki ondalikli pozitif bir sayi olmali')
+    ).toBeInTheDocument();
+    expect(mockedExpenses.createExpense).not.toHaveBeenCalled();
+  });
+
+  it('backend hatasi modalda gosterilir ve modal kapanmaz', async () => {
+    mockedExpenses.createExpense.mockRejectedValue(
+      apiError(400, 'Gecersiz harcama bilgileri', { amount: 'Tutar sifirdan buyuk olmali' })
+    );
+
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100', 'Pizza');
+    submitExpense();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Gecersiz harcama bilgileri');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('ayni anda gelen ikinci gonderim elenir', async () => {
+    let resolve!: (value: Expense) => void;
+    mockedExpenses.createExpense.mockReturnValue(
+      new Promise<Expense>((res) => {
+        resolve = res;
+      })
+    );
+
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100', 'Pizza');
+
+    const form = screen.getByRole('dialog').querySelector('form');
+
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(mockedExpenses.createExpense).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolve(expense());
+    });
+  });
+});
+
+/* ========================================================= bakiyeler */
+
+describe('bakiyeler sekmesi', () => {
+  it('transfer satiri okunabilir cumle olarak yazilir', async () => {
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
+  });
+
+  it('alacakli oldugun satirda "sana borclu" yazar ve Ode butonu cikmaz', async () => {
+    mockedGroups.getGroupBalances.mockResolvedValue({
+      ...owingBalances,
+      transfers: [{ from_user: ECE_ID, to_user: ME_ID, amount: '30.00' }],
+    });
+
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByText('Ece sana 30,00 ₺ borclu')).toBeInTheDocument();
+    // Kaydi yalnizca borclu acabilir; alacakliya buton gosterilmez.
+    expect(screen.queryByRole('button', { name: 'Ode' })).not.toBeInTheDocument();
+  });
+
+  it('taraf olmadigin transfer ucuncu sahis cumlesi olur', async () => {
+    mockedGroups.getGroupBalances.mockResolvedValue({
+      ...owingBalances,
+      transfers: [{ from_user: ALI_ID, to_user: ECE_ID, amount: '12.50' }],
+    });
+
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByText("Ali, Ece'ye 12,50 ₺ borclu")).toBeInTheDocument();
+  });
+
+  it('borc yoksa hesabin kapali oldugu yazilir', async () => {
+    mockedGroups.getGroupBalances.mockResolvedValue(settledBalances);
+
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByText(/Tum hesaplar kapali/)).toBeInTheDocument();
+  });
+
+  it('bakiye hatasi ayri gosterilir', async () => {
+    mockedGroups.getGroupBalances.mockRejectedValue(apiError(500, 'Bakiye hesaplanamadi'));
+
+    renderDetail();
+    await waitForPage();
+    selectTab(/Bakiyeler/);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Bakiye hesaplanamadi');
+  });
+});
+
+/* ================================================= odeme isaretleme */
+
+describe('odeme isaretleme', () => {
+  it('Ode butonu onerilen tutarla modal acar ve kayit olusturur', async () => {
+    mockedSettlements.createSettlement.mockResolvedValue(
+      settlement({ from_user: ME_ID, to_user: ECE_ID, amount: '30.00' })
+    );
+
+    renderDetail();
+    await openBalances();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Tutar (₺)')).toHaveValue('30.00');
+    expect(within(dialog).getByText(/Ece'ye odedigini bildiriyorsun/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Odedim' }));
+
+    await waitFor(() =>
+      expect(mockedSettlements.createSettlement).toHaveBeenCalledWith(GROUP_ID, {
+        toUserId: ECE_ID,
+        amount: '30.00',
+      })
+    );
+  });
+
+  it('kismi odeme icin tutar degistirilebilir', async () => {
+    mockedSettlements.createSettlement.mockResolvedValue(settlement());
+
+    renderDetail();
+    await openBalances();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Tutar (₺)'), { target: { value: '10' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Odedim' }));
+
+    await waitFor(() =>
+      expect(mockedSettlements.createSettlement).toHaveBeenCalledWith(GROUP_ID, {
+        toUserId: ECE_ID,
+        amount: '10.00',
+      })
+    );
+  });
+
+  it('bekleyen kayit varsa backend 409 mesaji gosterilir', async () => {
+    mockedSettlements.createSettlement.mockRejectedValue(
+      apiError(409, 'Bu kisiye bekleyen bir odeme kaydiniz zaten var')
+    );
+
+    renderDetail();
+    await openBalances();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Odedim' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('bekleyen bir odeme kaydiniz');
+  });
+});
+
+/* ============================================== onay / red (alacakli) */
+
+describe('bekleyen odemeyi onaylama ve reddetme', () => {
+  it('alacakli tarafa Onayla/Reddet gosterilir', async () => {
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByText(/Ali sana 45,00 ₺ odedigini bildirdi/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Onayla' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reddet' })).toBeInTheDocument();
+  });
+
+  it('borclu tarafta buton degil "onay bekleniyor" yazar', async () => {
+    mockedSettlements.listSettlements.mockResolvedValue(
+      settlementPage([
+        settlement({ from_user: ME_ID, to_user: ECE_ID, from_name: 'Deniz', to_name: 'Ece' }),
+      ])
+    );
+
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByText(/Ece'ye 45,00 ₺ odedigini bildirdin/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Onayla' })).not.toBeInTheDocument();
+    expect(screen.getByText('Onay bekleniyor')).toBeInTheDocument();
+  });
+
+  it('onaylayinca istek atilir ve bakiye yeniden istenir', async () => {
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+    mockedSettlements.confirmSettlement.mockResolvedValue({
+      ...settlement(),
+      status: 'confirmed',
+    });
+
+    renderDetail();
+    await openBalances();
+
+    const balanceCallsBefore = mockedGroups.getGroupBalances.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    await waitFor(() =>
+      expect(mockedSettlements.confirmSettlement).toHaveBeenCalledWith(settlement().id)
+    );
+    await waitFor(() =>
+      expect(mockedGroups.getGroupBalances.mock.calls.length).toBeGreaterThan(balanceCallsBefore)
+    );
+  });
+
+  it('reddetme ayri uc noktaya gider', async () => {
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+    mockedSettlements.rejectSettlement.mockResolvedValue({
+      ...settlement(),
+      status: 'rejected',
+    });
+
+    renderDetail();
+    await openBalances();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reddet' }));
+
+    await waitFor(() =>
+      expect(mockedSettlements.rejectSettlement).toHaveBeenCalledWith(settlement().id)
+    );
+  });
+
+  it('onay hatasi satirda gosterilir', async () => {
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+    mockedSettlements.confirmSettlement.mockRejectedValue(
+      apiError(409, 'Bu odeme kaydi zaten onaylanmis; durumu tekrar degistirilemez')
+    );
+
+    renderDetail();
+    await openBalances();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('zaten onaylanmis');
+  });
+});
+
+/* ================================================ KRITIK: uctan uca akis */
+
+describe('KRITIK akis: harcama -> bakiye -> odeme -> onay', () => {
+  it('harcama eklenince liste ve bakiye yeniden istenir', async () => {
+    mockedExpenses.listExpenses.mockResolvedValue(expensePage([]));
+    mockedGroups.getGroupBalances.mockResolvedValueOnce(settledBalances);
+    mockedExpenses.createExpense.mockResolvedValue(expense());
+
+    renderDetail();
+    await waitForPage();
+
+    // Ekleme sonrasi sunucunun donecegi yeni durum.
+    mockedExpenses.listExpenses.mockResolvedValue(expensePage([expense()]));
+    mockedGroups.getGroupBalances.mockResolvedValue(owingBalances);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Harcama Ekle' }));
+    await screen.findByRole('dialog');
+    fillBasics('90', 'Market alisverisi');
+    submitExpense();
+
+    // Liste elle guncellenmiyor: yeniden isteniyor (offset sayfalamada elle
+    // ekleme, biriken sayfalarla sirayi bozardi).
+    await waitFor(() => expect(mockedExpenses.listExpenses).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockedGroups.getGroupBalances).toHaveBeenCalledTimes(2));
+
+    // Bakiye ekranda da guncellendi.
+    selectTab(/Bakiyeler/);
+    expect(await screen.findByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
+  });
+
+  it('bekleyen odeme bakiyeyi degistirmez, onay degistirir', async () => {
+    mockedSettlements.listSettlements.mockResolvedValueOnce(settlementPage([]));
+    mockedSettlements.createSettlement.mockResolvedValue(
+      settlement({
+        from_user: ME_ID,
+        to_user: ECE_ID,
+        from_name: 'Deniz',
+        to_name: 'Ece',
+        amount: '30.00',
+      })
+    );
+
+    renderDetail();
+    await openBalances();
+    expect(screen.getByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
+
+    // 1) "Ode" -> kayit acildi ama PENDING. Bakiye AYNI kalmali (1.7).
+    mockedSettlements.listSettlements.mockResolvedValue(
+      settlementPage([
+        settlement({
+          from_user: ME_ID,
+          to_user: ECE_ID,
+          from_name: 'Deniz',
+          to_name: 'Ece',
+          amount: '30.00',
+        }),
+      ])
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Odedim' }));
+
+    expect(await screen.findByText(/Ece'ye 30,00 ₺ odedigini bildirdin/)).toBeInTheDocument();
+    // Bekleyen kayit bakiyeyi ETKILEMEZ: borc hala ekranda.
+    expect(screen.getByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
+    // Bu tarafta onay/red butonu yok; kaydi alacakli kapatir.
+    expect(screen.queryByRole('button', { name: 'Onayla' })).not.toBeInTheDocument();
+
+  });
+
+  /**
+   * Ayni akisin **alacakli** ucu: onay bu tarafta veriliyor ve bakiyeyi
+   * degistiren adim tam olarak burasi. Borclu tarafinda ekran ancak karsi taraf
+   * onayladiktan sonra tazelendiginde degisir (acik madde: canli bildirim yok).
+   */
+  it('onaylayinca bakiye sifirlanir ve bekleyen kayit listeden duser', async () => {
+    const incoming = settlement({
+      from_user: ALI_ID,
+      to_user: ME_ID,
+      from_name: 'Ali',
+      to_name: 'Deniz',
+      amount: '45.00',
+    });
+
+    mockedGroups.getGroupBalances.mockResolvedValueOnce({
+      ...owingBalances,
+      balances: [
+        { user_id: ME_ID, name: 'Deniz', net_balance: '45.00' },
+        { user_id: ALI_ID, name: 'Ali', net_balance: '-45.00' },
+      ],
+      transfers: [{ from_user: ALI_ID, to_user: ME_ID, amount: '45.00' }],
+    });
+    mockedSettlements.listSettlements.mockResolvedValueOnce(settlementPage([incoming]));
+
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByText('Ali sana 45,00 ₺ borclu')).toBeInTheDocument();
+    expect(screen.getByText(/Ali sana 45,00 ₺ odedigini bildirdi/)).toBeInTheDocument();
+
+    // Onay sonrasi sunucunun donecegi durum: hesap kapali, bekleyen kayit yok.
+    mockedSettlements.confirmSettlement.mockResolvedValue({ ...incoming, status: 'confirmed' });
+    mockedGroups.getGroupBalances.mockResolvedValue(settledBalances);
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([]));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    expect(await screen.findByText(/Tum hesaplar kapali/)).toBeInTheDocument();
+    expect(screen.queryByText('Ali sana 45,00 ₺ borclu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Onayla' })).not.toBeInTheDocument();
+  });
+});
+
+/* ==================================================== birim: bolusme */
+
+describe('bolusme kurallari (birim)', () => {
+  it('esit bolme kurus artigini dagitir, toplam korunur', () => {
+    const shares = equalShares(10_000, ['b', 'a', 'c']);
+    const total = [...shares.values()].reduce((sum, cents) => sum + cents, 0);
+
+    expect(total).toBe(10_000);
+    // Artik en kucuk userId'ye: deterministik ve backend ile ayni tie-break.
+    expect(shares.get('a')).toBe(3334);
+    expect(shares.get('b')).toBe(3333);
+    expect(shares.get('c')).toBe(3333);
+  });
+
+  it('ozel tutarda fark kurus uzerinden hesaplanir', () => {
+    const rows = [
+      { userId: 'a', value: '33.33', included: true },
+      { userId: 'b', value: '33.33', included: true },
+      { userId: 'c', value: '33.34', included: true },
+    ];
+
+    // Float toplaminda 100.00000000000001; kurusta tam 10000.
+    expect(validateExact(10_000, rows).valid).toBe(true);
+    expect(validateExact(10_000, rows).difference).toBe(0);
+
+    expect(validateExact(10_000, rows.slice(0, 2)).message).toBe('33,34 ₺ eksik');
+    expect(validateExact(5000, rows.slice(0, 2)).message).toBe('16,66 ₺ fazla');
+  });
+
+  it('secili olmayan satir toplama girmez', () => {
+    const rows = [
+      { userId: 'a', value: '50', included: true },
+      { userId: 'b', value: '50', included: true },
+      { userId: 'c', value: '999', included: false },
+    ];
+
+    expect(validateExact(10_000, rows).valid).toBe(true);
+    expect(toSplitDetails('exact', rows)).toEqual({
+      shares: [
+        { userId: 'a', amount: '50.00' },
+        { userId: 'b', amount: '50.00' },
+      ],
+    });
+  });
+
+  it('yuzde toplami baz puan uzerinden karsilastirilir', () => {
+    const rows = ['33.33', '33.33', '33.33'].map((value, index) => ({
+      userId: `u${index}`,
+      value,
+      included: true,
+    }));
+
+    const result = validatePercentage(rows);
+
+    expect(result.valid).toBe(false);
+    expect(result.entered).toBe(9999);
+    expect(result.difference).toBe(1);
+  });
+
+  it('sifir yuzde gecersiz sayilir (backend ile ayni kural)', () => {
+    const rows = [
+      { userId: 'a', value: '100', included: true },
+      { userId: 'b', value: '0', included: true },
+    ];
+
+    expect(validatePercentage(rows).valid).toBe(false);
+    expect(validatePercentage(rows).invalidRows).toEqual(['b']);
+  });
+
+  it('bozuk metin sessizce 0 sayilmaz', () => {
+    expect(parseInputToCents('abc')).toBeNull();
+    expect(parseInputToCents('-5')).toBeNull();
+    expect(parseInputToCents('1.005')).toBeNull();
+    expect(parseInputToCents('12,50')).toBe(1250);
+    expect(parsePercentageToBasisPoints('101')).toBeNull();
+    expect(formatBasisPoints(9999)).toBe('%99,99');
+  });
+});
+
+/* =================================================== birim: dil / tarih */
+
+describe('Turkce ek ve tarih (birim)', () => {
+  it('yonelme eki son unluye gore secilir', () => {
+    expect(dative('Deniz')).toBe("Deniz'e");
+    expect(dative('Burak')).toBe("Burak'a");
+    expect(dative('Ece')).toBe("Ece'ye");
+    expect(dative('Ali')).toBe("Ali'ye");
+    expect(dative('Oguz')).toBe("Oguz'a");
+    // Turkce'ye ozgu kucultme: "Gül" -> son unlu "ü" -> ince -> "'e".
+    expect(dative('Gül')).toBe("Gül'e");
+    expect(dative('Işıl')).toBe("Işıl'a");
+  });
+
+  it('tarih bugun/dun/tam tarih olarak yazilir', () => {
+    const now = new Date(2026, 7, 15, 12, 0);
+
+    expect(formatExpenseDate(new Date(2026, 7, 15, 9, 5).toISOString(), now)).toBe('Bugun 09:05');
+    expect(formatExpenseDate(new Date(2026, 7, 14, 22, 30).toISOString(), now)).toBe('Dun 22:30');
+    expect(formatExpenseDate(new Date(2026, 7, 2, 8, 0).toISOString(), now)).toBe('2 Agustos');
+    expect(formatExpenseDate(new Date(2025, 11, 31, 8, 0).toISOString(), now)).toBe(
+      '31 Aralik 2025'
+    );
+    expect(formatExpenseDate('bozuk-tarih', now)).toBe('Tarih bilinmiyor');
+  });
+});

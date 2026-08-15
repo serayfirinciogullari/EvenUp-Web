@@ -24,8 +24,9 @@ import type { ComponentPropsWithoutRef, ElementType, ReactNode } from 'react';
 const SHINE_COLORS = ['#E4D2D6', '#B8A0C4', '#7A4A56'];
 
 interface GlassCardProps extends ComponentPropsWithoutRef<'div'> {
-  /** Anlamsal etiket. Grup karti `article`, ozet bloklari `section` olabilir. */
-  as?: Extract<ElementType, 'div' | 'article' | 'section'>;
+  /** Anlamsal etiket. Grup karti `article`, ozet bloklari `section`, sayfa
+   *  basligini tasiyan ozet karti `header` olabilir. */
+  as?: Extract<ElementType, 'div' | 'article' | 'section' | 'header'>;
   children: ReactNode;
 }
 

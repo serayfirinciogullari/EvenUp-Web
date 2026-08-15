@@ -1,7 +1,7 @@
 import db from '../db/connection';
 import { formatCents } from '../utils/money';
 
-import type { SettlementRow } from '../types/models';
+import type { SettlementRow, SettlementStatus } from '../types/models';
 import type { Knex } from 'knex';
 
 /**
@@ -39,6 +39,32 @@ export interface SettlementCounts {
   pending: number;
   confirmed: number;
   rejected: number;
+}
+
+/**
+ * Listeye konulan gorunum: kayit + iki tarafin adi.
+ *
+ * Adlar neden burada join'leniyor: arayuz "Ali sana 100 TL odedigini soyluyor"
+ * cumlesini kurabilmek icin isim ister. Adlari istemcide uye listesinden
+ * eslestirmek de mumkundu ama **gruptan cikarilmis** bir uyenin kaydi o listede
+ * bulunmaz ve cumle "undefined sana ... odedi" olurdu. `users` tablosundan
+ * okunan ad, uyelikten bagimsiz olarak her zaman var.
+ */
+export interface SettlementView extends SettlementRow {
+  from_name: string;
+  to_name: string;
+}
+
+export interface SettlementPage {
+  settlements: SettlementView[];
+  total: number;
+}
+
+export interface SettlementFilter {
+  /** Verilmezse butun durumlar doner. */
+  status?: SettlementStatus;
+  limit: number;
+  offset: number;
 }
 
 /* -------------------------------------------------------------- yardimcilar */
@@ -88,6 +114,52 @@ const listConfirmed = async (groupId: string): Promise<ConfirmedSettlement[]> =>
       'settlements.to_user',
       'settlements.amount'
     ) as unknown as Promise<ConfirmedSettlement[]>;
+
+/**
+ * Grubun odeme kayitlari — sayfalanmis, iki tarafin adiyla.
+ *
+ * `listConfirmed`'dan ayri duruyor ve **ayri kalmali**: o fonksiyon bakiye
+ * hesabini besler ve `confirmed` filtresi orada bir is kurali (1.7). Burasi
+ * ise arayuzun okudugu liste; `status` filtresi cagirandan gelir. Ikisini tek
+ * fonksiyonda birlestirmek, bakiye hesabinin filtresini bir parametreye
+ * dusurur ve o parametre bir gun yanlis gecilirse `pending` bir odeme sessizce
+ * bakiyeye girerdi.
+ *
+ * Siralama `created_at DESC, id DESC`: harcama listesiyle ayni gerekce — sadece
+ * created_at ile siralamak ayni anda acilan iki kaydin sirasini belirsiz birakir
+ * ve ayni satir iki sayfada gorunebilir.
+ */
+const listByGroup = async (groupId: string, filter: SettlementFilter): Promise<SettlementPage> => {
+  const scoped = (): Knex.QueryBuilder => {
+    const query = aliveSettlements().where('settlements.group_id', groupId);
+
+    if (filter.status) {
+      query.where('settlements.status', filter.status);
+    }
+
+    return query;
+  };
+
+  const settlements = (await scoped()
+    .join('users as sender', 'sender.id', 'settlements.from_user')
+    .join('users as receiver', 'receiver.id', 'settlements.to_user')
+    .orderBy([
+      { column: 'settlements.created_at', order: 'desc' },
+      { column: 'settlements.id', order: 'desc' },
+    ])
+    .limit(filter.limit)
+    .offset(filter.offset)
+    .select(
+      'settlements.*',
+      'sender.name as from_name',
+      'receiver.name as to_name'
+    )) as unknown as SettlementView[];
+
+  const [{ count }] = await scoped().count<{ count: string }[]>('settlements.id as count');
+
+  // pg surucusu COUNT'u string dondurur; API'de sayi bekleniyor.
+  return { settlements, total: Number(count) };
+};
 
 /** Durum dagilimi — arayuz "3 bekleyen odeme var" diyebilsin. */
 const countByStatus = async (groupId: string): Promise<SettlementCounts> => {
@@ -158,6 +230,7 @@ const resolve = async (
 export default {
   findById,
   findPendingBetween,
+  listByGroup,
   listConfirmed,
   countByStatus,
   create,

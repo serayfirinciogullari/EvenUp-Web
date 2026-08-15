@@ -34,6 +34,7 @@ router.get('/:id/expenses', asyncHandler(expenseController.listByGroup));
 // Ayni gerekce: odeme kaydi acmak ve bakiye okumak grup baglaminda anlamli;
 // onay/red ise /settlements altinda (settlement.routes.ts).
 router.post('/:id/settlements', asyncHandler(settlementController.create));
+router.get('/:id/settlements', asyncHandler(settlementController.list));
 router.get('/:id/balances', asyncHandler(settlementController.balances));
 
 export default router;

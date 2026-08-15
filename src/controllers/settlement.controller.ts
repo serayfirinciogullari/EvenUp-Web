@@ -30,6 +30,16 @@ const create = async (req: Request, res: Response): Promise<void> => {
   res.status(201).json({ settlement });
 };
 
+/** GET /groups/:id/settlements?status=&page=&limit= -> 200 { settlements, pagination } */
+const list = async (req: Request, res: Response): Promise<void> => {
+  const result = await settlementService.listSettlements(
+    req.params.id,
+    currentUserId(req),
+    req.query
+  );
+  res.status(200).json(result);
+};
+
 /** PUT /settlements/:id/confirm -> 200 { settlement } */
 const confirm = async (req: Request, res: Response): Promise<void> => {
   const settlement = await settlementService.confirmSettlement(req.params.id, currentUserId(req));
@@ -48,4 +58,4 @@ const balances = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json(result);
 };
 
-export default { create, confirm, reject, balances };
+export default { create, list, confirm, reject, balances };

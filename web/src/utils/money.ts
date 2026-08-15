@@ -61,3 +61,85 @@ export const formatCents = (cents: number): string => {
 
 /** Isaretsiz gosterim: yon zaten metinle anlatildiginda eksi isareti gurultu olur. */
 export const formatCentsAbsolute = (cents: number): string => formatCents(Math.abs(cents));
+
+/* ------------------------------------------------------- form girdisi okuma */
+
+/**
+ * Kullanicinin form alanina yazdigi tutari kurusa cevirir.
+ *
+ * `parseAmountToCents`'ten iki farki var ve ikisi de girdinin **insandan**
+ * gelmesinden: virgul ondalik ayraci kabul edilir (Turkce klavyede dogal olan
+ * "12,50") ve negatif deger reddedilir (bir harcama payi eksi olamaz; backend
+ * de reddeder). Bos metin `null` doner — "0" ile "hic yazilmamis" ayni sey
+ * degil: ilki gecerli bir pay, ikincisi eksik alan.
+ */
+export const parseInputToCents = (value: string): number | null => {
+  const normalized = value.trim().replace(',', '.');
+
+  if (!normalized) {
+    return null;
+  }
+
+  const cents = parseAmountToCents(normalized);
+
+  return cents === null || cents < 0 ? null : cents;
+};
+
+/**
+ * Yuzdeyi **baz puana** (yuzdenin yuzde biri) cevirir: "33.33" -> 3333.
+ *
+ * Yuzde de para gibi tam sayi uzerinden toplanir. `33.33 * 3` float'ta
+ * `99.99000000000001` eder ve "toplam 100 mu?" sorusu motorun yuvarlamasina
+ * kalirdi; baz puanla 3333 * 3 = 9999, kesin ve yanlis — yani hata dogru
+ * yerde gorulur. Backend'deki karsiligi `parsePercentageToBasisPoints`.
+ */
+export const parsePercentageToBasisPoints = (value: string): number | null => {
+  const normalized = value.trim().replace(',', '.');
+
+  if (!normalized) {
+    return null;
+  }
+
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(normalized);
+
+  if (!match) {
+    return null;
+  }
+
+  const [, whole, fraction = ''] = match;
+  const basisPoints = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+
+  return basisPoints > 10_000 ? null : basisPoints;
+};
+
+/* --------------------------------------------------------- API'ye yazma */
+
+/**
+ * Kurus -> backend'in bekledigi NUMERIC metni ("1234" -> "12.34").
+ *
+ * `(cents / 100).toFixed(2)` **kullanilmiyor**: bolme float'a gecmek demek ve
+ * bu dosyanin varlik sebebi tam olarak ondan kacinmak. Tam sayi ikiye bolunup
+ * metin olarak birlestiriliyor; sonuc her zaman kayipsiz.
+ */
+export const centsToApiAmount = (cents: number): string => {
+  const negative = cents < 0;
+  const absolute = Math.abs(cents);
+
+  return `${negative ? '-' : ''}${Math.floor(absolute / 100)}.${(absolute % 100)
+    .toString()
+    .padStart(2, '0')}`;
+};
+
+/** Baz puan -> backend'in bekledigi yuzde metni (3333 -> "33.33"). */
+export const basisPointsToApiPercentage = (basisPoints: number): string =>
+  centsToApiAmount(basisPoints);
+
+/** Baz puani ekranda gosterir: 3333 -> "%33,33". */
+export const formatBasisPoints = (basisPoints: number): string => {
+  const negative = basisPoints < 0;
+  const absolute = Math.abs(basisPoints);
+
+  return `${negative ? '-' : ''}%${Math.floor(absolute / 100)},${(absolute % 100)
+    .toString()
+    .padStart(2, '0')}`;
+};

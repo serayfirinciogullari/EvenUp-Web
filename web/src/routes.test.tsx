@@ -35,14 +35,66 @@ vi.mock('./api/groups', () => ({
   default: {
     listGroups: vi.fn().mockResolvedValue([]),
     createGroup: vi.fn(),
+    getGroup: vi.fn(),
     createInvite: vi.fn(),
-    getGroupBalances: vi.fn(),
+    getGroupBalances: vi.fn().mockResolvedValue({
+      balances: [],
+      transfers: [],
+      meta: {
+        expense_count: 0,
+        confirmed_settlement_count: 0,
+        pending_settlement_count: 0,
+        rejected_settlement_count: 0,
+        algorithm: 'optimal',
+      },
+    }),
+  },
+}));
+
+// Grup detay sayfasi 2.4'te gercek veri cekmeye basladi (harcama + odeme).
+// Bu dosyanin derdi yine yalnizca rota; istekler bos cevaplarla sabitleniyor.
+vi.mock('./api/expenses', () => ({
+  __esModule: true,
+  default: {
+    listExpenses: vi.fn().mockResolvedValue({
+      expenses: [],
+      pagination: {
+        page: 1,
+        limit: 10,
+        total: 0,
+        total_pages: 1,
+        has_next: false,
+        has_previous: false,
+      },
+    }),
+    createExpense: vi.fn(),
+  },
+}));
+
+vi.mock('./api/settlements', () => ({
+  __esModule: true,
+  default: {
+    listSettlements: vi.fn().mockResolvedValue({
+      settlements: [],
+      pagination: {
+        page: 1,
+        limit: 50,
+        total: 0,
+        total_pages: 1,
+        has_next: false,
+        has_previous: false,
+      },
+    }),
+    createSettlement: vi.fn(),
+    confirmSettlement: vi.fn(),
+    rejectSettlement: vi.fn(),
   },
 }));
 
 // `vi.mock` vitest tarafindan dosyanin en ustune tasinir, bu yuzden asagidaki
 // import mock'lanmis modulu alir.
 import authApi from './api/auth';
+import groupsApi from './api/groups';
 
 const mockedAuthApi = vi.mocked(authApi);
 
@@ -154,10 +206,27 @@ describe('giris yapmis kullanici', () => {
 
   it('/groups/:id parametresi okunur', async () => {
     signIn();
-    renderAt('/groups/7f3d1c2a-0000-4000-8000-000000000001');
 
-    expect(await screen.findByRole('heading', { name: 'Grup detayi' })).toBeInTheDocument();
-    expect(screen.getByText('7f3d1c2a-0000-4000-8000-000000000001')).toBeInTheDocument();
+    const groupId = '7f3d1c2a-0000-4000-8000-000000000001';
+
+    vi.mocked(groupsApi).getGroup.mockResolvedValue({
+      group: {
+        id: groupId,
+        name: 'Tatil Fonu',
+        description: null,
+        created_by: '11111111-1111-4111-8111-111111111111',
+        created_at: '2026-08-01T10:00:00.000Z',
+      },
+      role: 'owner',
+      members: [],
+    });
+
+    renderAt(`/groups/${groupId}`);
+
+    // Rota parametresinin dogru okundugunun kaniti: o ID ile grup istendi ve
+    // donen grubun adi ekranda.
+    expect(await screen.findByRole('heading', { name: 'Tatil Fonu' })).toBeInTheDocument();
+    expect(vi.mocked(groupsApi).getGroup).toHaveBeenCalledWith(groupId);
   });
 
   it('token gecersizse (getMe hata verirse) login ekranina duser', async () => {

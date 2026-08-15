@@ -2,10 +2,13 @@ import groupModel from '../models/group.model';
 import settlementModel from '../models/settlement.model';
 import ApiError from '../utils/ApiError';
 import { parseAmountToCents } from '../utils/money';
+import { buildPagination, parsePagination } from '../utils/pagination';
 import { isUuid } from '../utils/uuid';
 import { ACCESS_DENIED, requireMembership } from './group.service';
 
+import type { SettlementView } from '../models/settlement.model';
 import type { SettlementRow, SettlementStatus } from '../types/models';
+import type { PageQuery, Pagination } from '../utils/pagination';
 
 /**
  * Odeme (settlement) is mantigi.
@@ -39,6 +42,19 @@ const STATUS_LABELS: Record<SettlementStatus, string> = {
   confirmed: 'onaylanmis',
   rejected: 'reddedilmis',
 };
+
+const SETTLEMENT_STATUSES = Object.keys(STATUS_LABELS) as SettlementStatus[];
+
+/* ---------------------------------------------------------------- tipler */
+
+export interface SettlementListQuery extends PageQuery {
+  status?: unknown;
+}
+
+export interface SettlementListResult {
+  settlements: SettlementView[];
+  pagination: Pagination;
+}
 
 /* ---------------------------------------------------------- yardimcilar */
 
@@ -122,6 +138,51 @@ const createSettlement = async (
 };
 
 /**
+ * GET /groups/:id/settlements?status=pending&page=1&limit=20
+ *
+ * Grubun **butun** uyeleri butun kayitlari gorur; kim onaylayabilir sorusu ayri
+ * (`resolveSettlement`). Odeme kaydi zaten iki tarafli bir muhasebe olayi —
+ * gruptaki herkesin bakiyesini etkileyecegi icin gizlenecek bir tarafi yok.
+ *
+ * Sayfalama harcama listesiyle ayni kapidan (`utils/pagination`): bu uc nokta da
+ * zamanla buyuyen bir gecmis donuyor ve `limit=100000` diyen tek bir istek tum
+ * tabloyu bellege alirdi.
+ */
+const listSettlements = async (
+  groupId: string,
+  userId: string,
+  query: SettlementListQuery = {}
+): Promise<SettlementListResult> => {
+  await requireMembership(groupId, userId);
+
+  let status: SettlementStatus | undefined;
+
+  if (query.status !== undefined) {
+    const requested = asString(query.status).trim() as SettlementStatus;
+
+    // Bilinmeyen durumu sessizce yok saymak, arayuzun "bekleyenleri getir"
+    // istegine **tum gecmisi** dondurmek olurdu.
+    if (!SETTLEMENT_STATUSES.includes(requested)) {
+      fail(
+        { status: `status ${SETTLEMENT_STATUSES.join(' | ')} degerlerinden biri olmali` },
+        'Gecersiz odeme filtresi'
+      );
+    }
+
+    status = requested;
+  }
+
+  const page = parsePagination(query);
+  const { settlements, total } = await settlementModel.listByGroup(groupId, {
+    status,
+    limit: page.limit,
+    offset: page.offset,
+  });
+
+  return { settlements, pagination: buildPagination(page, total) };
+};
+
+/**
  * Onay ve red ayni kapidan gecer; tek fark yazilan durum.
  *
  * Sirali kontrol (gruplardaki IDOR mantiginin aynisi):
@@ -179,8 +240,16 @@ const rejectSettlement = async (settlementId: string, userId: string): Promise<S
 
 export default {
   createSettlement,
+  listSettlements,
   confirmSettlement,
   rejectSettlement,
 };
 
-export { createSettlement, confirmSettlement, rejectSettlement, ONLY_DEBTOR, ONLY_CREDITOR };
+export {
+  createSettlement,
+  listSettlements,
+  confirmSettlement,
+  rejectSettlement,
+  ONLY_DEBTOR,
+  ONLY_CREDITOR,
+};

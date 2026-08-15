@@ -115,6 +115,22 @@ export interface Expense {
   shares: ExpenseShare[];
 }
 
+/** Backend'in `utils/pagination.ts` ciktisi — liste uc noktalarinin tamaminda ayni. */
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+/** `GET /groups/:id/expenses` cevabi. */
+export interface ExpenseListResult {
+  expenses: Expense[];
+  pagination: Pagination;
+}
+
 export interface Settlement {
   id: string;
   group_id: string;
@@ -127,6 +143,23 @@ export interface Settlement {
   created_at: string;
   confirmed_at: string | null;
   rejected_at: string | null;
+}
+
+/**
+ * `GET /groups/:id/settlements` satiri: kayit + iki tarafin adi.
+ *
+ * Adlar backend'de join'leniyor, istemcide uye listesinden eslestirilmiyor:
+ * gruptan cikarilmis bir uyenin kaydi o listede bulunmaz ve cumle
+ * "undefined sana ... odedi" olurdu (bkz. `settlement.model.ts`).
+ */
+export interface SettlementView extends Settlement {
+  from_name: string;
+  to_name: string;
+}
+
+export interface SettlementListResult {
+  settlements: SettlementView[];
+  pagination: Pagination;
 }
 
 export interface Balance {

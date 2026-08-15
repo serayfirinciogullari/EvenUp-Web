@@ -65,6 +65,7 @@ jest.mock('../src/models/settlement.model', () => ({
   default: {
     findById: jest.fn(),
     findPendingBetween: jest.fn(),
+    listByGroup: jest.fn(),
     listConfirmed: jest.fn(),
     countByStatus: jest.fn(),
     create: jest.fn(),
@@ -247,6 +248,31 @@ const installInMemoryModel = (): void => {
           settlement.status === 'pending'
       )
   );
+
+  // Arayuzun okudugu liste. Gercek sorgudaki siralama (created_at DESC, id DESC),
+  // status filtresi ve sayfalama penceresi burada da ayni.
+  mockedSettlementModel.listByGroup.mockImplementation(async (groupId, filter) => {
+    const rows = aliveSettlements()
+      .filter(
+        (settlement) =>
+          settlement.group_id === groupId &&
+          (filter.status === undefined || settlement.status === filter.status)
+      )
+      .sort(
+        (a, b) =>
+          b.created_at.getTime() - a.created_at.getTime() ||
+          (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+      );
+
+    return {
+      settlements: rows.slice(filter.offset, filter.offset + filter.limit).map((settlement) => ({
+        ...settlement,
+        from_name: (users.get(settlement.from_user) as TestUser).name,
+        to_name: (users.get(settlement.to_user) as TestUser).name,
+      })),
+      total: rows.length,
+    };
+  });
 
   // 1.7'nin en kritik filtresi: yalnizca confirmed kayitlar.
   mockedSettlementModel.listConfirmed.mockImplementation(async (groupId: string) =>
@@ -781,6 +807,97 @@ describe('POST /groups/:id/settlements', () => {
     await createSettlement(burak, group.id, { toUserId: cem.id, amount: '50.00' });
 
     expect(settlements).toHaveLength(2);
+  });
+});
+
+/* ================================================ odeme listesi (arayuz icin) */
+
+describe('GET /groups/:id/settlements', () => {
+  interface ListBody {
+    settlements: (SettlementRow & { from_name: string; to_name: string })[];
+    pagination: { page: number; limit: number; total: number; has_next: boolean };
+  }
+
+  const listSettlements = async (
+    user: TestUser,
+    groupId: string,
+    query = ''
+  ): Promise<ListBody> => {
+    const response = await request(app)
+      .get(`/groups/${groupId}/settlements${query}`)
+      .set(...auth(user));
+
+    expect(response.status).toBe(200);
+    return response.body as ListBody;
+  };
+
+  it('kayitlari iki tarafin adiyla birlikte doner', async () => {
+    await createSettlement(burak, group.id, { toUserId: ali.id, amount: '100.00' });
+
+    const body = await listSettlements(ali, group.id);
+
+    expect(body.settlements).toHaveLength(1);
+    // Ad olmadan arayuz "Burak sana 100 TL odedigini soyluyor" cumlesini kuramaz.
+    expect(body.settlements[0].from_name).toBe('Burak');
+    expect(body.settlements[0].to_name).toBe('Ali');
+    expect(body.settlements[0].status).toBe('pending');
+  });
+
+  it('status=pending yalnizca bekleyenleri doner', async () => {
+    const first = await createSettlement(burak, group.id, { toUserId: ali.id, amount: '100.00' });
+    await createSettlement(cem, group.id, { toUserId: ali.id, amount: '40.00' });
+
+    await request(app)
+      .put(`/settlements/${first.id}/confirm`)
+      .set(...auth(ali))
+      .expect(200);
+
+    const body = await listSettlements(ali, group.id, '?status=pending');
+
+    expect(body.settlements).toHaveLength(1);
+    expect(body.settlements[0].from_user).toBe(cem.id);
+  });
+
+  it('bilinmeyen status sessizce yok sayilmaz, 400 doner', async () => {
+    const response = await request(app)
+      .get(`/groups/${group.id}/settlements?status=beklemede`)
+      .set(...auth(ali));
+
+    // Sessizce tum gecmisi dondurmek, "bekleyenleri getir" diyen arayuze
+    // onaylanmis kayitlari da bekleyen gibi gostermek olurdu.
+    expect(response.status).toBe(400);
+    expect(response.body.details.status).toContain('pending');
+  });
+
+  it('sayfalama bilgisi doner', async () => {
+    await createSettlement(burak, group.id, { toUserId: ali.id, amount: '100.00' });
+    await createSettlement(cem, group.id, { toUserId: ali.id, amount: '40.00' });
+
+    const body = await listSettlements(ali, group.id, '?limit=1');
+
+    expect(body.settlements).toHaveLength(1);
+    expect(body.pagination.total).toBe(2);
+    expect(body.pagination.has_next).toBe(true);
+  });
+
+  it('borclu da alacakli da ayni listeyi gorur', async () => {
+    await createSettlement(burak, group.id, { toUserId: ali.id, amount: '100.00' });
+
+    const creditor = await listSettlements(ali, group.id);
+    const debtor = await listSettlements(burak, group.id);
+
+    expect(debtor.settlements.map((row) => row.id)).toEqual(
+      creditor.settlements.map((row) => row.id)
+    );
+  });
+
+  it('uye olmayan listeyi goremez', async () => {
+    const response = await request(app)
+      .get(`/groups/${group.id}/settlements`)
+      .set(...auth(disaridaki));
+
+    expect(response.status).toBe(403);
+    expect(response.body.message).toBe('Bu gruba erisim yetkiniz yok');
   });
 });
 

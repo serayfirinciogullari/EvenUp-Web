@@ -1,6 +1,12 @@
 import api from './client';
 
-import type { BalanceResult, Group, GroupSummary, InviteResult } from '../types/models';
+import type {
+  BalanceResult,
+  Group,
+  GroupDetail,
+  GroupSummary,
+  InviteResult,
+} from '../types/models';
 
 /**
  * Grup uc noktalari. Bilesenler axios'u dogrudan cagirmaz; adres ve govde
@@ -37,10 +43,21 @@ export const createInvite = async (groupId: string): Promise<InviteResult> => {
   return data;
 };
 
+/**
+ * `GET /groups/:id` — grup + istekte bulunanin rolu + uye listesi.
+ *
+ * Uye listesi grup detay ekraninin cekirdegi: "kim odedi" dropdown'i, bolusme
+ * satirlari ve bakiye cumleleri hep bu listeden besleniyor.
+ */
+export const getGroup = async (groupId: string): Promise<GroupDetail> => {
+  const { data } = await api.get<GroupDetail>(`/groups/${groupId}`);
+  return data;
+};
+
 /** `GET /groups/:id/balances` — netlestirilmis bakiyeler + transfer onerileri. */
 export const getGroupBalances = async (groupId: string): Promise<BalanceResult> => {
   const { data } = await api.get<BalanceResult>(`/groups/${groupId}/balances`);
   return data;
 };
 
-export default { listGroups, createGroup, createInvite, getGroupBalances };
+export default { listGroups, createGroup, getGroup, createInvite, getGroupBalances };
