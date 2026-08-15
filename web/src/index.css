@@ -1,365 +1,369 @@
-/* 2.1 iskelet stilleri: okunabilir bir taban, tasarim sistemi degil. */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 
-:root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --border: #d9dde3;
-  --text: #1b1f24;
-  --muted: #6b7480;
-  --accent: #2f6feb;
-  --danger: #c0392b;
+@custom-variant dark (&:is(.dark *));
 
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
-  color: var(--text);
-  background: var(--bg);
-}
+/*
+  ============================================================================
+  EvenUp gorsel kimligi
+  ============================================================================
 
-* {
-  box-sizing: border-box;
-}
+  IKI KANAL KURALI
+  ----------------
+  Paletin tasarim fikri tek cumlede: **sicaklik ile otorite ayri kanallardan
+  verilir.**
 
-body {
-  margin: 0;
-  min-height: 100vh;
-}
+    - Sicaklik -> rose / blush / lilac. Yalnizca ETKILESIMLI ogelerde ve
+                  dekoratif yuzeylerde: buton, link, aktif durum, kart parilti.
+    - Otorite  -> ink (#2A1418) + Fraunces tipografisi. Yalnizca BASLIKLARDA.
 
-a {
-  color: var(--accent);
-}
+  Bu yuzden `rose` bir baslik rengi DEGIL. Baslikta kullanilsaydi iki kanal
+  birbirine karisir, marka rengi "her yerde olan renk" olur ve tiklanabilir
+  olani isaret etme gucunu kaybederdi. Kullanicinin "neye basabilirim?"
+  sorusunun cevabi renkten okunabilmeli.
 
-button {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
-  font: inherit;
-  cursor: pointer;
-}
+  KONTRAST (WCAG 2.1 AA, normal metin esigi 4.5:1 — olculdu)
+  ---------------------------------------------------------
+    rose  #7A4A56 uzerine beyaz .................. 7.14:1  ✓
+    ink   #2A1418 metin / cream zemin ............ 15.92:1 ✓
+    rose  #7A4A56 metin / cream zemin ............ 6.56:1  ✓
+    ink-muted #6B5257 metin / cream zemin ........ 6.49:1  ✓
+    signal-positive #1E7A5C uzerine beyaz ........ 5.26:1  ✓
+    signal-negative #B3261E uzerine beyaz ........ 6.54:1  ✓
+    signal-positive #1E7A5C metin / cream ........ 4.83:1  ✓
+    signal-negative #B3261E metin / cream ........ 6.00:1  ✓
+    lilac #B8A0C4 uzerine beyaz .................. 2.37:1  ✗
 
-button:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
+  `lilac` METIN RENGI OLARAK KULLANILAMAZ. Yalnizca dekoratif: gradyan duraklari,
+  hover parilti, veri gorsellestirmede dolgu. Asagida hicbir yerde `color:`
+  degeri olarak gecmiyor.
 
-input {
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font: inherit;
-}
+  SINYAL RENKLERI MARKA PALETINDEN AYRI
+  -------------------------------------
+  `signal-positive` / `signal-negative` bilerek rose ailesinden degil. Parasal
+  yon evrensel kirmizi/yesil ile anlatilmali; marka tonuna cekilseydi "borclu"
+  ile "marka rengi" ayni ailede gorunur ve isaret okunaksizlasirdi.
+  Bkz. docs/decisions/2.3.md — renk bilgiyi TASIMAZ, yalnizca hizlandirir;
+  her tonun metni her zaman yazili.
+*/
 
-/* ------------------------------------------------------------------ layout */
+@theme {
+  /* --------------------------------------------------------- marka paleti */
+  --color-rose: #7a4a56;
+  --color-rose-soft: #96626e;
+  --color-rose-deep: #5e3743;
+  --color-blush: #e4d2d6;
+  --color-lilac: #b8a0c4;
+  --color-cream: #faf4f2;
+  --color-cream-deep: #f3e9e6;
+  --color-ink: #2a1418;
+  /* ink'in yumusak karsiligi; cream uzerinde 6.49:1 -> AA metin ✓ */
+  --color-ink-muted: #6b5257;
 
-.layout__header {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 0.75rem 1.5rem;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
+  /* Yalnizca bakiye isareti icin. Marka paletinden bagimsiz. */
+  --color-signal-positive: #1e7a5c;
+  --color-signal-negative: #b3261e;
 
-.layout__brand {
-  font-weight: 700;
-}
-
-.layout__nav {
-  display: flex;
-  gap: 1rem;
-}
-
-.layout__user {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-left: auto;
-}
-
-.layout__main {
-  max-width: 60rem;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
-/* -------------------------------------------------------------- form / auth */
-
-.auth-page {
-  max-width: 22rem;
-  margin: 4rem auto;
-  padding: 1.5rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.auth-page form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.auth-page label {
-  margin-top: 0.75rem;
-  font-size: 0.875rem;
-  color: var(--muted);
-}
-
-.auth-page button {
-  margin-top: 1.25rem;
-}
-
-.field-error,
-.form-error {
-  margin: 0.25rem 0 0;
-  color: var(--danger);
-  font-size: 0.875rem;
-}
-
-.field-hint,
-.placeholder {
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.route-fallback {
-  padding: 3rem;
-  text-align: center;
-  color: var(--muted);
-}
-
-/* ---------------------------------------------------------- gruplar ekrani */
-
-.groups-page__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.group-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.group-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.group-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.group-card__title {
-  margin: 0;
-  font-size: 1.05rem;
-}
-
-.group-card__meta {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.group-card__balance {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  margin: 0.25rem 0 0;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  /* Renk tek basina bilgi tasimaz; sol serit yalnizca ikinci bir ipucu. */
-  border-left: 4px solid var(--border);
-  background: #f2f4f7;
-}
-
-.group-card__amount {
-  font-size: 1.15rem;
-  font-weight: 700;
-}
-
-.group-card__tone {
-  font-size: 0.8125rem;
-  color: var(--muted);
+  /* ------------------------------------------------------------ tipografi */
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
 }
 
 /*
-  Bakiye tonlari. Renkler AA kontrast esigini beyaz/acik zeminde gecen
-  koyu tonlardan secildi; ayrica her tonun yaninda metin var.
+  shadcn'in anlamsal degiskenleri kendi paletimize baglaniyor. Bilesenleri tek
+  tek giydirmek yerine burayi cevirmek, `npx shadcn add` ile gelecek her yeni
+  bilesenin de otomatik olarak marka icinde dogmasini sagliyor.
+*/
+:root {
+  --radius: 0.75rem;
+
+  --background: #faf4f2;
+  --foreground: #2a1418;
+
+  --card: #ffffff;
+  --card-foreground: #2a1418;
+  --popover: #ffffff;
+  --popover-foreground: #2a1418;
+
+  /* Ana eylem rengi: rose. Uzerine beyaz -> 7.14:1 */
+  --primary: #7a4a56;
+  --primary-foreground: #ffffff;
+
+  --secondary: #f3e9e6;
+  --secondary-foreground: #2a1418;
+
+  --muted: #f3e9e6;
+  --muted-foreground: #6b5257;
+
+  --accent: #e4d2d6;
+  --accent-foreground: #2a1418;
+
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+
+  --border: color-mix(in srgb, #2a1418 12%, transparent);
+  --input: color-mix(in srgb, #2a1418 20%, transparent);
+
+  /* Odak halkasi rose: klavye kullanicisi icin marka rengi burada da isaret. */
+  --ring: #7a4a56;
+
+  /* Grafik/veri renklendirmesi — lilac burada dolgu olarak gecerli. */
+  --chart-1: #7a4a56;
+  --chart-2: #b8a0c4;
+  --chart-3: #e4d2d6;
+  --chart-4: #96626e;
+  --chart-5: #6b5257;
+
+  --sidebar: #faf4f2;
+  --sidebar-foreground: #2a1418;
+  --sidebar-primary: #7a4a56;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f3e9e6;
+  --sidebar-accent-foreground: #2a1418;
+  --sidebar-border: color-mix(in srgb, #2a1418 12%, transparent);
+  --sidebar-ring: #7a4a56;
+}
+
+@theme inline {
+  --font-heading: var(--font-display);
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --animate-shine: shine var(--duration) infinite linear;
+  --animate-gradient: gradient 8s linear infinite;
+
+  @keyframes shine {
+    0% {
+      background-position: 0% 0%;
+    }
+    50% {
+      background-position: 100% 100%;
+    }
+    to {
+      background-position: 0% 0%;
+    }
+  }
+
+  @keyframes gradient {
+    to {
+      background-position: var(--bg-size, 300%) 0;
+    }
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+    Fraunces yalnizca h1/h2'de. h3 ve altinda Inter kaliyor: display fontu
+    kucuk boyutlarda okunurlugu dusurur ve "her sey baslik" hissi verir.
+    Baslik rengi her zaman ink — rose baslikta kullanilmaz (iki kanal kurali).
+  */
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    font-weight: 600;
+    color: var(--color-ink);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  h1 {
+    font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.1rem);
+    line-height: 1.15;
+  }
+
+  h2 {
+    font-size: clamp(1.2rem, 1.05rem + 0.7vw, 1.45rem);
+    line-height: 1.25;
+  }
+
+  /*
+    Odak gostergesi. shadcn'in kendi `focus-visible:ring-*` varsayilani
+    bozulmuyor; bu yalnizca taban kural — shadcn disi hicbir interaktif oge
+    odakta gorunmez kalmasin diye.
+  */
+  :focus-visible {
+    outline: 2px solid var(--color-rose);
+    outline-offset: 2px;
+  }
+}
+
+/*
+  ============================================================================
+  YUZEY VARYANTLARI — `.card-glass` ve `.card-solid`
+  ============================================================================
+
+  Ayrim icerige gore, gorunume gore degil:
+
+    GLASS -> **ozet / durum** yuzeyleri. Bir seyin sonucunu gosterirler: grup
+             kartindaki net bakiye ozeti, "Bakiyeler" listesi, grup ozeti karti.
+             Imza cerceve (ShineBorder) YALNIZCA burada.
+
+    SOLID -> **islem / veri** yuzeyleri. Kullanicinin okudugu ya da doldurdugu
+             satirlar: form alanlari, harcama listesi satirlari, modal govdesi.
+             Sabit zemin, net kenar, hicbir parilti yok.
+
+  Neden sinif olarak kodlandi: bu iki yuzey sayfa sayfa elle yazilsaydi (blur
+  degeri, saydamlik, kenar rengi) zamanla birbirinden ayrisir ve "hangi kart
+  glass?" sorusu her ekranda yeniden tartisilirdi. Projede tekrarlanan
+  "tek kapi" deseni.
+*/
+@utility card-glass {
+  position: relative;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, #e4d2d6 70%, transparent);
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, #ffffff 80%, transparent),
+    color-mix(in srgb, #e4d2d6 26%, transparent)
+  );
+  box-shadow:
+    0 1px 2px color-mix(in srgb, #2a1418 5%, transparent),
+    0 10px 30px -18px color-mix(in srgb, #7a4a56 45%, transparent);
+}
+
+@utility card-solid {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: #ffffff;
+  box-shadow: 0 1px 2px color-mix(in srgb, #2a1418 6%, transparent);
+}
+
+/*
+  BLUR YALNIZCA GENIS EKRANDA.
+  `backdrop-filter` altindaki her pikseli her karede yeniden ornekler; dusuk
+  guclu telefonlarda kaydirma takilmasina yol acar ve grup kartlari bir liste
+  icinde N kez tekrarlanir. Dar ekranda ayni kart blur'suz ama ayni gradyanla
+  render ediliyor — gorsel fark neredeyse yok, maliyet farki buyuk.
+*/
+@media (min-width: 768px) {
+  .card-glass {
+    background: linear-gradient(
+      150deg,
+      color-mix(in srgb, #ffffff 64%, transparent),
+      color-mix(in srgb, #e4d2d6 30%, transparent)
+    );
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  }
+}
+
+/*
+  Cihaz "seffafligi azalt" diyorsa cam efekti tamamen kapanir: saydam yuzeyler
+  bazi kullanicilarda okumayi zorlastirir.
+*/
+@media (prefers-reduced-transparency: reduce) {
+  .card-glass {
+    background: #ffffff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* --------------------------------------------------------- bakiye tonlari */
+
+/*
+  Ton siniflari 2.3'ten korunuyor (kod ve testler bu kancalari kullaniyor) ama
+  artik marka token'larindan besleniyor. Renk ucuncu bir ipucu olan sol seritle
+  birlikte geliyor; metin her zaman yazili.
 */
 .balance--credit {
-  border-left-color: #1e7a4b;
-  background: #eaf6ef;
+  border-left-color: var(--color-signal-positive);
+  background: color-mix(in srgb, var(--color-signal-positive) 8%, transparent);
 }
 
 .balance--credit .group-card__amount {
-  color: #1e7a4b;
+  color: var(--color-signal-positive);
 }
 
 .balance--debt {
-  border-left-color: var(--danger);
-  background: #fdecea;
+  border-left-color: var(--color-signal-negative);
+  background: color-mix(in srgb, var(--color-signal-negative) 7%, transparent);
 }
 
 .balance--debt .group-card__amount {
-  color: var(--danger);
+  color: var(--color-signal-negative);
 }
 
 .balance--settled {
-  border-left-color: var(--border);
+  border-left-color: color-mix(in srgb, var(--color-ink) 22%, transparent);
+  background: color-mix(in srgb, var(--color-ink) 4%, transparent);
 }
 
-.group-card__balance--unknown {
-  color: var(--muted);
-  font-size: 0.875rem;
+.balance--settled .group-card__amount {
+  color: var(--color-ink);
 }
 
-.group-card__actions {
-  margin-top: auto;
-  padding-top: 0.5rem;
-}
+/*
+  ORTA YOGUNLUK KURALI
+  --------------------
+  Gecisler yumusak, hover'da hafif olcek/parilti. Surekli hareket eden arka
+  plan ya da parcacik efekti YOK — ShineBorder da yalnizca glass kartlarda.
 
-.group-card__note {
-  margin: 0.5rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--muted);
-}
-
-.group-card__link {
-  display: inline-block;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  font-size: 0.75rem;
-}
-
-.badge {
-  padding: 0.1rem 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-.link-button {
-  padding: 0;
-  margin-left: 0.5rem;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.button--ghost {
-  background: transparent;
-  color: var(--text);
-}
-
-/* --------------------------------------------------------- durum kutulari */
-
-.state-box {
-  margin-top: 1rem;
-  padding: 2rem 1.5rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  text-align: center;
-}
-
-.state-box--error {
-  border-color: var(--danger);
-}
-
-.state-box p {
-  margin: 0 0 0.5rem;
-}
-
-/* ------------------------------------------------------------- iskeletler */
-
-.skeleton-line {
-  display: block;
-  height: 0.85rem;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #e7eaee 25%, #f1f3f6 50%, #e7eaee 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.2s infinite linear;
-}
-
-.skeleton-line--title {
-  height: 1.1rem;
-  width: 60%;
-}
-
-.skeleton-line--short {
-  width: 40%;
-}
-
-@keyframes skeleton-shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-/* Hareketi azalt tercihine saygi: sonsuz parlama animasyonu kapatilir. */
+  `prefers-reduced-motion` altinda her sey duruyor. ShineBorder zaten
+  `motion-safe:` ile geliyor; burasi geri kalanini kapatiyor.
+*/
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-line {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
-}
-
-/* -------------------------------------------------------------- modal */
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgb(0 0 0 / 45%);
-}
-
-.modal {
-  width: min(24rem, 100%);
-  padding: 1.5rem;
-  background: var(--surface);
-  border-radius: 10px;
-}
-
-.modal h2 {
-  margin-top: 0;
-}
-
-.modal form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.modal label {
-  font-size: 0.875rem;
-  color: var(--muted);
-}
-
-.modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
 }

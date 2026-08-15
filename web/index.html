@@ -4,7 +4,21 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#FAF4F2" />
     <title>EvenUp</title>
+
+    <!--
+      Fraunces (display) yalnizca h1/h2 ve marka logosunda; Inter body metninde.
+      `preconnect` iki host icin de gerekli: fonts.googleapis.com stil dosyasini,
+      fonts.gstatic.com font dosyalarini sunuyor.
+      `display=swap`: font inerken metin gorunmez kalmasin (FOIT yerine FOUT).
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>

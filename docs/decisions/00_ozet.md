@@ -55,6 +55,7 @@ Görevlerin ilerleyişi:
 | 2.1   | Frontend iskeleti, rota koruma, token saklama |
 | 2.2   | Giriş/kayıt ekranları, iki katmanlı validasyon |
 | 2.3   | Gruplarım ekranı, bakiye renklendirmesi, durum yönetimi |
+| —     | [Görsel kimlik](gorsel-kimlik.md) — Tailwind + shadcn/ui + Magic UI, yüzey ayrımı |
 
 ---
 
@@ -120,6 +121,8 @@ Bir kural birden çok yerde tekrarlanırsa biri güncellenirken diğeri unutulur
 | Para (istemci)     | `web/src/utils/money.ts`                       |
 | Bakiye renk kuralı | `web/src/utils/balance.ts`                     |
 | Sunucu durumu      | `web/src/hooks/useAsync.ts`                    |
+| Tasarım token'ları | `web/src/index.css` (`@theme` + `:root`)       |
+| İmza parıltı       | `web/src/components/GlassCard.tsx`             |
 
 ### İlke 5 — Koruma route seviyesinde takılır
 
@@ -803,6 +806,26 @@ istekte tek bir grubun hatası yalnızca o kartı etkiliyor.
 
 **Dört durum ayrı:** iskelet / hata / boş / dolu. Boş ile hatayı aynı göstermek, sunucuya
 ulaşılamadığında "gruplarım silinmiş" izlenimi verirdi.
+
+### Görsel kimlik
+
+Ayrıntı: [gorsel-kimlik.md](gorsel-kimlik.md). Üç karar özet:
+
+**İki kanal kuralı** — sıcaklık (rose/blush/lilac) yalnızca etkileşimli öğelerde ve
+dekoratif yüzeylerde; otorite (ink + Fraunces) yalnızca başlıklarda. `rose` bir başlık
+rengi değil: olsaydı marka rengi "her yerde olan renk" olur ve *tıklanabilir olanı işaret
+etme* gücünü kaybederdi.
+
+**Yüzey ayrımı içeriğe göre** — `.card-glass` özet/durum yüzeyleri (grup kartı, bakiye
+özeti), `.card-solid` işlem/veri yüzeyleri (formlar, modal, listeler). İmza parıltı
+(`ShineBorder`) tek girişten dağıtılıyor (`GlassCard`); serbest bırakılsaydı her yerde
+belirip imza olmaktan çıkardı. Blur mobilde kapalı — kart bir listede N kez tekrarlanıyor
+ve `backdrop-filter` kaydırmayı takardı.
+
+**Ölçülen kontrast:** rose/beyaz 7.14:1, ink/cream 15.92:1, sinyal renkleri 4.83–6.54:1 —
+hepsi AA. **Bulgu: lilac beyaz üzerinde 2.37:1**, metin rengi olarak kullanılamaz; kodda
+yalnızca dekoratif (gradyan durağı, grafik dolgusu) olarak geçiyor, ikincil metin için
+`ink-muted` (6.49:1) var.
 
 **Davet linki istemci origin'inden kuruluyor.** Backend'in `join_url`i `APP_URL`den
 üretiliyor ve varsayılanı API adresi; oradaki `/groups/join/:code` bir POST uç noktası,

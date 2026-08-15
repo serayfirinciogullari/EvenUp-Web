@@ -326,12 +326,15 @@ describe('yeni grup modali', () => {
     const pending = deferred<never>();
     mockedGroups.createGroup.mockReturnValue(pending.promise);
 
-    const { container } = renderGroups();
+    renderGroups();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Yeni Grup' }));
     fireEvent.change(screen.getByLabelText('Grup adi'), { target: { value: 'Tatil' } });
 
-    const form = container.querySelector('.modal form');
+    // Modal bir portal'da render ediliyor (shadcn/Radix Dialog), yani render
+    // container'inin disinda. Formu rolden bulmak hem portal'dan bagimsiz hem
+    // de sinif adina bagli olmadigi icin daha saglam.
+    const form = screen.getByRole('dialog').querySelector('form');
 
     await act(async () => {
       form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -349,7 +352,10 @@ describe('yeni grup modali', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Yeni Grup' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: 'Escape' });
+    // Escape dinleyicisi artik Radix Dialog'da ve `document` uzerinde duruyor.
+    // `window`a gonderilen olay document'e kabarciklanmaz; gercek kullanicinin
+    // tuslamasi da odaktaki ogeden baslar, o yuzden dogru hedef bu.
+    fireEvent.keyDown(document.body, { key: 'Escape' });
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });

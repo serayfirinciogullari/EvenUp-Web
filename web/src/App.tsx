@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 
+import { Toaster } from '@/components/ui/sonner';
 import AdminRoute from './components/AdminRoute';
 import GuestRoute from './components/GuestRoute';
 import Layout from './components/Layout';
@@ -23,31 +24,38 @@ import SettingsPage from './pages/SettingsPage';
  *   GuestRoute        -> /login, /register        (giris yapmisken erisilmez)
  *   ProtectedRoute    -> /groups, /groups/:id, /settings
  *     + AdminRoute    -> /admin
+ *
+ * `Toaster` rota agacinin disinda: bir bildirim, onu tetikleyen sayfadan sonra
+ * da (ornegin modal kapandiktan sonra) ayakta kalmali.
  */
 const App = () => (
-  <Routes>
-    <Route path="/" element={<Navigate to="/groups" replace />} />
+  <>
+    <Routes>
+      <Route path="/" element={<Navigate to="/groups" replace />} />
 
-    <Route element={<GuestRoute />}>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-    </Route>
+      <Route element={<GuestRoute />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
 
-    <Route element={<ProtectedRoute />}>
-      <Route element={<Layout />}>
-        <Route path="/groups" element={<GroupsPage />} />
-        <Route path="/groups/:id" element={<GroupDetailPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<Layout />}>
+          <Route path="/groups" element={<GroupsPage />} />
+          <Route path="/groups/:id" element={<GroupDetailPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
 
-        {/* Admin kontrolu ProtectedRoute'un ustune biner: once giris, sonra rol. */}
-        <Route element={<AdminRoute />}>
-          <Route path="/admin" element={<AdminPage />} />
+          {/* Admin kontrolu ProtectedRoute'un ustune biner: once giris, sonra rol. */}
+          <Route element={<AdminRoute />}>
+            <Route path="/admin" element={<AdminPage />} />
+          </Route>
         </Route>
       </Route>
-    </Route>
 
-    <Route path="*" element={<NotFoundPage />} />
-  </Routes>
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+
+    <Toaster position="bottom-right" />
+  </>
 );
 
 export default App;
