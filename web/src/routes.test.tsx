@@ -71,6 +71,35 @@ vi.mock('./api/expenses', () => ({
   },
 }));
 
+// Admin paneli 2.5'te gercek veri cekmeye basladi. Mock'lanmazsa bu dosyadaki
+// /admin testi gercek bir ag istegi dener; sahte token 401 doner ve merkezi
+// 401 yonetimi oturumu **sonraki teste tasan** bicimde dusururdu.
+vi.mock('./api/admin', () => ({
+  __esModule: true,
+  default: {
+    listUsers: vi.fn().mockResolvedValue({
+      users: [],
+      pagination: { page: 1, limit: 20, total: 0, total_pages: 1, has_next: false, has_previous: false },
+    }),
+    disableUser: vi.fn(),
+    enableUser: vi.fn(),
+    listGroups: vi.fn().mockResolvedValue({
+      groups: [],
+      pagination: { page: 1, limit: 20, total: 0, total_pages: 1, has_next: false, has_previous: false },
+    }),
+    getStats: vi.fn().mockResolvedValue({
+      users: { total: 0, active: 0, inactive: 0 },
+      groups: { active: 0, deleted: 0 },
+      expenses: { count: 0, volume: '0.00' },
+      settlements: { confirmed_count: 0, confirmed_volume: '0.00' },
+      trends: {
+        last_7_days: { new_users: 0, new_groups: 0, expense_count: 0, expense_volume: '0.00' },
+        last_30_days: { new_users: 0, new_groups: 0, expense_count: 0, expense_volume: '0.00' },
+      },
+    }),
+  },
+}));
+
 vi.mock('./api/settlements', () => ({
   __esModule: true,
   default: {

@@ -74,6 +74,23 @@ export const formatExpenseDate = (value: string, now: Date = new Date()): string
   return `${date.getDate()} ${MONTHS[date.getMonth()]}${year}`;
 };
 
+/**
+ * Yalnizca tarih: "15 Agustos 2026".
+ *
+ * Tablo hucreleri icin. `formatExpenseDate`ten farki saatin ve "Bugun/Dun"
+ * kisayolunun olmamasi: kayit tarihi bir **kimlik bilgisi**, akista bir olay
+ * degil; "Dun" yazan bir hucre siralamayi okumayi zorlastirir.
+ */
+export const formatDate = (value: string): string => {
+  const date = parseIso(value);
+
+  if (!date) {
+    return 'Tarih bilinmiyor';
+  }
+
+  return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+};
+
 /** Tam tarih — `<time title=...>` icin; kisaltilmis metnin arkasindaki gercek deger. */
 export const formatFullDate = (value: string): string => {
   const date = parseIso(value);
@@ -87,4 +104,4 @@ export const formatFullDate = (value: string): string => {
   )}:${pad(date.getMinutes())}`;
 };
 
-export default { parseIso, formatExpenseDate, formatFullDate };
+export default { parseIso, formatExpenseDate, formatDate, formatFullDate };

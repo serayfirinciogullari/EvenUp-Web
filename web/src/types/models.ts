@@ -190,10 +190,67 @@ export interface BalanceResult {
   };
 }
 
-/** Admin grup listesi — bilerek yalnizca ust veri (bkz. docs/decisions/1.8.md). */
+/* ------------------------------------------------------------------ admin */
+
+/**
+ * Admin grup listesi satiri — bilerek yalnizca **ust veri**.
+ *
+ * Bu tipin dar olusu bir eksiklik degil, backend'in sozlesmesi: `admin.model`
+ * icindeki `listGroupMeta` sorgusu `expenses` ve `expense_shares` tablolarina
+ * hic dokunmaz, `description` bile secmez. Yani buraya bir alan eklemek
+ * (`expense_count`, `description`, `members`) tipi degil **kurali** bozardi;
+ * backend o alani zaten donmuyor (bkz. docs/decisions/1.8.md ve 2.5.md).
+ */
 export interface GroupMeta {
   id: string;
   name: string;
   created_at: string;
   member_count: number;
+}
+
+/** `GET /admin/groups` cevabi. */
+export interface AdminGroupListResult {
+  groups: GroupMeta[];
+  pagination: Pagination;
+}
+
+/** `GET /admin/users` cevabi — satirlar `PublicUser`, yani `password_hash` yok. */
+export interface AdminUserListResult {
+  users: User[];
+  pagination: Pagination;
+}
+
+/**
+ * `PUT /admin/users/:id/disable|enable` cevabi.
+ *
+ * `changed: false` = kullanici zaten istenen durumdaydi. Islem idempotent
+ * oldugu icin bu bir hata degil; arayuz "zaten pasifti" diyebilsin diye
+ * backend bunu ayrica bildiriyor.
+ */
+export interface SetUserActiveResult {
+  user: User;
+  changed: boolean;
+}
+
+/** `GET /admin/stats` icindeki donem ozeti (son 7 / son 30 gun). */
+export interface PeriodStats {
+  new_users: number;
+  new_groups: number;
+  expense_count: number;
+  /** NUMERIC -> metin; kayit yokken "0" degil "0.00" gelir (cast'li). */
+  expense_volume: string;
+}
+
+/**
+ * `GET /admin/stats` cevabi — **tamami toplam**, hicbir alan satir bazli degil.
+ *
+ * `expenses.volume` ve `settlements.confirmed_volume` NUMERIC oldugu icin metin
+ * geliyor; gosterim aninda `utils/money` ile kurusa cevrilir.
+ */
+export interface AdminStats {
+  users: { total: number; active: number; inactive: number };
+  groups: { active: number; deleted: number };
+  expenses: { count: number; volume: string };
+  settlements: { confirmed_count: number; confirmed_volume: string };
+  trends: { last_7_days: PeriodStats; last_30_days: PeriodStats };
 }
