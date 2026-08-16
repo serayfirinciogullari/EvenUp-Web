@@ -21,7 +21,12 @@ import type { ComponentPropsWithoutRef, ElementType, ReactNode } from 'react';
  * sinifini kullanir, cunku ekleyecekleri bir imza ogesi yok.
  */
 
-const SHINE_COLORS = ['#E4D2D6', '#B8A0C4', '#7A4A56'];
+/**
+ * Sabit hex yerine token: koyu temada (2.6) `blush` ve `rose` degerleri
+ * degisiyor, parilti de onlarla birlikte degisiyor. Hex kalsaydi koyu zeminde
+ * cerceve acik temanin renkleriyle parlardi.
+ */
+const SHINE_COLORS = ['var(--color-blush)', 'var(--color-lilac)', 'var(--color-rose)'];
 
 interface GlassCardProps extends ComponentPropsWithoutRef<'div'> {
   /** Anlamsal etiket. Grup karti `article`, ozet bloklari `section`, sayfa

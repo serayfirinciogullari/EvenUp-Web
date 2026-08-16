@@ -1,6 +1,8 @@
+import { ThemeProvider } from 'next-themes';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { Toaster } from '@/components/ui/sonner';
+import { THEME_STORAGE_KEY } from '@/lib/theme';
 import AdminRoute from './components/AdminRoute';
 import GuestRoute from './components/GuestRoute';
 import Layout from './components/Layout';
@@ -27,9 +29,25 @@ import SettingsPage from './pages/SettingsPage';
  *
  * `Toaster` rota agacinin disinda: bir bildirim, onu tetikleyen sayfadan sonra
  * da (ornegin modal kapandiktan sonra) ayakta kalmali.
+ *
+ * TEMA SAGLAYICISI NEDEN BURADA, `main.tsx`'te DEGIL (2.6)
+ * -------------------------------------------------------
+ * `main.tsx` yalnizca uretimde calisiyor; testler `<App />`i dogrudan render
+ * ediyor. Saglayici disarida kalsaydi tema kontrolleri testlerde **sessizce**
+ * calismayan bir bilesene donusurdu. Ayrica `Toaster` da temayi buradan okuyor
+ * (`ui/sonner` -> `useTheme`), yani bildirim kutusu koyu temada koyu geliyor.
  */
 const App = () => (
-  <>
+  <ThemeProvider
+    attribute="class"
+    defaultTheme="system"
+    enableSystem
+    storageKey={THEME_STORAGE_KEY}
+    // Tema degisirken gecis animasyonlarini kapatir: aksi halde her renk
+    // token'i ayri ayri "yumusayarak" degisir ve ekran bir an bulanik bir ara
+    // renge duser.
+    disableTransitionOnChange
+  >
     <Routes>
       <Route path="/" element={<Navigate to="/groups" replace />} />
 
@@ -55,7 +73,7 @@ const App = () => (
     </Routes>
 
     <Toaster position="bottom-right" />
-  </>
+  </ThemeProvider>
 );
 
 export default App;

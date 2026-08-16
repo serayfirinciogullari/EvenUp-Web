@@ -4,8 +4,46 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#FAF4F2" />
+    <!--
+      Tarayici cubugunun rengi de temayi takip ediyor; tek bir deger kalsaydi
+      koyu temada ekranin tepesinde acik bir serit dururdu.
+    -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FAF4F2" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1A1114" />
     <title>EvenUp</title>
+
+    <!--
+      TEMA PARLAMASINI ONLEYEN SCRIPT (2.6)
+      -------------------------------------
+      React mount olana kadar `<html>` uzerinde `dark` sinifi olmaz; koyu tema
+      secmis bir kullanici sayfa her yenilendiginde bir kare **beyaz** ekran
+      gorur. Bu script ilk boyamadan once calisip sinifi kendisi koyuyor.
+
+      `defer`/`module` DEGIL, bilerek senkron: modul script'leri ertelenir ve
+      ertelenmis bir script parlamayi onleyemez.
+
+      Anahtar `web/src/lib/theme.ts` icindeki `THEME_STORAGE_KEY` ile ayni olmak
+      zorunda; burasi bir modul olmadigi icin import edemiyor. try/catch var
+      cunku localStorage bazi gizlilik ayarlarinda erisim hatasi firlatir —
+      o durumda tema calismasin, ama uygulama da acilmadan olmesin.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('evenup.theme');
+          var isDark =
+            stored === 'dark' ||
+            ((!stored || stored === 'system') &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (error) {
+          /* tema uygulanamadi; varsayilan acik tema ile devam */
+        }
+      })();
+    </script>
 
     <!--
       Fraunces (display) yalnizca h1/h2 ve marka logosunda; Inter body metninde.

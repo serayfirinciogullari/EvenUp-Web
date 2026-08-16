@@ -1,22 +1,32 @@
 import '@testing-library/jest-dom/vitest';
 
 import { cleanup } from '@testing-library/react';
+import { toast } from 'sonner';
 import { afterEach, beforeEach, vi } from 'vitest';
 
 /**
- * Her testten sonra DOM ve localStorage temizlenir.
+ * Her testten sonra DOM, localStorage, tema sinifi ve bildirimler temizlenir.
  *
  * Token `localStorage`'da tutuldugu icin (bkz. api/tokenStorage.ts) temizlik
  * sart: bir testte yazilan token sonraki testte oturumu acik gosterir ve
  * "giris yapmadan /groups" senaryosu sessizce yanlis calisirdi.
+ *
+ * `toast` ve tema, React agacinin **disinda** durum tutan iki sey (2.6):
+ *   - sonner'in bildirim listesi modul seviyesinde; `cleanup()` DOM'u kaldirsa
+ *     da liste kaliyor ve bir sonraki testte Toaster mount olunca eski
+ *     bildirim yeniden ciziliyor. Belirtisi: "basari mesaji gorunmemeli"
+ *     diyen bir test, kendi tetiklemedigi bir mesaj yuzunden kirmizi yaniyor.
+ *   - tema sinifi `<html>` uzerinde; `cleanup()` oraya dokunmaz.
  */
 beforeEach(() => {
   window.localStorage.clear();
 });
 
 afterEach(() => {
+  toast.dismiss();
   cleanup();
   window.localStorage.clear();
+  document.documentElement.className = '';
 });
 
 /*

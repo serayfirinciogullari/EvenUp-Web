@@ -218,17 +218,20 @@ describe('ozet istatistik kartlari', () => {
     renderAdmin();
     await waitForPage();
 
+    // Sayilar `NumberTicker` icinde ve metni bir abonelik yaziyor (imperatif,
+    // render disinda). `getBy*` o ani ornekler; yuklu makinede kare gecikirse
+    // test degeri "yok" sanabilir. `findBy*` bekliyor — iddia ayni.
     const total = (await screen.findByText('Toplam kullanici')).closest('article') as HTMLElement;
-    expect(within(total).getByText('4')).toBeInTheDocument();
+    expect(await within(total).findByText('4')).toBeInTheDocument();
     expect(within(total).getByText('3 aktif · 1 pasif')).toBeInTheDocument();
 
     const groups = screen.getByText('Aktif grup').closest('article') as HTMLElement;
-    expect(within(groups).getByText('2')).toBeInTheDocument();
+    expect(await within(groups).findByText('2')).toBeInTheDocument();
     expect(within(groups).getByText('1 silinmis grup haric')).toBeInTheDocument();
 
     const volume = screen.getByText('Toplam islem hacmi').closest('article') as HTMLElement;
     // NUMERIC metni ("720.00") kurus uzerinden bicimlendirilir.
-    expect(within(volume).getByText('720,00 ₺')).toBeInTheDocument();
+    expect(await within(volume).findByText('720,00 ₺')).toBeInTheDocument();
     expect(within(volume).getByText('3 harcama')).toBeInTheDocument();
   });
 

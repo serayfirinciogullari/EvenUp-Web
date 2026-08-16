@@ -171,6 +171,27 @@ yapti"): duzenleme yetkisinin odeyene degil **girene** baktigi seed verisinde de
 (\*) `/auth/users` yerini 1.8'deki `/admin/users`'a birakti (arama + filtre + sayfalama
 ile). Geriye donuk uyumluluk icin duruyor; bir sonraki adimda kaldirilacak.
 
+### Kendi hesabin
+
+Ikisi de `requireAuth` arkasinda. Hedef kullanici **token'dan** okunur; adreste ya da
+govdede kullanici ID'si yoktur, dolayisiyla baskasinin kaydina dokunmak ifade edilemez.
+
+| Method | Path                     | Koruma        | Yanit             |
+| ------ | ------------------------ | ------------- | ----------------- |
+| PUT    | `/users/me`              | `requireAuth` | 200 `{ user }`    |
+| PUT    | `/users/me/password`     | `requireAuth` | 200 `{ message }` |
+
+- `PUT /users/me` yalnizca **`name`** alanini gunceller. Govdeye yazilan `role`,
+  `is_active`, `email` ve `id` yok sayilir (servis yalnizca `name` cikarir, model
+  sabit kolon yazar).
+- `PUT /users/me/password` **mevcut sifreyi** de ister; yanlissa **400** doner
+  (401 degil — istek kimlik dogrulamasindan gecti, basarisiz olan govdedeki bir alan;
+  ayrica 401 frontend'de oturumu dusururdu). Hata `details.currentPassword` alaninda
+  gelir.
+
+Ikisi de **2.6'da, Hafta 1'e geriye donuk** eklendi: 1.3-1.8 arasinda profil guncelleme
+ucu tanimlanmamisti. Gerekceler `docs/decisions/2.6.md` ve `docs/decisions/1.3.md`.
+
 ### Gruplar
 
 Tumu `requireAuth` arkasinda (router seviyesinde takili).
@@ -384,6 +405,7 @@ src/
 │   ├── index.ts                     # kok router, modul route'larini baglar
 │   ├── health.routes.ts
 │   ├── auth.routes.ts
+│   ├── user.routes.ts               # /users/me — kendi profilini guncelle (2.6)
 │   ├── group.routes.ts              # requireAuth router seviyesinde takili
 │   ├── expense.routes.ts            # /expenses/:id islemleri
 │   ├── settlement.routes.ts         # /settlements/:id onay & red
@@ -391,6 +413,7 @@ src/
 ├── controllers/
 │   ├── health.controller.ts         # req/res isleme, servis cagirma
 │   ├── auth.controller.ts
+│   ├── user.controller.ts           # hedef kullanici her zaman token'in sahibi
 │   ├── group.controller.ts          # yetki karari yok, servise devreder
 │   ├── expense.controller.ts
 │   ├── settlement.controller.ts     # odeme + bakiye uc noktalari

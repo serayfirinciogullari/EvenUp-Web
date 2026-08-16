@@ -87,9 +87,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     [applyAuthResult]
   );
 
+  /**
+   * Profil degistikten sonra (2.6) kullaniciyi sunucudan geri okur.
+   *
+   * Token'a dokunulmuyor: degisen sey kullanici **kaydi**, oturum degil.
+   * Hata bilerek yutulmuyor — cagiran ekran "kaydedildi" demeden once bu
+   * cagrinin basarili oldugunu bilmeli.
+   */
+  const refreshUser = useCallback(async () => {
+    const me = await authApi.getMe();
+    setUser(me);
+    setStatus('authenticated');
+    return me;
+  }, []);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, isAdmin: user?.role === 'admin', login, register, logout }),
-    [user, status, login, register, logout]
+    () => ({
+      user,
+      status,
+      isAdmin: user?.role === 'admin',
+      login,
+      register,
+      logout,
+      refreshUser,
+    }),
+    [user, status, login, register, logout, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

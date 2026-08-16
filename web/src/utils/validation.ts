@@ -53,6 +53,19 @@ export type RegisterFormValues = {
   name: string;
 };
 
+/** Ayarlar > profil (2.6). Yalnizca `name`: e-posta ve rol degistirilemiyor. */
+export type ProfileFormValues = {
+  name: string;
+};
+
+/** Ayarlar > sifre degistirme (2.6). */
+export type PasswordFormValues = {
+  currentPassword: string;
+  newPassword: string;
+  /** Yalnizca istemcide var — gerekcesi `validatePasswordForm` icinde. */
+  newPasswordRepeat: string;
+};
+
 /** Backend `normalizeEmail` ile ayni: bosluk kirp + kucuk harfe cevir. */
 export const normalizeEmail = (value: string): string => value.trim().toLowerCase();
 
@@ -113,6 +126,64 @@ export const validateRegisterForm = (values: RegisterFormValues): FieldErrors =>
     errors.name = 'Isim zorunlu';
   } else if (name.length > MAX_NAME_LENGTH) {
     errors.name = `Isim en fazla ${MAX_NAME_LENGTH} karakter olabilir`;
+  }
+
+  return errors;
+};
+
+/**
+ * Profil formu: backend'in `validateUpdateProfileInput` kurallarinin aynisi
+ * ve **ayni metinler**.
+ */
+export const validateProfileForm = (values: ProfileFormValues): FieldErrors => {
+  const errors: FieldErrors = {};
+  const name = values.name.trim();
+
+  if (!name) {
+    errors.name = 'Isim zorunlu';
+  } else if (name.length > MAX_NAME_LENGTH) {
+    errors.name = `Isim en fazla ${MAX_NAME_LENGTH} karakter olabilir`;
+  }
+
+  return errors;
+};
+
+/**
+ * Sifre degistirme formu.
+ *
+ * MEVCUT SIFREYE UZUNLUK KURALI UYGULANMIYOR
+ * ------------------------------------------
+ * Backend de uygulamiyor: kurallar zamanla degisebilir (bugun min 8, dun min 6)
+ * ve eski kurala gore acilmis gecerli bir sifreyi burada elemek, kullaniciyi
+ * sifresini **hic degistiremez** hale getirirdi. Dogrulugu bcrypt soyleyecek.
+ *
+ * TEKRAR ALANI NEDEN VAR (VE NEDEN YALNIZCA ISTEMCIDE)
+ * ---------------------------------------------------
+ * Yeni sifre maskeli bir alana yaziliyor; yazim hatasi gorulemez. Hatali yazilan
+ * sifre kabul edilirse kullanici **kendi hesabina kilitlenir** — geri donusu
+ * olan bir hata degil. Backend'e gonderilmiyor cunku bir guvenlik kurali degil,
+ * bir yazim hatasi tuzagi; sunucunun ayni metni iki kez almasi hicbir sey
+ * dogrulamaz (bkz. docs/decisions/2.6.md).
+ */
+export const validatePasswordForm = (values: PasswordFormValues): FieldErrors => {
+  const errors: FieldErrors = {};
+
+  if (!values.currentPassword) {
+    errors.currentPassword = 'Mevcut sifre zorunlu';
+  }
+
+  if (!values.newPassword) {
+    errors.newPassword = 'Yeni sifre zorunlu';
+  } else if (values.newPassword.length < MIN_PASSWORD_LENGTH) {
+    errors.newPassword = `Yeni sifre en az ${MIN_PASSWORD_LENGTH} karakter olmali`;
+  } else if (values.newPassword.length > MAX_PASSWORD_LENGTH) {
+    errors.newPassword = `Yeni sifre en fazla ${MAX_PASSWORD_LENGTH} karakter olabilir`;
+  } else if (values.newPassword === values.currentPassword) {
+    errors.newPassword = 'Yeni sifre mevcut sifreden farkli olmali';
+  }
+
+  if (!errors.newPassword && values.newPasswordRepeat !== values.newPassword) {
+    errors.newPasswordRepeat = 'Sifreler eslesmiyor';
   }
 
   return errors;

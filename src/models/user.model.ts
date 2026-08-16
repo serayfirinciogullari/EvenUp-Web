@@ -28,6 +28,14 @@ const publicColumns = [...PUBLIC_USER_COLUMNS];
 const findByEmail = async (email: string): Promise<UserRow | undefined> =>
   db('users').where({ email }).first();
 
+/**
+ * Sifre degistirirken mevcut sifreyi dogrulamak icin: hash dahil tam satir.
+ * `findByEmail` ile ayni kural gecerli — yalnizca auth servisi cagirmali,
+ * donen satir hicbir zaman dogrudan response'a yazilmaz.
+ */
+const findById = async (id: string): Promise<UserRow | undefined> =>
+  db('users').where({ id }).first();
+
 const findPublicById = async (id: string): Promise<PublicUser | undefined> =>
   db('users').select(publicColumns).where({ id }).first();
 
@@ -38,6 +46,37 @@ const create = async (data: UserInsert): Promise<PublicUser> => {
 
 const listPublic = async (): Promise<PublicUser[]> =>
   db('users').select(publicColumns).orderBy('created_at', 'desc');
+
+/**
+ * Kullanicinin **kendi** guncelleyebildigi tek alan: `name` (2.6).
+ *
+ * Fonksiyon bilerek kismi bir nesne (`UserUpdate`) almiyor. Govdeden gelen
+ * nesneyi oldugu gibi `.update()`'e verseydik `role`, `is_active` ve
+ * `password_hash` kolonlari da istemcinin erisimine acilirdi: `PUT /users/me`
+ * govdesine `{"role":"admin"}` yazan biri kendini admin yapardi. Kolon adi
+ * burada **sabit**; servis katmani ne gonderirse gondersin baska bir kolon
+ * yazilamaz. Ayni gerekce 1.3'te `register`'in `role`'u yok saymasinda da var.
+ */
+const updateName = async (userId: string, name: string): Promise<PublicUser | undefined> => {
+  const [updated] = await db('users')
+    .where({ id: userId })
+    .update({ name })
+    .returning(publicColumns);
+
+  return updated as PublicUser | undefined;
+};
+
+/**
+ * Sifre hash'ini degistirir. Hash'i **servis** uretir; bu katman ham sifre
+ * gormez — gorseydi bcrypt cagrisi iki yere dagilirdi.
+ *
+ * Donen deger "satir bulundu mu": token gecerli ama kullanici silinmis olabilir.
+ */
+const updatePasswordHash = async (userId: string, passwordHash: string): Promise<boolean> => {
+  const affected = await db('users').where({ id: userId }).update({ password_hash: passwordHash });
+
+  return affected > 0;
+};
 
 /**
  * Kullaniciyi devre disi birakir ya da yeniden aktiflestirir (1.8).
@@ -59,4 +98,13 @@ const setActive = async (userId: string, isActive: boolean): Promise<PublicUser 
   return updated as PublicUser | undefined;
 };
 
-export default { findByEmail, findPublicById, create, listPublic, setActive };
+export default {
+  findByEmail,
+  findById,
+  findPublicById,
+  create,
+  listPublic,
+  updateName,
+  updatePasswordHash,
+  setActive,
+};

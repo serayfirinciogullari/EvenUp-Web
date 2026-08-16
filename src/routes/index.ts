@@ -6,11 +6,13 @@ import expenseRoutes from './expense.routes';
 import groupRoutes from './group.routes';
 import healthRoutes from './health.routes';
 import settlementRoutes from './settlement.routes';
+import userRoutes from './user.routes';
 
 const router = Router();
 
 router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
+router.use('/users', userRoutes);
 router.use('/groups', groupRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/settlements', settlementRoutes);

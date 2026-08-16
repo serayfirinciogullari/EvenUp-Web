@@ -33,6 +33,14 @@ interface UseAuthFormResult<V> {
   formError: string | null;
   pending: boolean;
   handleSubmit: (event: SubmitEvent<HTMLFormElement>) => void;
+  /**
+   * Formu baslangic degerlerine dondurur (2.6).
+   *
+   * Login/register'da gerekmiyordu: basarili gonderim sayfayi degistiriyor.
+   * Ayarlar sayfasi yerinde kaliyor ve sifre alanlarinin ekranda **dolu
+   * kalmasi** hem yaniltici (islem bitti) hem gereksiz bir maruziyet.
+   */
+  reset: () => void;
 }
 
 export const useAuthForm = <V extends Record<string, string>>({
@@ -60,6 +68,20 @@ export const useAuthForm = <V extends Record<string, string>>({
    * ardindan "bu e-posta zaten kayitli" hatasi gorurdu.
    */
   const inFlight = useRef(false);
+
+  /**
+   * `initialValues` ref'te tutuluyor: cagiran bilesen nesneyi her render'da
+   * yeniden olusturuyor olabilir. Dogrudan bagimlilik yapilsaydi `reset`
+   * kimligi her render'da degisir ve onu `useEffect`/`useCallback` icinde
+   * kullanan her yer gereksiz yere yeniden calisirdi.
+   */
+  const initial = useRef(initialValues);
+
+  const reset = useCallback(() => {
+    setValues(initial.current);
+    setFieldErrors({});
+    setFormError(null);
+  }, []);
 
   const setField = useCallback((field: keyof V & string, value: string) => {
     setValues((previous) => ({ ...previous, [field]: value }));
@@ -117,7 +139,7 @@ export const useAuthForm = <V extends Record<string, string>>({
     [fallbackMessage, onSubmit, validate, values]
   );
 
-  return { values, setField, fieldErrors, formError, pending, handleSubmit };
+  return { values, setField, fieldErrors, formError, pending, handleSubmit, reset };
 };
 
 export default useAuthForm;

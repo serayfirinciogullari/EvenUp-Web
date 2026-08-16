@@ -32,9 +32,12 @@ const AuthShell = ({
       aria-hidden
       className="pointer-events-none absolute inset-0"
       style={{
+        // Renkler token uzerinden (2.6): koyu temada `blush` koyulasiyor,
+        // yani leke kendiliginden zemine gomuluyor. Sabit rgba kalsaydi koyu
+        // zeminde iki acik sis bulutu olarak durur ve formu bastirirdi.
         backgroundImage:
-          'radial-gradient(60rem 30rem at 15% -10%, rgba(228,210,214,0.55), transparent 60%),' +
-          'radial-gradient(45rem 25rem at 100% 110%, rgba(184,160,196,0.35), transparent 60%)',
+          'radial-gradient(60rem 30rem at 15% -10%, color-mix(in srgb, var(--color-blush) 55%, transparent), transparent 60%),' +
+          'radial-gradient(45rem 25rem at 100% 110%, color-mix(in srgb, var(--color-lilac) 35%, transparent), transparent 60%)',
       }}
     />
 
@@ -47,8 +50,8 @@ const AuthShell = ({
       <div className="mb-6 text-center">
         <AnimatedGradientText
           className="font-display text-2xl font-semibold tracking-tight"
-          colorFrom="#7A4A56"
-          colorTo="#B8A0C4"
+          colorFrom="var(--color-rose)"
+          colorTo="var(--color-lilac)"
         >
           EvenUp
         </AnimatedGradientText>

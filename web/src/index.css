@@ -61,6 +61,13 @@
   /* ink'in yumusak karsiligi; cream uzerinde 6.49:1 -> AA metin ✓ */
   --color-ink-muted: #6b5257;
 
+  /*
+    Kart/panel zemini. `bg-white` yerine bunun kullanilmasinin sebebi 2.6:
+    beyaz koyu temada beyaz kalir. Token olunca ayni sinif iki temada da dogru
+    zemini veriyor (bkz. asagidaki `.dark` blogu).
+  */
+  --color-surface: #ffffff;
+
   /* Yalnizca bakiye isareti icin. Marka paletinden bagimsiz. */
   --color-signal-positive: #1e7a5c;
   --color-signal-negative: #b3261e;
@@ -75,7 +82,28 @@
   bilesenin de otomatik olarak marka icinde dogmasini sagliyor.
 */
 :root {
+  /*
+    Tarayiciya hangi temada oldugumuzu soyler. CSS'in boyamadigi yerler buna
+    bakar: native `<select>` acilir listesi, kaydirma cubugu, otomatik doldurma
+    vurgusu, tarih secici. Yazilmasaydi koyu temada acilan bir `<select>`
+    beyaz gelirdi (bkz. AddExpenseModal).
+  */
+  color-scheme: light;
+
   --radius: 0.75rem;
+
+  /*
+    Golge rengi. `@theme` icinde degil bilerek: orada tanimlansaydi Tailwind
+    bundan `bg-shadow` / `text-shadow` gibi utility'ler uretirdi — ikincisi
+    Tailwind'in kendi `text-shadow-*` ailesiyle karisir. Bu deger yalnizca
+    asagidaki yuzey utility'lerinin icinde kullaniliyor.
+    Koyu temada ink acildigi icin ayri bir token sart: golge acilmamali.
+  */
+  --shadow-tint: #2a1418;
+  /* Glass kartin altindaki sicak hale. Acik temada rose; koyu temada YOK
+     (siyaha ceviriliyor) — koyu zeminde pembe bir hale, tasarim dokumaninin
+     bilerek kacindigi "neon" hissini uretirdi. */
+  --shadow-glow: #7a4a56;
 
   --background: #faf4f2;
   --foreground: #2a1418;
@@ -122,6 +150,120 @@
   --sidebar-accent-foreground: #2a1418;
   --sidebar-border: color-mix(in srgb, #2a1418 12%, transparent);
   --sidebar-ring: #7a4a56;
+}
+
+/*
+  ============================================================================
+  KOYU TEMA (2.6)
+  ============================================================================
+
+  YAKLASIM: BILESEN DEGIL, TOKEN CEVRILIYOR
+  -----------------------------------------
+  Asagida tek bir `dark:` utility'si yok. Yapilan sey **token'larin degerini
+  degistirmek**: `bg-cream`, `text-ink`, `border-blush` gibi siniflar zaten
+  `var(--color-*)` okuyor, dolayisiyla sayfalarin hicbirine dokunulmadan
+  ikinci bir tema kazaniliyor.
+
+  Alternatif — her yere `dark:` varyanti yazmak — iki kat sinif, iki kat
+  bakim ve "bu ekranda koyu tema unutulmus" hatalarinin kalici kaynagi olurdu.
+  Yeni bir sayfa bugun yazildiginda koyu temayi **kendiliginden** dogru aliyor.
+
+  IKI KANAL KURALI KORUNUYOR
+  --------------------------
+  Roller aynen duruyor, yalnizca tonlar yer degistiriyor:
+    - `ink` = metin rengi (acik temada koyu, koyu temada acik). Isim rengi
+      degil **rolu** anlatiyor; bu yuzden ters cevrilmesi tutarli.
+    - `rose` = etkilesim/marka. Koyu zeminde koyu gul okunmaz; acik gule
+      cevriliyor ama hala yalnizca etkilesimli ogelerde.
+    - `signal-*` marka paletinden bagimsiz kalmaya devam ediyor.
+
+  KONTRAST (WCAG 2.1 AA, normal metin esigi 4.5:1 — olculdu)
+  ---------------------------------------------------------
+    ink       #F6EBEC / zemin #1A1114 ............. 15.88:1 ✓
+    ink       #F6EBEC / kart  #241A1D ............. 14.52:1 ✓
+    ink-muted #BCA4A8 / zemin ..................... 7.95:1  ✓
+    ink-muted #BCA4A8 / kart ...................... 7.27:1  ✓
+    rose      #E0A8B4 metin / zemin ............... 9.20:1  ✓
+    rose      #E0A8B4 metin / kart ................ 8.41:1  ✓
+    zemin rengi metin / rose #E0A8B4 (buton) ...... 9.20:1  ✓
+    signal-positive #56C79B / kart ................ 8.09:1  ✓
+    signal-negative #FF8F85 / kart ................ 7.67:1  ✓
+    destructive     #FF6B61 / kart ................ 6.07:1  ✓
+
+  `lilac` koyu zeminde 7.81:1 aliyor — yani teknik olarak okunur. Yine de
+  **metin rengi olarak kullanilmiyor**: bir token'in yalnizca bir temada metin
+  olabilmesi, kurali "lilac metin degildir"den "lilac bazen metindir"e cevirir
+  ve bu kural artik hatirlanamaz. Dekoratif kalmasi bilincli.
+*/
+.dark {
+  color-scheme: dark;
+
+  /* Koyu zeminde golge daha koyu olmali; ink acildigi icin ayri token. */
+  --shadow-tint: #000000;
+  --shadow-glow: #000000;
+
+  /* --------------------------------------------------------- marka paleti */
+  --color-rose: #e0a8b4;
+  --color-rose-soft: #c68b99;
+  --color-rose-deep: #f2cbd3;
+  /* blush burada kenarlik/rozet zemini olarak calisiyor: koyu karsiligi. */
+  --color-blush: #4a3439;
+  /* lilac degismiyor: yalnizca dekoratif ve iki zeminde de ayni isi goruyor. */
+  --color-lilac: #b8a0c4;
+  --color-cream: #1a1114;
+  --color-cream-deep: #241a1d;
+  --color-ink: #f6ebec;
+  --color-ink-muted: #bca4a8;
+
+  --color-surface: #241a1d;
+
+  --color-signal-positive: #56c79b;
+  --color-signal-negative: #ff8f85;
+
+  /* ------------------------------------------- shadcn anlamsal degiskenler */
+  --background: #1a1114;
+  --foreground: #f6ebec;
+
+  --card: #241a1d;
+  --card-foreground: #f6ebec;
+  --popover: #241a1d;
+  --popover-foreground: #f6ebec;
+
+  /* Buton zemini acik gul; uzerindeki metin sayfa zemini rengi -> 9.20:1 */
+  --primary: #e0a8b4;
+  --primary-foreground: #1a1114;
+
+  --secondary: #2e2126;
+  --secondary-foreground: #f6ebec;
+
+  --muted: #2e2126;
+  --muted-foreground: #bca4a8;
+
+  --accent: #4a3439;
+  --accent-foreground: #f6ebec;
+
+  --destructive: #ff6b61;
+  --destructive-foreground: #1a1114;
+
+  --border: color-mix(in srgb, #f6ebec 14%, transparent);
+  --input: color-mix(in srgb, #f6ebec 26%, transparent);
+
+  --ring: #e0a8b4;
+
+  --chart-1: #e0a8b4;
+  --chart-2: #b8a0c4;
+  --chart-3: #4a3439;
+  --chart-4: #c68b99;
+  --chart-5: #bca4a8;
+
+  --sidebar: #1a1114;
+  --sidebar-foreground: #f6ebec;
+  --sidebar-primary: #e0a8b4;
+  --sidebar-primary-foreground: #1a1114;
+  --sidebar-accent: #2e2126;
+  --sidebar-accent-foreground: #f6ebec;
+  --sidebar-border: color-mix(in srgb, #f6ebec 14%, transparent);
+  --sidebar-ring: #e0a8b4;
 }
 
 @theme inline {
@@ -261,26 +403,30 @@
   degeri, saydamlik, kenar rengi) zamanla birbirinden ayrisir ve "hangi kart
   glass?" sorusu her ekranda yeniden tartisilirdi. Projede tekrarlanan
   "tek kapi" deseni.
+
+  2.6: sabit hex degerler token'lara cevrildi (`--color-surface`, `--color-blush`,
+  `--shadow-tint`). Tek kapi olmalarinin karsiligini burada verdiler — koyu tema
+  bu iki kurala hic dokunmadan calisti.
 */
 @utility card-glass {
   position: relative;
   border-radius: var(--radius);
-  border: 1px solid color-mix(in srgb, #e4d2d6 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-blush) 70%, transparent);
   background: linear-gradient(
     150deg,
-    color-mix(in srgb, #ffffff 80%, transparent),
-    color-mix(in srgb, #e4d2d6 26%, transparent)
+    color-mix(in srgb, var(--color-surface) 80%, transparent),
+    color-mix(in srgb, var(--color-blush) 26%, transparent)
   );
   box-shadow:
-    0 1px 2px color-mix(in srgb, #2a1418 5%, transparent),
-    0 10px 30px -18px color-mix(in srgb, #7a4a56 45%, transparent);
+    0 1px 2px color-mix(in srgb, var(--shadow-tint) 5%, transparent),
+    0 10px 30px -18px color-mix(in srgb, var(--shadow-glow) 45%, transparent);
 }
 
 @utility card-solid {
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: #ffffff;
-  box-shadow: 0 1px 2px color-mix(in srgb, #2a1418 6%, transparent);
+  background: var(--color-surface);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow-tint) 6%, transparent);
 }
 
 /*
@@ -294,8 +440,8 @@
   .card-glass {
     background: linear-gradient(
       150deg,
-      color-mix(in srgb, #ffffff 64%, transparent),
-      color-mix(in srgb, #e4d2d6 30%, transparent)
+      color-mix(in srgb, var(--color-surface) 64%, transparent),
+      color-mix(in srgb, var(--color-blush) 30%, transparent)
     );
     backdrop-filter: blur(14px) saturate(1.15);
     -webkit-backdrop-filter: blur(14px) saturate(1.15);
@@ -308,7 +454,7 @@
 */
 @media (prefers-reduced-transparency: reduce) {
   .card-glass {
-    background: #ffffff;
+    background: var(--color-surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }

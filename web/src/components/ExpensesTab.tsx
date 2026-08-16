@@ -112,10 +112,10 @@ const ExpenseRow = ({ expense, currentUserId }: { expense: Expense; currentUserI
         </p>
 
         <p className="expense-row__tags mt-1.5 flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className="border-blush bg-white/60 text-ink-muted">
+          <Badge variant="outline" className="border-blush bg-surface/60 text-ink-muted">
             {expense.category}
           </Badge>
-          <Badge variant="outline" className="border-blush bg-white/60 text-ink-muted">
+          <Badge variant="outline" className="border-blush bg-surface/60 text-ink-muted">
             {SPLIT_LABELS[expense.split_type]}
           </Badge>
           <span className="text-xs text-ink-muted">

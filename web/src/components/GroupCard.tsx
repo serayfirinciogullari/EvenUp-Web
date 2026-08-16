@@ -118,7 +118,7 @@ const GroupCard = ({ group, currentUserId }: GroupCardProps) => {
               size="sm"
               onClick={() => void handleInvite()}
               disabled={invite.status === 'pending'}
-              className="w-full border-rose/25 bg-white/60 text-rose hover:bg-rose/10 hover:text-rose"
+              className="w-full border-rose/25 bg-surface/60 text-rose hover:bg-rose/10 hover:text-rose"
             >
               {invite.status === 'copied' ? (
                 <Check className="size-4" aria-hidden />

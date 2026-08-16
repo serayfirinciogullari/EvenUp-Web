@@ -26,6 +26,17 @@ export interface AuthContextValue {
   login: (input: LoginInput) => Promise<User>;
   register: (input: RegisterInput) => Promise<User>;
   logout: () => void;
+  /**
+   * Kullaniciyi **sunucudan** yeniden okur (`GET /auth/me`) ve context'i
+   * tazeler (2.6).
+   *
+   * Neden bir `setUser` degil: profil guncellendikten sonra ekranda gorunen
+   * ismin kaynagi yerel state olsaydi, "kaydedildi" yazisi yalnizca istegin
+   * hata vermedigini gosterirdi. Burada gosterilen deger sunucudan **geri
+   * okunan** degerdir; yani ekrandaki ad, F5'ten sonra gorulecek adin ta
+   * kendisi.
+   */
+  refreshUser: () => Promise<User>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

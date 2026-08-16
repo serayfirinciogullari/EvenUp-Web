@@ -278,8 +278,11 @@ referansları, `balance--*` tonları, shine keyframe'leri.
 - **Bundle 596 kB (gzip 191 kB)** — görsel kimlik öncesi 294 kB'dı. Artış
   `motion` + Radix kaynaklı ve Vite 500 kB eşiğinde uyarı veriyor. Rota bazlı
   kod bölme (`React.lazy`) doğal çözüm; bu görevin kapsamı dışındaydı.
-- **Karanlık tema yok.** shadcn'in `.dark` bloğu duruyor ama marka paletine
-  çevrilmedi; şu an açık tema tek geçerli görünüm.
+- ~~**Karanlık tema yok.**~~ **2.6'da kapandı**: `.dark` bloğu marka paletine
+  çevrildi, `--color-surface` / gölge token'ları çıkarıldı ve sabit hex kullanan
+  altı yer (kart yüzeyleri, `bg-white`, avatar, logo gradyanı, `ShineBorder`,
+  auth ekranı lekeleri) token'a bağlandı. Kontrast ölçümleri ve gerekçeler
+  `docs/decisions/2.6.md` içinde.
 - **`AnimatedGradientText` metni gradyanla boyanıyor** (`text-transparent` +
   `bg-clip-text`). Zorunlu renk modunda (Windows high contrast) bu tür metin
   görünmez kalabilir; logo için kabul edilebilir bir risk ama bir `@media

@@ -285,7 +285,7 @@ const AddExpenseModal = ({
               <Label htmlFor="expense-category">Kategori</Label>
               <select
                 id="expense-category"
-                className="h-9 rounded-md border border-input bg-white px-3 text-sm"
+                className="h-9 rounded-md border border-input bg-surface px-3 text-sm"
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
                 disabled={pending}
@@ -303,7 +303,7 @@ const AddExpenseModal = ({
             <Label htmlFor="expense-paid-by">Kim odedi</Label>
             <select
               id="expense-paid-by"
-              className="h-9 rounded-md border border-input bg-white px-3 text-sm"
+              className="h-9 rounded-md border border-input bg-surface px-3 text-sm"
               value={paidBy}
               onChange={(event) => setPaidBy(event.target.value)}
               disabled={pending}

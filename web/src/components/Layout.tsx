@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import useAuth from '../hooks/useAuth';
+import { ThemeToggle } from './ThemeToggle';
 
 /**
  * Giris yapmis kullanicilarin ortak cercevesi: gezinme + hesap menusu.
@@ -73,10 +74,15 @@ const Layout = () => {
       <header className="layout__header sticky top-0 z-40 border-b border-ink/10 bg-cream/85 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3 sm:gap-6 sm:px-6">
           <NavLink to="/groups" className="layout__brand shrink-0 text-lg font-semibold">
+            {/*
+              Renkler token uzerinden: koyu temada (2.6) `rose` acik gule
+              donuyor. Sabit hex kalsaydi logonun yarisi koyu zeminde
+              neredeyse gorunmez olurdu.
+            */}
             <AnimatedGradientText
               className="font-display tracking-tight"
-              colorFrom="#7A4A56"
-              colorTo="#B8A0C4"
+              colorFrom="var(--color-rose)"
+              colorTo="var(--color-lilac)"
             >
               EvenUp
             </AnimatedGradientText>
@@ -97,6 +103,14 @@ const Layout = () => {
           </nav>
 
           <div className="layout__user ml-auto flex items-center gap-2">
+            {/*
+              Tema anahtari ust barda: bir goruntu tercihi, degistirildigi anda
+              sonucu gorulen bir seydir — Ayarlar'a gomulmesi her denemede iki
+              tik uzaga koyardi. Ucuncu secenek ("Sistem") yine de Ayarlar'da:
+              orasi tercihe bir isim vermenin yeri (bkz. ThemeToggle.tsx).
+            */}
+            <ThemeToggle />
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -105,7 +119,10 @@ const Layout = () => {
                   aria-label="Hesap menusu"
                 >
                   <Avatar className="size-7">
-                    <AvatarFallback className="bg-rose text-xs font-semibold text-white">
+                    {/* `text-white` degil `text-cream`: koyu temada rose acik
+                        gule doner ve uzerindeki beyaz metin okunmaz olurdu.
+                        cream iki temada da rose'un karsit tonu (>= 6.5:1). */}
+                    <AvatarFallback className="bg-rose text-xs font-semibold text-cream">
                       {initialsOf(user?.name)}
                     </AvatarFallback>
                   </Avatar>

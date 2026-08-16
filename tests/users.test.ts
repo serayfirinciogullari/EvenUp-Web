@@ -1,0 +1,431 @@
+import { randomUUID } from 'crypto';
+
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
+
+import app from '../src/app';
+import userModel from '../src/models/user.model';
+
+import type { PublicUser } from '../src/models/user.model';
+import type { UserRole, UserRow } from '../src/types/models';
+
+/**
+ * `/users/me` uctan uca testleri (2.6 — Hafta 1'e geriye donuk eklenen uclar).
+ *
+ * `auth.test.ts` ile ayni desen: veri katmani bellek ici bir Map ile
+ * degistiriliyor, geri kalan her sey (validasyon, bcrypt, JWT, middleware
+ * sirasi, hata yoneticisi) gercek kod olarak calisiyor. Boylece testler ayakta
+ * bir PostgreSQL istemiyor ama "gercekten kaydediliyor mu" sorusu yine de
+ * saklanan satira bakilarak cevaplanabiliyor.
+ */
+jest.mock('../src/models/user.model', () => ({
+  __esModule: true,
+  default: {
+    findByEmail: jest.fn(),
+    findById: jest.fn(),
+    findPublicById: jest.fn(),
+    create: jest.fn(),
+    listPublic: jest.fn(),
+    updateName: jest.fn(),
+    updatePasswordHash: jest.fn(),
+  },
+}));
+
+const mockedUserModel = userModel as jest.Mocked<typeof userModel>;
+
+const TEST_JWT_SECRET = process.env.JWT_SECRET as string;
+
+/* ------------------------------------------------------- bellek ici "tablo" */
+
+const usersById = new Map<string, UserRow>();
+
+const toPublic = (row: UserRow): PublicUser => {
+  const { password_hash: _hash, fcm_token: _fcm, ...publicFields } = row;
+  return publicFields;
+};
+
+const insertUser = async (input: {
+  email?: string;
+  password: string;
+  name?: string;
+  role?: UserRole;
+  is_active?: boolean;
+}): Promise<UserRow> => {
+  const row: UserRow = {
+    id: randomUUID(),
+    email: input.email ?? `user-${randomUUID()}@evenup.test`,
+    name: input.name ?? 'Test Kullanici',
+    password_hash: await bcrypt.hash(input.password, 10),
+    role: input.role ?? 'user',
+    fcm_token: null,
+    is_active: input.is_active ?? true,
+    created_at: new Date(),
+  };
+
+  usersById.set(row.id, row);
+  return row;
+};
+
+const tokenFor = (user: UserRow): string =>
+  jwt.sign({ userId: user.id, role: user.role }, TEST_JWT_SECRET, { expiresIn: '1h' });
+
+const CURRENT_PASSWORD = 'MevcutSifre123';
+const NEW_PASSWORD = 'YeniSifre456';
+
+beforeAll(() => {
+  // Hata yoneticisi 4xx'leri warn'lar; testler bilerek 400/401 uretiyor.
+  jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+});
+
+beforeEach(() => {
+  usersById.clear();
+
+  mockedUserModel.findById.mockImplementation(async (id: string) => usersById.get(id));
+
+  mockedUserModel.findPublicById.mockImplementation(async (id: string) => {
+    const row = usersById.get(id);
+    return row ? toPublic(row) : undefined;
+  });
+
+  mockedUserModel.updateName.mockImplementation(async (userId: string, name: string) => {
+    const row = usersById.get(userId);
+
+    if (!row) {
+      return undefined;
+    }
+
+    // Gercek sorgu gibi: **yalnizca** name kolonu yaziliyor.
+    const updated: UserRow = { ...row, name };
+    usersById.set(userId, updated);
+    return toPublic(updated);
+  });
+
+  mockedUserModel.updatePasswordHash.mockImplementation(
+    async (userId: string, passwordHash: string) => {
+      const row = usersById.get(userId);
+
+      if (!row) {
+        return false;
+      }
+
+      usersById.set(userId, { ...row, password_hash: passwordHash });
+      return true;
+    }
+  );
+});
+
+/* ========================================================= PUT /users/me */
+
+describe('PUT /users/me', () => {
+  it('ismi gunceller ve guncel kullaniciyi doner', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD, name: 'Eski Isim' });
+
+    const response = await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ name: 'Yeni Isim' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toMatchObject({ id: user.id, name: 'Yeni Isim' });
+  });
+
+  it('degisiklik gercekten saklanir: sonraki GET /auth/me yeni ismi doner', async () => {
+    // Gorevin "F5'ten sonra kalici mi" sorusunun sunucu tarafindaki karsiligi:
+    // cevap govdesi degil, **ikinci bir okuma** dogruluyor.
+    const user = await insertUser({ password: CURRENT_PASSWORD, name: 'Eski Isim' });
+    const token = tokenFor(user);
+
+    await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Yeni Isim' });
+
+    const me = await request(app).get('/auth/me').set('Authorization', `Bearer ${token}`);
+
+    expect(me.status).toBe(200);
+    expect(me.body.user.name).toBe('Yeni Isim');
+  });
+
+  it('isimdeki bosluklari kirpar', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ name: '   Bosluklu Isim   ' });
+
+    expect(response.body.user.name).toBe('Bosluklu Isim');
+  });
+
+  it('token yoksa 401 doner ve hicbir guncelleme yapilmaz', async () => {
+    const response = await request(app).put('/users/me').send({ name: 'Yeni Isim' });
+
+    expect(response.status).toBe(401);
+    expect(mockedUserModel.updateName).not.toHaveBeenCalled();
+  });
+
+  it('bos isim 400 doner, hata alan adiyla birlikte gelir', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD, name: 'Eski Isim' });
+
+    const response = await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ name: '   ' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details).toEqual({ name: 'Isim zorunlu' });
+    expect(usersById.get(user.id)?.name).toBe('Eski Isim');
+  });
+
+  it('120 karakterden uzun isim 400 doner', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ name: 'a'.repeat(121) });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details.name).toContain('120');
+  });
+
+  /**
+   * Yetki yukseltme: govdeye `role` yazan biri kendini admin yapamamali.
+   * Koruma iki katmanda birden (servis yalnizca `name` cikariyor, model sabit
+   * kolon yaziyor); test ikisinin **sonucunu** sinar.
+   */
+  it('govdedeki role / is_active / email alanlari yok sayilir', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD, name: 'Eski Isim' });
+
+    const response = await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({
+        name: 'Yeni Isim',
+        role: 'admin',
+        is_active: false,
+        email: 'saldirgan@evenup.test',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user.role).toBe('user');
+
+    const stored = usersById.get(user.id) as UserRow;
+    expect(stored.role).toBe('user');
+    expect(stored.is_active).toBe(true);
+    expect(stored.email).toBe(user.email);
+    expect(mockedUserModel.updateName).toHaveBeenCalledWith(user.id, 'Yeni Isim');
+  });
+
+  it('govdedeki id baska bir kullaniciyi guncellemez', async () => {
+    const attacker = await insertUser({ password: CURRENT_PASSWORD, name: 'Saldirgan' });
+    const victim = await insertUser({ password: CURRENT_PASSWORD, name: 'Kurban' });
+
+    await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${tokenFor(attacker)}`)
+      .send({ id: victim.id, name: 'Ele Gecirildi' });
+
+    expect(usersById.get(victim.id)?.name).toBe('Kurban');
+    expect(usersById.get(attacker.id)?.name).toBe('Ele Gecirildi');
+  });
+
+  it('response govdesinde password_hash bulunmaz', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ name: 'Yeni Isim' });
+
+    expect(response.body.user).not.toHaveProperty('password_hash');
+    expect(JSON.stringify(response.body)).not.toContain('$2b$');
+  });
+});
+
+/* ================================================ PUT /users/me/password */
+
+describe('PUT /users/me/password', () => {
+  const changePassword = (user: UserRow, body: Record<string, unknown>) =>
+    request(app)
+      .put('/users/me/password')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send(body);
+
+  it('dogru mevcut sifreyle sifreyi degistirir', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await changePassword(user, {
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.status).toBe(200);
+
+    const stored = usersById.get(user.id) as UserRow;
+    await expect(bcrypt.compare(NEW_PASSWORD, stored.password_hash)).resolves.toBe(true);
+  });
+
+  it('yeni sifre hash olarak saklanir, duz metin degil', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    await changePassword(user, {
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    const stored = usersById.get(user.id) as UserRow;
+    expect(stored.password_hash).not.toBe(NEW_PASSWORD);
+    expect(stored.password_hash).toMatch(/^\$2[aby]\$\d{2}\$/);
+  });
+
+  it('degisiklikten sonra eski sifreyle giris yapilamaz, yenisiyle yapilir', async () => {
+    // Sifre degisikliginin **gercekten** etkili oldugunun tek gecerli kaniti.
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+    mockedUserModel.findByEmail.mockImplementation(async (email: string) =>
+      [...usersById.values()].find((row) => row.email === email)
+    );
+
+    await changePassword(user, {
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    const withOld = await request(app)
+      .post('/auth/login')
+      .send({ email: user.email, password: CURRENT_PASSWORD });
+    const withNew = await request(app)
+      .post('/auth/login')
+      .send({ email: user.email, password: NEW_PASSWORD });
+
+    expect(withOld.status).toBe(401);
+    expect(withNew.status).toBe(200);
+  });
+
+  /**
+   * Gorevin asil sorusu: mevcut sifre yanlisken hicbir sey degismemeli ve
+   * kullanici **acik** bir hata gormeli.
+   */
+  it('mevcut sifre yanlissa 400 + acik mesaj doner, sifre degismez', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+    const hashBefore = user.password_hash;
+
+    const response = await changePassword(user, {
+      currentPassword: 'YanlisSifre999',
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Mevcut sifre hatali');
+    expect(response.body.details).toEqual({ currentPassword: 'Mevcut sifre hatali' });
+    expect(usersById.get(user.id)?.password_hash).toBe(hashBefore);
+    expect(mockedUserModel.updatePasswordHash).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 401 donseydi frontend'in merkezi interceptor'u bunu "oturum dustu" sayip
+   * kullaniciyi cikartirdi (web/src/api/client.ts). Durum kodu bu yuzden
+   * sozlesmenin bir parcasi ve testi var.
+   */
+  it('yanlis mevcut sifre 401 DEGIL 400 doner (oturum dusurulmemeli)', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await changePassword(user, {
+      currentPassword: 'YanlisSifre999',
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.status).not.toBe(401);
+    expect(response.status).toBe(400);
+  });
+
+  it('mevcut sifre bos ise 400 doner ve bcrypt karsilastirmasina hic girilmez', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await changePassword(user, { newPassword: NEW_PASSWORD });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details).toEqual({ currentPassword: 'Mevcut sifre zorunlu' });
+    expect(mockedUserModel.findById).not.toHaveBeenCalled();
+  });
+
+  it('yeni sifre 8 karakterden kisaysa 400 doner', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await changePassword(user, {
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: 'kisa',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details.newPassword).toBe('Yeni sifre en az 8 karakter olmali');
+  });
+
+  it('yeni sifre mevcut sifreyle ayniysa 400 doner', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await changePassword(user, {
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: CURRENT_PASSWORD,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details.newPassword).toBe('Yeni sifre mevcut sifreden farkli olmali');
+  });
+
+  it('token yoksa 401 doner', async () => {
+    const response = await request(app).put('/users/me/password').send({
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.status).toBe(401);
+    expect(mockedUserModel.updatePasswordHash).not.toHaveBeenCalled();
+  });
+
+  it('devre disi birakilmis kullanici sifresini degistiremez', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD, is_active: false });
+
+    const response = await changePassword(user, {
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.status).toBe(401);
+    expect(mockedUserModel.updatePasswordHash).not.toHaveBeenCalled();
+  });
+
+  it('bir kullanicinin tokeni baskasinin sifresini degistiremez', async () => {
+    const attacker = await insertUser({ password: CURRENT_PASSWORD });
+    const victim = await insertUser({ password: 'KurbanSifresi123' });
+    const victimHashBefore = victim.password_hash;
+
+    // Govdeye kurbanin ID'si yazilsa bile hedef token'dan okunuyor.
+    await changePassword(attacker, {
+      userId: victim.id,
+      id: victim.id,
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(usersById.get(victim.id)?.password_hash).toBe(victimHashBefore);
+    await expect(
+      bcrypt.compare(NEW_PASSWORD, usersById.get(attacker.id)?.password_hash as string)
+    ).resolves.toBe(true);
+  });
+
+  it('cevapta sifre ya da hash sizmaz', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await changePassword(user, {
+      currentPassword: CURRENT_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    const body = JSON.stringify(response.body);
+    expect(body).not.toContain(NEW_PASSWORD);
+    expect(body).not.toContain(CURRENT_PASSWORD);
+    expect(body).not.toContain('$2b$');
+  });
+});
