@@ -2,8 +2,9 @@ import { Monitor, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler';
 import { cn } from '@/lib/utils';
+import { usePrefersReducedMotion } from '../hooks/useMediaQuery';
 
 /**
  * Tema kontrolleri (2.6).
@@ -45,27 +46,65 @@ const useMountedTheme = () => {
   return { mounted, theme, resolvedTheme, setTheme };
 };
 
-/** Ust bardaki hizli gecis: yalnizca acik <-> koyu. */
+/** Butonun olcusu iki durumda da ayni: mount oncesi/sonrasi bar sicramasin. */
+const TOGGLE_CLASS =
+  'theme-toggle inline-flex size-8 items-center justify-center rounded-md text-ink transition-colors hover:bg-ink/5 [&_svg]:size-4';
+
+/**
+ * Ust bardaki hizli gecis: yalnizca acik <-> koyu.
+ *
+ * GECIS ANIMASYONU — `AnimatedThemeToggler`
+ * -----------------------------------------
+ * Yeni tema, tiklanan noktadan disari acilan bir daire icinde ortaya cikiyor
+ * (View Transitions API). Iki sey kazandiriyor: degisimin **nereden**
+ * tetiklendigi gorunur oluyor, ve ani renk sicramasi yerine yonu belli bir
+ * hareket kaliyor. Destegi olmayan tarayicida bilesen sessizce dogrudan
+ * degistirmeye dusuyor — ek bir kontrol yazmaya gerek yok.
+ *
+ * NEDEN KONTROLLU KULLANIM (`theme` + `onThemeChange`)
+ * ---------------------------------------------------
+ * Bilesenin kendi hali `localStorage`'a **`theme`** anahtariyla yaziyor; bizim
+ * anahtarimiz `evenup.theme` (bkz. lib/theme.ts) ve tercihi `next-themes`
+ * yonetiyor. Kontrolsuz birakilsaydi iki ayri kayit olusur, sayfa yenilendiginde
+ * `index.html`'deki acilis script'i **eski** degeri okur ve tema geri atardi.
+ * Kontrollu halde saklama tek elde kaliyor; bilesene yalnizca animasyon dusuyor.
+ */
 export const ThemeToggle = () => {
   const { mounted, resolvedTheme, setTheme } = useMountedTheme();
+  // Kosullu return'un ustunde: hook sirasi her render'da ayni kalmali.
+  const reducedMotion = usePrefersReducedMotion();
 
   const isDark = resolvedTheme === 'dark';
   // Etiket **eylemi** anlatiyor ("koyu temaya gec"), durumu degil: ekran
   // okuyucu kullanicisi butona basinca ne olacagini bilmeli.
   const label = isDark ? 'Acik temaya gec' : 'Koyu temaya gec';
 
+  /*
+    Mount olmadan once notr bir ikon: yanlis durum gostermektense yansiz.
+    Ayri bir oge olmasinin ikinci nedeni kontrollu kullanim — `theme` prop'u
+    `undefined` gecilirse bilesen kontrolsuz moda duser ve yukaridaki cift
+    kayit sorunu geri gelir. Tercih bilinmeden o bilesen hic cizilmiyor.
+  */
+  if (!mounted) {
+    return (
+      <span className={TOGGLE_CLASS} aria-hidden>
+        <Monitor className="size-4" />
+      </span>
+    );
+  }
+
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="theme-toggle size-8 hover:bg-ink/5"
+    <AnimatedThemeToggler
+      className={TOGGLE_CLASS}
       aria-label={label}
       title={label}
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
-    >
-      {/* Mount olmadan once notr bir ikon: yanlis durum gostermektense yansiz. */}
-      {!mounted ? <Monitor aria-hidden /> : isDark ? <Sun aria-hidden /> : <Moon aria-hidden />}
-    </Button>
+      theme={isDark ? 'dark' : 'light'}
+      onThemeChange={setTheme}
+      // `prefers-reduced-motion` altinda acilan daire kapaniyor. index.css'teki
+      // genel kural buna yetmiyor: efekt bir CSS gecisi degil, pseudo-oge
+      // uzerinde calisan bir Web Animations animasyonu.
+      duration={reducedMotion ? 0 : 400}
+    />
   );
 };
 

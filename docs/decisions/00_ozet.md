@@ -55,7 +55,11 @@ Görevlerin ilerleyişi:
 | 2.1   | Frontend iskeleti, rota koruma, token saklama |
 | 2.2   | Giriş/kayıt ekranları, iki katmanlı validasyon |
 | 2.3   | Gruplarım ekranı, bakiye renklendirmesi, durum yönetimi |
+| 2.7   | [Home sayfası](2.7-home-sayfasi.md) — karma carousel, kart sırası, `/` → `/home` |
+| 2.8   | [Özel imleç](2.8-ozel-imlec.md) — para tomarı, portal, kabul edilen maliyet |
+| 2.9   | [Takma isimler](2.9-takma-isimler.md) — Kişiler sekmesi, kişiye özel adlar |
 | —     | [Görsel kimlik](gorsel-kimlik.md) — Tailwind + shadcn/ui + Magic UI, yüzey ayrımı |
+| —     | [Home özeti](home-summary.md) — ilk toplu (aggregate) uç, N+1'in önlenmesi |
 
 ---
 

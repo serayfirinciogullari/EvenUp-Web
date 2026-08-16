@@ -27,8 +27,21 @@ vi.mock('../api/auth', () => ({
   },
 }));
 
-// Basarili giris /groups'a duser ve o sayfa artik gercek veri cekiyor (2.3);
-// bu dosyanin derdi form davranisi oldugu icin grup API'si sabitleniyor.
+// Basarili giris 2.7'den beri /home'a duser ve o sayfa ozet cekiyor; bu
+// dosyanin derdi form davranisi oldugu icin ozet sabitleniyor.
+vi.mock('../api/summary', () => ({
+  __esModule: true,
+  default: {
+    getHomeSummary: vi.fn().mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 0,
+      pendingSettlementsCount: 0,
+    }),
+  },
+}));
+
+// Gruplar sayfasi da gercek veri cekiyor (2.3); gezinme testleri icin sabit.
 vi.mock('../api/groups', () => ({
   __esModule: true,
   default: {
@@ -366,7 +379,7 @@ describe('backend hatalari', () => {
 /* ================================================================ basarili akis */
 
 describe('basarili akis', () => {
-  it('giris basarili olunca /groups gorunur ve token saklanir', async () => {
+  it('giris basarili olunca /home gorunur ve token saklanir', async () => {
     mockedAuthApi.login.mockResolvedValue(authResult);
 
     renderAt('/login');
@@ -376,7 +389,8 @@ describe('basarili akis', () => {
     type('Sifre', 'Password123!');
     submit('Giris yap');
 
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    // 2.7: giris sonrasi ilk ekran Home.
+    expect(await screen.findByRole('heading', { name: 'Merhaba, Deniz' })).toBeInTheDocument();
     expect(window.localStorage.getItem(TOKEN_KEY)).toBe('yeni.jwt.token');
   });
 
@@ -392,8 +406,8 @@ describe('basarili akis', () => {
     submit('Kayit ol');
 
     // Karar: kayit cevabindaki token dogrudan kullanilir.
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
-    // Kullanici adi Layout basliginda duruyor.
+    expect(await screen.findByRole('heading', { name: 'Merhaba, Deniz' })).toBeInTheDocument();
+    // Kullanici adi Layout basliginda da duruyor.
     expect(screen.getByText('Deniz')).toBeInTheDocument();
     expect(window.localStorage.getItem(TOKEN_KEY)).toBe('yeni.jwt.token');
     expect(screen.queryByRole('heading', { name: 'Giris yap' })).not.toBeInTheDocument();

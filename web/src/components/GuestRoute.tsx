@@ -24,7 +24,9 @@ const GuestRoute = () => {
 
   if (status === 'authenticated') {
     const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-    return <Navigate to={from ?? '/groups'} replace />;
+    // Varsayilan hedef Home: giris sonrasi akisin basi orasi. `from` varsa o
+    // kazaniyor — korunan bir sayfadan gelen kullanici basladigi yere donmeli.
+    return <Navigate to={from ?? '/home'} replace />;
   }
 
   return <Outlet />;

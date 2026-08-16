@@ -46,13 +46,24 @@ const initialsOf = (name: string | undefined): string => {
 
 const navLinkClass = ({ isActive }: { isActive: boolean }): string =>
   cn(
-    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+    // `shrink-0` + `whitespace-nowrap`: dar ekranda ogeler sikisip kirilmasin,
+    // gerekirse nav yatay kaysin.
+    'shrink-0 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
     // Aktif durum rose ile isaretleniyor: "neredeyim" sorusu da etkilesim
     // kanalindan okunuyor (iki kanal kurali).
     isActive
       ? 'bg-rose/10 text-rose'
       : 'text-ink-muted hover:bg-ink/5 hover:text-ink'
   );
+
+/**
+ * Ikincil gezinme ogeleri: dar ekranda gizleniyor.
+ *
+ * Ayni hedefler hesap menusunde de var, dolayisiyla gizlemek bir yolu
+ * kapatmiyor — yalnizca dar ekranda oncelik veriyor.
+ */
+const secondaryNavLinkClass = (state: { isActive: boolean }): string =>
+  cn(navLinkClass(state), 'hidden sm:inline-block');
 
 const Layout = () => {
   const { user, isAdmin, logout } = useAuth();
@@ -73,7 +84,7 @@ const Layout = () => {
       */}
       <header className="layout__header sticky top-0 z-40 border-b border-ink/10 bg-cream/85 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3 sm:gap-6 sm:px-6">
-          <NavLink to="/groups" className="layout__brand shrink-0 text-lg font-semibold">
+          <NavLink to="/home" className="layout__brand shrink-0 text-lg font-semibold">
             {/*
               Renkler token uzerinden: koyu temada (2.6) `rose` acik gule
               donuyor. Sabit hex kalsaydi logonun yarisi koyu zeminde
@@ -88,16 +99,38 @@ const Layout = () => {
             </AnimatedGradientText>
           </NavLink>
 
-          <nav className="layout__nav flex items-center gap-1">
+          {/*
+            Gezinme, Home eklendikten sonra da **duz** kaldi: Home bir gecit
+            degil, esit bir sayfa. Kullanici Home'a hic ugramadan gruplarina
+            gidebiliyor ve her an geri donebiliyor.
+
+            `min-w-0` OLMADAN `overflow-x-auto` CALISMAZ: flex ogesinin
+            varsayilan `min-width: auto` degeri, onu icerigin altina inmekten
+            alikoyar — nav kaymaz, bunun yerine ust barin tamamini genisletir.
+            "Ana Sayfa" eklendikten sonra dort oge (Ana Sayfa / Gruplar / Admin
+            / Ayarlar) 375px'e sigmiyor; ikisi birlikte olunca nav kendi icinde
+            kayiyor ve sayfa yatay kaymiyor.
+          */}
+          <nav className="layout__nav -mx-1 flex min-w-0 items-center gap-1 overflow-x-auto px-1">
+            <NavLink to="/home" className={navLinkClass}>
+              Ana Sayfa
+            </NavLink>
             <NavLink to="/groups" className={navLinkClass}>
               Gruplar
             </NavLink>
+            {/*
+              Admin ve Ayarlar dar ekranda nav'dan cikiyor — ikisi de hesap
+              menusunde zaten var (asagida), yani hicbir sey erisilemez
+              olmuyor. Kalanlar iki asil hedef: Ana Sayfa ve Gruplar.
+              Alternatif (hepsini birakip nav'i kaydirmak) mobilde gizli bir
+              kaydirma alani uretirdi; kullanicilar orayi aramaz.
+            */}
             {isAdmin && (
-              <NavLink to="/admin" className={navLinkClass}>
+              <NavLink to="/admin" className={secondaryNavLinkClass}>
                 Admin
               </NavLink>
             )}
-            <NavLink to="/settings" className={navLinkClass}>
+            <NavLink to="/settings" className={secondaryNavLinkClass}>
               Ayarlar
             </NavLink>
           </nav>

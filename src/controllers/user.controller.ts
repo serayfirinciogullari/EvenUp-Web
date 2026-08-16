@@ -1,4 +1,5 @@
 import authService from '../services/auth.service';
+import summaryService from '../services/summary.service';
 import ApiError from '../utils/ApiError';
 
 import type { Request, Response } from 'express';
@@ -44,4 +45,21 @@ const changeMyPassword = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json({ message: 'Sifreniz guncellendi' });
 };
 
-export default { updateMe, changeMyPassword };
+/**
+ * GET /users/me/home-summary -> 200 { summary }  (requireAuth)
+ *
+ * Hedef yine token'daki kullanici; adreste ID yok, yani "baskasinin ozeti"
+ * bu ucta ifade edilemiyor. Ozet kullanicinin **tum** gruplarini kapsadigi
+ * icin bu onemli: tek bir ID parametresi butun gruplarinin mali durumunu
+ * disariya acan bir IDOR yuzeyi olurdu.
+ */
+const getHomeSummary = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    throw ApiError.unauthorized('Kimlik dogrulamasi gerekli');
+  }
+
+  const summary = await summaryService.getHomeSummary(req.user.id);
+  res.status(200).json({ summary });
+};
+
+export default { updateMe, changeMyPassword, getHomeSummary };

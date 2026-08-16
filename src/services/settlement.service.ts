@@ -92,8 +92,7 @@ const createSettlement = async (
     throw ApiError.forbidden(ONLY_DEBTOR);
   }
 
-  const members = await groupModel.listMembers(groupId);
-  const memberIds = new Set(members.map((member) => member.user_id));
+  const memberIds = new Set(await groupModel.listMemberIds(groupId));
 
   const errors: Record<string, string> = {};
 

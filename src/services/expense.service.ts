@@ -277,9 +277,9 @@ const loadGroupContext = async (
   userId: string
 ): Promise<{ membership: GroupMemberRow; memberIds: Set<string> }> => {
   const { membership } = await requireMembership(groupId, userId);
-  const members = await groupModel.listMembers(groupId);
+  const memberIds = await groupModel.listMemberIds(groupId);
 
-  return { membership, memberIds: new Set(members.map((member) => member.user_id)) };
+  return { membership, memberIds: new Set(memberIds) };
 };
 
 /**

@@ -1,6 +1,12 @@
 import db from '../db/connection';
 
-import type { GroupInviteRow, GroupMemberRole, GroupMemberRow, GroupRow } from '../types/models';
+import type {
+  GroupInviteRow,
+  GroupMemberRole,
+  GroupMemberRow,
+  GroupRow,
+  MemberNicknameRow,
+} from '../types/models';
 
 /**
  * groups / group_members / group_invites veri erisim katmani.
@@ -36,6 +42,14 @@ export interface GroupMemberView {
   email: string;
   role: GroupMemberRole;
   joined_at: Date;
+  /**
+   * **Isteyen kullanicinin** bu uyeye verdigi takma isim; yoksa `null`.
+   *
+   * Gercek `name` her zaman yaninda duruyor ve asla yerine gecmiyor: takma
+   * isim kisiye ozel bir etiket, kimligin kendisi degil. Arayuz ikisini
+   * birlikte gosterebilsin diye ikisi de doner (bkz. migration 12).
+   */
+  nickname: string | null;
 }
 
 /** `redeemInvite` sonucu. Neden basarisiz oldugunu **kasten** ayirmaz:
@@ -99,16 +113,38 @@ const listForUser = async (userId: string): Promise<GroupSummary[]> => {
   );
 };
 
-const listMembers = async (groupId: string): Promise<GroupMemberView[]> =>
+/**
+ * Grubun uyeleri + **istekte bulunanin** verdigi takma isimler.
+ *
+ * `viewerId` zorunlu, opsiyonel degil: takma isim kisiye ozel oldugu icin "kim
+ * soruyor" bilinmeden dogru cevap uretilemez. Parametreyi opsiyonel yapmak,
+ * unutuldugunda sessizce **herkese bos takma isim** donduren bir imza olurdu.
+ *
+ * LEFT JOIN, ikinci bir sorgu degil: uye sayisi kucuk ama satirlari cektikten
+ * sonra ayri bir sorgu atip bellekte eslestirmek, tek bir join'in yapacagi isi
+ * iki gidis-donuse bolmek olurdu. Join'in ON kosulu `owner_user_id = viewerId`
+ * iceriyor — WHERE'e tasinsaydi takma ismi olmayan uyeler listeden **duserdi**.
+ */
+const listMembers = async (groupId: string, viewerId: string): Promise<GroupMemberView[]> =>
   db('group_members as gm')
     .join('users as u', 'u.id', 'gm.user_id')
+    .leftJoin('member_nicknames as mn', function joinNickname() {
+      this.on('mn.group_id', '=', 'gm.group_id')
+        .andOn('mn.target_user_id', '=', 'gm.user_id')
+        .andOnVal('mn.owner_user_id', '=', viewerId);
+    })
     .where('gm.group_id', groupId)
     // owner once, sonra katilim sirasi
     .orderByRaw("CASE WHEN gm.role = 'owner' THEN 0 ELSE 1 END")
     .orderBy('gm.joined_at', 'asc')
-    .select('gm.user_id', 'u.name', 'u.email', 'gm.role', 'gm.joined_at') as unknown as Promise<
-    GroupMemberView[]
-  >;
+    .select(
+      'gm.user_id',
+      'u.name',
+      'u.email',
+      'gm.role',
+      'gm.joined_at',
+      'mn.nickname'
+    ) as unknown as Promise<GroupMemberView[]>;
 
 /* ---------------------------------------------------------------- yazma */
 
@@ -163,6 +199,62 @@ const softDelete = async (groupId: string): Promise<GroupRow | undefined> =>
 
     return deleted;
   });
+
+/**
+ * Yalnizca uye ID'leri.
+ *
+ * `listMembers`ten ayri duruyor cunku **farkli bir soru**: "kim bu grupta?"
+ * — ad, e-posta ya da takma isim gerekmiyor. Katilimci dogrulamasi yapan
+ * yerler (harcama payi, odeme karsi tarafi) bunu soruyor ve `listMembers`i
+ * cagirsalardi `users` join'i ile takma isim join'ini bosuna odemis olurlardi.
+ * Ayrica o imza "kim soruyor?" parametresi ister; burada boyle bir kavram yok.
+ */
+const listMemberIds = async (groupId: string): Promise<string[]> => {
+  const rows = await db('group_members').where({ group_id: groupId }).select('user_id');
+
+  return rows.map((row) => row.user_id);
+};
+
+/* ---------------------------------------------------------- takma isimler */
+
+/**
+ * Takma ismi yazar ya da gunceller.
+ *
+ * `onConflict().merge()` (UPSERT) tercih edildi: "once oku, yoksa ekle, varsa
+ * guncelle" uc adimi ayni kullanici iki sekmeden yazdiginda unique kisitina
+ * takilip 500 uretirdi. Tek ifade hem atomik hem de yaris kosulundan bagimsiz.
+ *
+ * Cakisma hedefi migration'daki uclu unique ile **ayni** olmali; aksi halde
+ * PostgreSQL eslesecek bir kisit bulamaz ve hata verir.
+ */
+const upsertNickname = async (input: {
+  group_id: string;
+  owner_user_id: string;
+  target_user_id: string;
+  nickname: string;
+}): Promise<MemberNicknameRow> => {
+  const [row] = await db('member_nicknames')
+    .insert(input)
+    .onConflict(['group_id', 'owner_user_id', 'target_user_id'])
+    .merge({ nickname: input.nickname, updated_at: new Date() })
+    .returning('*');
+
+  return row;
+};
+
+/** Takma ismi kaldirir. Donen sayi 0 ise zaten yoktu — cagiran taraf icin hata degil. */
+const removeNickname = async (
+  groupId: string,
+  ownerUserId: string,
+  targetUserId: string
+): Promise<number> =>
+  db('member_nicknames')
+    .where({
+      group_id: groupId,
+      owner_user_id: ownerUserId,
+      target_user_id: targetUserId,
+    })
+    .del();
 
 /* --------------------------------------------------------------- davetler */
 
@@ -257,9 +349,12 @@ export default {
   findMembership,
   listForUser,
   listMembers,
+  listMemberIds,
   createWithOwner,
   removeMember,
   softDelete,
+  upsertNickname,
+  removeNickname,
   findActiveInvite,
   issueInvite,
   redeemInvite,

@@ -6,10 +6,12 @@ import { THEME_STORAGE_KEY } from '@/lib/theme';
 import AdminRoute from './components/AdminRoute';
 import GuestRoute from './components/GuestRoute';
 import Layout from './components/Layout';
+import AppCursor from './components/AppCursor';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminPage from './pages/AdminPage';
 import GroupDetailPage from './pages/GroupDetailPage';
 import GroupsPage from './pages/GroupsPage';
+import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import RegisterPage from './pages/RegisterPage';
@@ -22,10 +24,16 @@ import SettingsPage from './pages/SettingsPage';
  * korunan sayfa eklendiginde korumayi devralir. Backend'de `requireAuth`'un
  * router seviyesinde takili olmasiyla ayni gerekce (bkz. group.routes.ts).
  *
- *   /                 -> /groups (yonlendirme)
+ *   /                 -> /home (yonlendirme)
  *   GuestRoute        -> /login, /register        (giris yapmisken erisilmez)
- *   ProtectedRoute    -> /groups, /groups/:id, /settings
+ *   ProtectedRoute    -> /home, /groups, /groups/:id, /settings
  *     + AdminRoute    -> /admin
+ *
+ * KOK ADRES NEDEN /home
+ * ---------------------
+ * 2.1'de `/` -> `/groups` idi. Home eklenince acilis ekrani degisti ama
+ * `/groups` **kaldirilmadi**: Home bir gecit degil, geri donulebilir bir sayfa.
+ * Ust bardaki gezinme ikisini de tasiyor (bkz. Layout.tsx).
  *
  * `Toaster` rota agacinin disinda: bir bildirim, onu tetikleyen sayfadan sonra
  * da (ornegin modal kapandiktan sonra) ayakta kalmali.
@@ -49,7 +57,7 @@ const App = () => (
     disableTransitionOnChange
   >
     <Routes>
-      <Route path="/" element={<Navigate to="/groups" replace />} />
+      <Route path="/" element={<Navigate to="/home" replace />} />
 
       <Route element={<GuestRoute />}>
         <Route path="/login" element={<LoginPage />} />
@@ -58,6 +66,7 @@ const App = () => (
 
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
+          <Route path="/home" element={<HomePage />} />
           <Route path="/groups" element={<GroupsPage />} />
           <Route path="/groups/:id" element={<GroupDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
@@ -73,6 +82,13 @@ const App = () => (
     </Routes>
 
     <Toaster position="bottom-right" />
+
+    {/*
+      Ozel imlec de rota agacinin disinda: sayfa degisiminde yeniden mount
+      olsaydi imlec her gecişte bir kare kaybolurdu. Kendisi dokunmatikte ve
+      `prefers-reduced-motion` altinda hic cizilmiyor (bkz. AppCursor).
+    */}
+    <AppCursor />
   </ThemeProvider>
 );
 

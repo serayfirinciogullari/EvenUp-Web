@@ -27,7 +27,9 @@ const AdminRoute = () => {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/groups" replace />;
+    // Home'a dusuyor, /groups'a degil: yetkisi olmayan biri icin dogru cevap
+    // "en bastan basla", rastgele baska bir ic sayfa degil.
+    return <Navigate to="/home" replace />;
   }
 
   return <Outlet />;

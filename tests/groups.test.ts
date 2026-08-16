@@ -12,6 +12,7 @@ import type {
   GroupMemberRow,
   GroupRow,
   GroupMemberRole,
+  MemberNicknameRow,
 } from '../src/types/models';
 
 /**
@@ -30,6 +31,9 @@ jest.mock('../src/models/group.model', () => ({
     findMembership: jest.fn(),
     listForUser: jest.fn(),
     listMembers: jest.fn(),
+    listMemberIds: jest.fn(),
+    upsertNickname: jest.fn(),
+    removeNickname: jest.fn(),
     createWithOwner: jest.fn(),
     removeMember: jest.fn(),
     softDelete: jest.fn(),
@@ -56,6 +60,7 @@ const users = new Map<string, TestUser>();
 let groups: GroupRow[] = [];
 let members: GroupMemberRow[] = [];
 let invites: GroupInviteRow[] = [];
+let nicknames: MemberNicknameRow[] = [];
 
 const makeUser = (name: string): TestUser => {
   const id = randomUUID();
@@ -129,7 +134,9 @@ const installInMemoryModel = (): void => {
       }))
   );
 
-  mockedGroupModel.listMembers.mockImplementation(async (groupId: string) =>
+  // `viewerId` gercek sorgudaki gibi: takma isim kisiye ozel, dolayisiyla
+  // hangi satirin doldugu **kimin sordugu** ile belirleniyor.
+  mockedGroupModel.listMembers.mockImplementation(async (groupId: string, viewerId: string) =>
     members
       .filter((member) => member.group_id === groupId)
       .map<GroupMemberView>((member) => {
@@ -140,8 +147,62 @@ const installInMemoryModel = (): void => {
           email: user.email,
           role: member.role,
           joined_at: member.joined_at,
+          nickname:
+            nicknames.find(
+              (row) =>
+                row.group_id === groupId &&
+                row.owner_user_id === viewerId &&
+                row.target_user_id === member.user_id
+            )?.nickname ?? null,
         };
       })
+  );
+
+  mockedGroupModel.listMemberIds.mockImplementation(async (groupId: string) =>
+    members.filter((member) => member.group_id === groupId).map((member) => member.user_id)
+  );
+
+  mockedGroupModel.upsertNickname.mockImplementation(async (input) => {
+    const existing = nicknames.find(
+      (row) =>
+        row.group_id === input.group_id &&
+        row.owner_user_id === input.owner_user_id &&
+        row.target_user_id === input.target_user_id
+    );
+
+    if (existing) {
+      existing.nickname = input.nickname;
+      existing.updated_at = new Date();
+      return existing;
+    }
+
+    const row: MemberNicknameRow = {
+      id: randomUUID(),
+      group_id: input.group_id,
+      owner_user_id: input.owner_user_id,
+      target_user_id: input.target_user_id,
+      nickname: input.nickname,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    nicknames.push(row);
+    return row;
+  });
+
+  mockedGroupModel.removeNickname.mockImplementation(
+    async (groupId: string, ownerId: string, targetId: string) => {
+      const before = nicknames.length;
+      nicknames = nicknames.filter(
+        (row) =>
+          !(
+            row.group_id === groupId &&
+            row.owner_user_id === ownerId &&
+            row.target_user_id === targetId
+          )
+      );
+      return before - nicknames.length;
+    }
   );
 
   mockedGroupModel.removeMember.mockImplementation(async (groupId: string, userId: string) => {
@@ -269,6 +330,7 @@ beforeEach(() => {
   groups = [];
   members = [];
   invites = [];
+  nicknames = [];
   installInMemoryModel();
 });
 
@@ -706,6 +768,195 @@ describe('POST /groups/join/:inviteCode', () => {
 
     expect(response.status).toBe(401);
     expect(mockedGroupModel.redeemInvite).not.toHaveBeenCalled();
+  });
+});
+
+/* ==================== PUT /groups/:id/members/:userId/nickname */
+
+describe('PUT /groups/:id/members/:userId/nickname', () => {
+  const setup = async (): Promise<{
+    owner: TestUser;
+    member: TestUser;
+    outsider: TestUser;
+    group: GroupRow;
+  }> => {
+    const owner = makeUser('Deniz');
+    const member = makeUser('Ece');
+    const outsider = makeUser('Yabanci');
+    const group = await createGroupFor(owner);
+    const kod = await inviteCodeFor(owner, group.id);
+
+    await request(app)
+      .post(`/groups/join/${kod}`)
+      .set(...auth(member));
+
+    return { owner, member, outsider, group };
+  };
+
+  const setNickname = (actor: TestUser, groupId: string, targetId: string, nickname: unknown) =>
+    request(app)
+      .put(`/groups/${groupId}/members/${targetId}/nickname`)
+      .set(...auth(actor))
+      .send({ nickname });
+
+  const membersSeenBy = async (user: TestUser, groupId: string) => {
+    const response = await request(app)
+      .get(`/groups/${groupId}`)
+      .set(...auth(user));
+
+    expect(response.status).toBe(200);
+    return response.body.members as { user_id: string; name: string; nickname: string | null }[];
+  };
+
+  it('uye baska bir uyeye takma isim verebilir', async () => {
+    const { owner, member, group } = await setup();
+
+    const response = await setNickname(owner, group.id, member.id, 'Ev Arkadasi');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ user_id: member.id, nickname: 'Ev Arkadasi' });
+  });
+
+  it('takma isim grup detayinda gercek adin YANINDA doner', async () => {
+    const { owner, member, group } = await setup();
+    await setNickname(owner, group.id, member.id, 'Ev Arkadasi');
+
+    const row = (await membersSeenBy(owner, group.id)).find((m) => m.user_id === member.id);
+
+    // Takma isim gercek adin yerine gecmiyor: ikisi de cevapta.
+    expect(row).toMatchObject({ name: 'Ece', nickname: 'Ev Arkadasi' });
+  });
+
+  /*
+    Ozelligin asil kurali bu: takma isim KISIYE OZEL. Ayni satiri baska bir
+    uye okudugunda `nickname` bos gelmeli — aksi halde birinin baskasina
+    taktigi ad herkese gorunurdu.
+  */
+  it('takma ismi yalnizca veren kisi gorur', async () => {
+    const { owner, member, group } = await setup();
+    await setNickname(owner, group.id, member.id, 'Ev Arkadasi');
+
+    const seenByMember = (await membersSeenBy(member, group.id)).find(
+      (m) => m.user_id === member.id
+    );
+
+    expect(seenByMember?.nickname).toBeNull();
+  });
+
+  it('iki uye ayni kisiye farkli adlar verebilir', async () => {
+    const { owner, member, group } = await setup();
+
+    await setNickname(owner, group.id, member.id, 'Ev Arkadasi');
+    await setNickname(member, group.id, owner.id, 'Kirali');
+
+    const ownerView = (await membersSeenBy(owner, group.id)).find((m) => m.user_id === member.id);
+    const memberView = (await membersSeenBy(member, group.id)).find((m) => m.user_id === owner.id);
+
+    expect(ownerView?.nickname).toBe('Ev Arkadasi');
+    expect(memberView?.nickname).toBe('Kirali');
+  });
+
+  it('ayni hedefe ikinci kez yazmak gunceller, ikinci kayit acmaz', async () => {
+    const { owner, member, group } = await setup();
+
+    await setNickname(owner, group.id, member.id, 'Ilk');
+    const response = await setNickname(owner, group.id, member.id, 'Ikinci');
+
+    expect(response.status).toBe(200);
+    expect(response.body.nickname).toBe('Ikinci');
+
+    const row = (await membersSeenBy(owner, group.id)).find((m) => m.user_id === member.id);
+    expect(row?.nickname).toBe('Ikinci');
+  });
+
+  it('bos metin takma ismi kaldirir — hata degil', async () => {
+    const { owner, member, group } = await setup();
+    await setNickname(owner, group.id, member.id, 'Ev Arkadasi');
+
+    const response = await setNickname(owner, group.id, member.id, '   ');
+
+    expect(response.status).toBe(200);
+    expect(response.body.nickname).toBeNull();
+
+    const row = (await membersSeenBy(owner, group.id)).find((m) => m.user_id === member.id);
+    expect(row?.nickname).toBeNull();
+  });
+
+  it('null da kaldirir', async () => {
+    const { owner, member, group } = await setup();
+    await setNickname(owner, group.id, member.id, 'Ev Arkadasi');
+
+    const response = await setNickname(owner, group.id, member.id, null);
+
+    expect(response.status).toBe(200);
+    expect(response.body.nickname).toBeNull();
+  });
+
+  it('kendine takma isim vermek serbest', async () => {
+    const { owner, group } = await setup();
+
+    const response = await setNickname(owner, group.id, owner.id, 'Ben');
+
+    expect(response.status).toBe(200);
+    expect(response.body.nickname).toBe('Ben');
+  });
+
+  it('60 karakterden uzun takma isim 400 doner', async () => {
+    const { owner, member, group } = await setup();
+
+    const response = await setNickname(owner, group.id, member.id, 'x'.repeat(61));
+
+    expect(response.status).toBe(400);
+    expect(response.body.details).toHaveProperty('nickname');
+    expect(mockedGroupModel.upsertNickname).not.toHaveBeenCalled();
+  });
+
+  it('metin olmayan deger 400 doner', async () => {
+    const { owner, member, group } = await setup();
+
+    const response = await setNickname(owner, group.id, member.id, 42);
+
+    expect(response.status).toBe(400);
+    expect(response.body.details).toHaveProperty('nickname');
+  });
+
+  it('owner olmayan uye de takma isim verebilir — yetki uyelik', async () => {
+    const { owner, member, group } = await setup();
+
+    const response = await setNickname(member, group.id, owner.id, 'Patron');
+
+    expect(response.status).toBe(200);
+    expect(response.body.nickname).toBe('Patron');
+  });
+
+  it('uye olmayan kullanici 403 alir', async () => {
+    const { member, outsider, group } = await setup();
+
+    const response = await setNickname(outsider, group.id, member.id, 'Deneme');
+
+    expect(response.status).toBe(403);
+    expect(mockedGroupModel.upsertNickname).not.toHaveBeenCalled();
+  });
+
+  it('grubun uyesi olmayan bir hedefe ad verilemez', async () => {
+    const { owner, outsider, group } = await setup();
+
+    const response = await setNickname(owner, group.id, outsider.id, 'Deneme');
+
+    // 404: uc nokta grup disindaki kullanicilarin varligini sinamaya yaramasin.
+    expect(response.status).toBe(404);
+    expect(mockedGroupModel.upsertNickname).not.toHaveBeenCalled();
+  });
+
+  it('token olmadan 401 doner', async () => {
+    const { member, group } = await setup();
+
+    const response = await request(app)
+      .put(`/groups/${group.id}/members/${member.id}/nickname`)
+      .send({ nickname: 'Deneme' });
+
+    expect(response.status).toBe(401);
+    expect(mockedGroupModel.upsertNickname).not.toHaveBeenCalled();
   });
 });
 

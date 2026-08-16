@@ -6,6 +6,7 @@ import type {
   GroupDetail,
   GroupSummary,
   InviteResult,
+  NicknameResult,
 } from '../types/models';
 
 /**
@@ -60,4 +61,32 @@ export const getGroupBalances = async (groupId: string): Promise<BalanceResult> 
   return data;
 };
 
-export default { listGroups, createGroup, getGroup, createInvite, getGroupBalances };
+/**
+ * `PUT /groups/:id/members/:userId/nickname` — takma isim atar ya da kaldirir.
+ *
+ * `null` (ya da bos metin) **kaldirir**; ayri bir silme cagrisi yok. Arayuzde
+ * takma isim tek bir metin kutusu ve kutuyu bosaltmak "kaldir" demek — iki ayri
+ * fonksiyon, bilesende "bos mu, degil mi" dallanmasi demek olurdu.
+ *
+ * Owner sarti yok: kullanici yalnizca **kendi gordugu** etiketi degistiriyor.
+ */
+export const setMemberNickname = async (
+  groupId: string,
+  userId: string,
+  nickname: string | null
+): Promise<NicknameResult> => {
+  const { data } = await api.put<NicknameResult>(
+    `/groups/${groupId}/members/${userId}/nickname`,
+    { nickname }
+  );
+  return data;
+};
+
+export default {
+  listGroups,
+  createGroup,
+  getGroup,
+  createInvite,
+  getGroupBalances,
+  setMemberNickname,
+};

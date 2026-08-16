@@ -23,6 +23,21 @@ import type { BalanceResult, GroupSummary } from '../types/models';
  * Neden glass: bu kartin tasidigi asil sey net bakiye **ozeti**, yani bir
  * durumun sonucu. Yuzey ayrimi icerige gore veriliyor (bkz. index.css).
  *
+ * KARTIN TAMAMI NEDEN TIKLANABILIR — VE NEDEN SARMALAYICI BIR <a> DEGIL
+ * ---------------------------------------------------------------------
+ * Detaya gecis kartin her yerinden yapilabiliyor, ama link hala yalnizca
+ * basliktaki `<a>`: uzerine kartin tamamini kaplayan gorunmez bir `::after`
+ * seriliyor ("stretched link"). Karti bastan sona bir `<a>` icine almak daha
+ * kisa olurdu ama iki seyi bozardi: (1) icindeki davet butonu link icinde
+ * buton olurdu — gecersiz HTML ve ekran okuyucuda tek bir devasa link,
+ * (2) erisilebilirlik agacinda linkin adi kartin tum metni olurdu
+ * ("Ev Arkadaslari 4 uye ... 300,00 ₺ ... Davet linkini kopyala").
+ * Bu haliyle link adi grup adi, odak halkasi baslikta.
+ *
+ * Katmanin ustunde kalmasi gereken ogeler (davet butonu, "Tekrar dene",
+ * elle kopyalanacak link metni) `relative z-10` tasiyor. Bedeli: kart
+ * metninin geri kalani fareyle secilemez — desenin bilinen takasi.
+ *
  * BAKIYE NEDEN KART BASINA AYRI ISTEK
  * -----------------------------------
  * Backend'de "tum gruplarin bakiyesi" diye toplu bir uc nokta yok; bakiye grup
@@ -80,12 +95,14 @@ const GroupCard = ({ group, currentUserId }: GroupCardProps) => {
       transition={{ type: 'spring', stiffness: 320, damping: 26 }}
       className="h-full"
     >
-      <GlassCard as="article" className="group-card flex h-full flex-col gap-3 p-5">
+      {/* `group` = Tailwind hover grubu: kartin herhangi bir yerinde hover,
+          basligi renklendirerek nereye gidilecegini soyluyor. */}
+      <GlassCard as="article" className="group group-card flex h-full flex-col gap-3 p-5">
         <header className="group-card__head flex items-start justify-between gap-2">
           <h2 className="group-card__title text-lg leading-tight">
             <Link
               to={`/groups/${group.id}`}
-              className="rounded-sm transition-colors hover:text-rose"
+              className="rounded-sm transition-colors after:absolute after:inset-0 after:rounded-[inherit] after:content-[''] group-hover:text-rose"
             >
               {group.name}
             </Link>
@@ -111,7 +128,7 @@ const GroupCard = ({ group, currentUserId }: GroupCardProps) => {
           bir aksiyonu gostermemek.
         */}
         {group.role === 'owner' && (
-          <div className="group-card__actions mt-auto pt-1">
+          <div className="group-card__actions relative z-10 mt-auto pt-1">
             <Button
               type="button"
               variant="outline"
@@ -182,7 +199,7 @@ const BalanceCell = ({
         Bakiye su an alinamadi
         <button
           type="button"
-          className="link-button ml-2 text-rose underline underline-offset-2"
+          className="link-button relative z-10 ml-2 text-rose underline underline-offset-2"
           onClick={balances.reload}
         >
           Tekrar dene

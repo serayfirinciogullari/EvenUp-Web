@@ -495,6 +495,36 @@
 }
 
 /*
+  Home ozet kartlari ayni ton ailesine bagli — bilerek. Kullanicinin net
+  bakiyesi Home'da ve grup kartinda ayni renkte gorunmeli; iki ayri kural
+  yazmak, birinin bir gun digerinden ayrilmasi demekti.
+*/
+.balance--credit .home-card__amount {
+  color: var(--color-signal-positive);
+}
+
+.balance--debt .home-card__amount {
+  color: var(--color-signal-negative);
+}
+
+.balance--settled .home-card__amount {
+  color: var(--color-ink);
+}
+
+/*
+  `neutral`: parasal yonu OLMAYAN kart (grup sayisi, aylik harcama). Sinyal
+  renkleri burada kullanilmiyor — "bu ay 450 TL harcadin"i kirmizi gostermek,
+  olmayan bir uyariyi ima ederdi.
+*/
+.balance--neutral {
+  border-left-color: color-mix(in srgb, var(--color-ink) 15%, transparent);
+}
+
+.balance--neutral .home-card__amount {
+  color: var(--color-ink);
+}
+
+/*
   ORTA YOGUNLUK KURALI
   --------------------
   Gecisler yumusak, hover'da hafif olcek/parilti. Surekli hareket eden arka
@@ -512,4 +542,53 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/*
+  ============================================================================
+  OZEL IMLEC (2.8)
+  ============================================================================
+  Bayragi `MoneyCursor` takiyor; yalnizca fare/trackpad varken ve kullanici
+  hareketin azaltilmasini istemiyorken.
+
+  NEDEN `*` GEREKLI
+  -----------------
+  `cursor` kalitsal bir ozellik, dolayisiyla body'ye `none` yazmak cogu yer
+  icin yeterdi. Ama iki grup kendi degerini yaziyor ve kalitimi keser:
+
+    - Tailwind/shadcn siniflari: `cursor-pointer` (buton, secim satiri),
+      `cursor-default` (menu ogeleri), `cursor-not-allowed` (devre disi alan).
+    - Tarayicinin kendi stil sayfasi: `<input>`/`<textarea>` uzerinde `text`.
+
+  Ikisi de kapatilmazsa o ogelerin uzerinde yerel imlec ozel imlecin **yaninda**
+  gorunur — iki imlec birden, en kotu sonuc.
+
+  `!important` YOK: bu kural hicbir `@layer` icinde degil, Tailwind'in
+  utility'leri ise `@layer utilities` icinde. Katmansiz kural katmanliyi zaten
+  yener; tarayici varsayilanini da her yazar kurali yener.
+*/
+[data-app-cursor='on'],
+[data-app-cursor='on'] * {
+  cursor: none;
+}
+
+/*
+  ============================================================================
+  TEMA GECISI — View Transitions
+  ============================================================================
+  `AnimatedThemeToggler` (components/ThemeToggle.tsx) ile geldi.
+
+  Tarayicinin varsayilani iki anlik goruntuyu birbirine **capraz soldurmak**.
+  Burada istenen o degil: eski tema yerinde durmali, yeni tema tiklanan noktadan
+  acilan bir daire icinde uzerine gelmeli. `animation: none` varsayilan
+  solmayi kapatiyor; asil hareketi bilesenin clip-path animasyonu yapiyor.
+
+  `mix-blend-mode: normal`: iki katman ust uste dururken varsayilan karisim
+  gecis boyunca ara renkler uretiyor — koyu <-> acik gecisinde gri bir yanip
+  sonme olarak gorunuyordu.
+*/
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }

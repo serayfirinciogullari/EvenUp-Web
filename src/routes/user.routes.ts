@@ -24,6 +24,11 @@ const router = Router();
 
 router.use(requireAuth);
 
+// Home ekraninin acilis ozeti: tum gruplar uzerinden toplu.
+// Neden `/groups` ya da `/balances` altinda degil: hicbir gruba ait degil,
+// **kullaniciya** ait. Gerekce docs/decisions/home-summary.md
+router.get('/me/home-summary', asyncHandler(userController.getHomeSummary));
+
 router.put('/me', asyncHandler(userController.updateMe));
 
 // Ayri uc nokta: sifre degisikligi mevcut sifreyi de ister ve profil

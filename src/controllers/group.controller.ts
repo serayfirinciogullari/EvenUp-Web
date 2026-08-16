@@ -66,10 +66,30 @@ const removeMember = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json(result);
 };
 
+/**
+ * PUT /groups/:id/members/:userId/nickname -> 200 { user_id, nickname }
+ *
+ * PUT, PATCH degil: govde alanin **tam** yeni degerini tasiyor ve islem
+ * idempotent — ayni istegi iki kez gondermek ayni sonucu veriyor. Bos govde
+ * (`nickname: null`) takma ismi kaldiriyor, bu yuzden ayri bir DELETE yok.
+ *
+ * Owner sarti aranmiyor: takma isim yalnizca istegi atanin gordugu bir etiket
+ * (bkz. group.service.setMemberNickname).
+ */
+const setMemberNickname = async (req: Request, res: Response): Promise<void> => {
+  const result = await groupService.setMemberNickname(
+    req.params.id,
+    currentUserId(req),
+    req.params.userId,
+    req.body ?? {}
+  );
+  res.status(200).json(result);
+};
+
 /** DELETE /groups/:id -> 200 { group } (sadece owner, soft delete) */
 const remove = async (req: Request, res: Response): Promise<void> => {
   const group = await groupService.deleteGroup(req.params.id, currentUserId(req));
   res.status(200).json({ group });
 };
 
-export default { create, list, detail, invite, join, removeMember, remove };
+export default { create, list, detail, invite, join, removeMember, setMemberNickname, remove };

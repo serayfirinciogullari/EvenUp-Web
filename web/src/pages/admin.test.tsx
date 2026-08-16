@@ -30,6 +30,19 @@ vi.mock('../api/auth', () => ({
   default: { login: vi.fn(), register: vi.fn(), getMe: vi.fn() },
 }));
 
+// Admin olmayan kullanici 2.7'den beri /home'a duser; o sayfa ozet cekiyor.
+vi.mock('../api/summary', () => ({
+  __esModule: true,
+  default: {
+    getHomeSummary: vi.fn().mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 0,
+      pendingSettlementsCount: 0,
+    }),
+  },
+}));
+
 vi.mock('../api/admin', () => ({
   __esModule: true,
   default: {
@@ -187,8 +200,8 @@ describe('erisim', () => {
   it('admin olmayan kullanici panele giremez', async () => {
     renderAdmin({ ...deniz, role: 'user' });
 
-    // AdminRoute /groups'a yonlendirir; admin istekleri hic atilmaz.
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    // AdminRoute 2.7'den beri /home'a yonlendirir; admin istekleri hic atilmaz.
+    expect(await screen.findByRole('heading', { name: `Merhaba, ${deniz.name}` })).toBeInTheDocument();
     expect(mockedAdmin.getStats).not.toHaveBeenCalled();
     expect(mockedAdmin.listUsers).not.toHaveBeenCalled();
   });

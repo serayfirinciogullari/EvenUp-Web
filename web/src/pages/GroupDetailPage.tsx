@@ -6,6 +6,7 @@ import AddExpenseModal from '@/components/AddExpenseModal';
 import BalancesTab from '@/components/BalancesTab';
 import ExpensesTab from '@/components/ExpensesTab';
 import GlassCard from '@/components/GlassCard';
+import MembersTab from '@/components/MembersTab';
 import SettleUpModal from '@/components/SettleUpModal';
 import { Button } from '@/components/ui/button';
 import { NumberTicker } from '@/components/ui/number-ticker';
@@ -74,9 +75,18 @@ const GroupDetailPage = () => {
 
   const members = useMemo(() => detail.data?.members ?? [], [detail.data]);
 
-  /** Ad cozumleme: uye listesi + bakiye satirlarindaki adlar. */
+  /**
+   * Ad cozumleme: uye listesi + bakiye satirlarindaki adlar.
+   *
+   * Takma isim varsa o kazaniyor — kullanici birine ad verdiyse onu her yerde
+   * o adla gormeli. Gercek ad kaybolmuyor, "Kisiler" sekmesinde yaninda duruyor.
+   * Backend de bakiye satirlarinda ayni onceligi uyguluyor; burasi ayni kurali
+   * uye listesinden gelen adlar icin tekrarliyor.
+   */
   const nameOf = useMemo(() => {
-    const names = new Map(members.map((member) => [member.user_id, member.name]));
+    const names = new Map(
+      members.map((member) => [member.user_id, member.nickname ?? member.name])
+    );
 
     for (const balance of balances.data?.balances ?? []) {
       if (balance.name && !names.has(balance.user_id)) {
@@ -179,6 +189,10 @@ const GroupDetailPage = () => {
               </span>
             )}
           </TabsTrigger>
+          {/* Kisiler ucuncu sirada: harcama ve bakiye gunluk isler, uye
+              listesi ara sira bakilan bir yer. Sekme sirasi kullanim
+              sikligini yansitiyor. */}
+          <TabsTrigger value="members">Kisiler</TabsTrigger>
         </TabsList>
 
         <TabsContent value="expenses">
@@ -197,6 +211,24 @@ const GroupDetailPage = () => {
             nameOf={nameOf}
             onSettle={setSettleTarget}
             onResolved={refreshAll}
+          />
+        </TabsContent>
+
+        <TabsContent value="members">
+          <MembersTab
+            groupId={id}
+            members={members}
+            currentUserId={currentUserId}
+            /*
+              Takma isim degisince **grup detayi** tazeleniyor (`refreshAll`
+              degil): uye listesi orada. Bakiye de tazeleniyor cunku backend
+              bakiye satirlarindaki adlara da takma ismi uyguluyor — ikisi
+              ayri istek, ikisi de eskiyor.
+            */
+            onNicknameChanged={() => {
+              detail.reload();
+              balances.reload();
+            }}
           />
         </TabsContent>
       </Tabs>

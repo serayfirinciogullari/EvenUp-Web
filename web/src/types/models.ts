@@ -62,6 +62,21 @@ export interface GroupMember {
   email: string;
   role: GroupMemberRole;
   joined_at: string;
+  /**
+   * **Istekte bulunanin** bu uyeye verdigi takma isim; yoksa `null`.
+   *
+   * Kisiye ozel: ayni satiri baska bir uye okudugunda burasi bos gelir.
+   * Gercek `name` her zaman yaninda duruyor ve asla yerine gecmiyor — takma
+   * isim bir etiket, kimligin kendisi degil (bkz. docs/decisions/2.9-takma-isimler.md).
+   */
+  nickname: string | null;
+}
+
+/** `PUT /groups/:id/members/:userId/nickname` cevabi. */
+export interface NicknameResult {
+  user_id: string;
+  /** `null` = takma isim kaldirildi. */
+  nickname: string | null;
 }
 
 /** `GET /groups/:id` cevabi. */
@@ -188,6 +203,28 @@ export interface BalanceResult {
     rejected_settlement_count: number;
     algorithm: 'optimal' | 'greedy';
   };
+}
+
+/**
+ * `GET /users/me/home-summary` cevabinin `summary` alani.
+ *
+ * ALAN ADLARI NEDEN camelCase
+ * ---------------------------
+ * Bu dosyadaki diger tipler snake_case, cunku onlar DB satirlarinin seklini
+ * tasiyor. Home ozeti hicbir tabloyu yansitmiyor — dort alanin dordu de
+ * hesaplanmis. Backend'de de camelCase donuyor; burasi onu aynen yaziyor.
+ *
+ * Iki tutar yine **metin**: hesaplanmis olmalari onlari para olmaktan
+ * cikarmiyor, `Number(...)` cevrimi yalnizca gosterim aninda yapilmali.
+ */
+export interface HomeSummary {
+  /** Tum gruplardaki net bakiyelerin toplami. Pozitif = alacakli. */
+  totalNetBalance: string;
+  /** Bu ay kullanicinin odedigi harcamalarin toplami. */
+  monthlySpend: string;
+  activeGroupsCount: number;
+  /** Kullaniciyi ilgilendiren (odedigi ya da onayini bekleyen) bekleyen odemeler. */
+  pendingSettlementsCount: number;
 }
 
 /* ------------------------------------------------------------------ admin */

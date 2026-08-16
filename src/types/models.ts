@@ -222,6 +222,37 @@ export type SettlementUpdate = Partial<Omit<SettlementInsert, 'id'>>;
  *
  * `CompositeTableType` okuma / insert / update icin ayri tipler tanimlamayi saglar.
  */
+/* ------------------------------------------------------- member_nicknames */
+
+/**
+ * Bir kullanicinin, bir grupta, baska bir kullaniciya verdigi takma isim.
+ *
+ * **Kisiye ozel**: (group_id, owner_user_id, target_user_id) uclusu tekil.
+ * `owner` adi koyan, `target` adi konan. Ayni kisiye iki farkli uyenin verdigi
+ * adlar birbirini gormez (bkz. migration 12).
+ */
+export interface MemberNicknameRow {
+  id: string;
+  group_id: string;
+  owner_user_id: string;
+  target_user_id: string;
+  nickname: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface MemberNicknameInsert {
+  id?: string;
+  group_id: string;
+  owner_user_id: string;
+  target_user_id: string;
+  nickname: string;
+  created_at?: Date;
+  updated_at?: Date;
+}
+
+export type MemberNicknameUpdate = Partial<Omit<MemberNicknameInsert, 'id'>>;
+
 declare module 'knex/types/tables' {
   interface Tables {
     users: Knex.CompositeTableType<UserRow, UserInsert, UserUpdate>;
@@ -235,5 +266,10 @@ declare module 'knex/types/tables' {
       ExpenseShareUpdate
     >;
     settlements: Knex.CompositeTableType<SettlementRow, SettlementInsert, SettlementUpdate>;
+    member_nicknames: Knex.CompositeTableType<
+      MemberNicknameRow,
+      MemberNicknameInsert,
+      MemberNicknameUpdate
+    >;
   }
 }

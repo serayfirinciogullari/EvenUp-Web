@@ -27,6 +27,7 @@ import type { GroupInviteRow, GroupMemberRow, GroupRow } from '../types/models';
 
 const MAX_NAME_LENGTH = 120; // groups.name kolonu ile ayni
 const MAX_DESCRIPTION_LENGTH = 500; // groups.description kolonu ile ayni
+const MAX_NICKNAME_LENGTH = 60; // member_nicknames.nickname kolonu ile ayni
 
 /** 16 bayt = 128 bit entropi. base64url'de 22 karakter, linke gomulebilir. */
 const INVITE_CODE_BYTES = 16;
@@ -81,6 +82,16 @@ export interface JoinResult {
   group: PublicGroup;
   /** true ise kullanici zaten uyeydi; davet kotasindan dusulmedi. */
   already_member: boolean;
+}
+
+export interface SetNicknameInput {
+  /** `null` ya da bos metin takma ismi **kaldirir**. */
+  nickname: string | null;
+}
+
+export interface NicknameResult {
+  user_id: string;
+  nickname: string | null;
 }
 
 /* ---------------------------------------------------------- yardimcilar */
@@ -173,6 +184,45 @@ const validateInviteInput = (
   };
 };
 
+/**
+ * Takma isim dogrulamasi.
+ *
+ * BOS METIN = SILME, HATA DEGIL
+ * -----------------------------
+ * Arayuzde takma isim tek bir metin kutusu. Kullanici icini bosaltip
+ * kaydettiginde beklenen sey "takma ismi kaldir"dir; buna "zorunlu alan" hatasi
+ * dondurmek, kullaniciyi ayri bir "sil" dugmesi aramaya iterdi. Bu yuzden ayri
+ * bir DELETE uc noktasi da yok — tek uc nokta iki niyeti de karsiliyor.
+ *
+ * `null` ile bos metin ayni sey sayiliyor: istemcinin "temizledim" niyetini iki
+ * farkli sekilde ifade edebilmesi, sunucuda iki farkli davranis gerektirmiyor.
+ */
+const validateNickname = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    throw ApiError.badRequest('Gecersiz takma isim', {
+      nickname: 'Takma isim metin olmali',
+    });
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.length > MAX_NICKNAME_LENGTH) {
+    throw ApiError.badRequest('Gecersiz takma isim', {
+      nickname: `Takma isim en fazla ${MAX_NICKNAME_LENGTH} karakter olabilir`,
+    });
+  }
+
+  return trimmed;
+};
+
 /* ------------------------------------------------------- yetkilendirme */
 
 /**
@@ -244,9 +294,62 @@ const listGroups = async (userId: string): Promise<GroupSummary[]> =>
 
 const getGroup = async (groupId: string, userId: string): Promise<GroupDetail> => {
   const { group, membership } = await requireMembership(groupId, userId);
-  const members = await groupModel.listMembers(group.id);
+  // `userId` yalnizca yetki icin degil, **gorunum** icin de gerekli: takma
+  // isimler kisiye ozel, yani cevap kime dondugune gore degisiyor.
+  const members = await groupModel.listMembers(group.id, userId);
 
   return { group: toPublicGroup(group), role: membership.role, members };
+};
+
+/**
+ * Takma isim atar ya da kaldirir (`null`/bos metin -> kaldir).
+ *
+ * YETKI: YALNIZCA UYELIK — OWNER DEGIL
+ * ------------------------------------
+ * Takma isim kisiye ozel: kullanici yalnizca **kendi** gordugu etiketi
+ * degistiriyor, hedef kisi bundan etkilenmiyor ve haberi bile olmuyor.
+ * Owner sarti koymak, kimsenin gormedigi bir tercihi yonetici iznine baglamak
+ * olurdu. Ayni sebeple "hedefin onayi" diye bir akis da yok.
+ *
+ * Hedefin **uye olmasi** yine de sart: uye olmayan biri icin ad tutmak, grup
+ * disindaki kullanicilarin varligini sinamaya yarayan bir uc nokta uretirdi
+ * (ID dene, 200 mu 404 mu bak). Uye olmayan her hedef ayni 404'u aliyor.
+ *
+ * Kendine takma isim vermek serbest: kimseyi ilgilendirmiyor ve engellemek
+ * icin ayri bir hata yolu yazmak, kazanci olmayan bir kural olurdu.
+ */
+const setMemberNickname = async (
+  groupId: string,
+  actorId: string,
+  targetUserId: string,
+  input: Partial<SetNicknameInput>
+): Promise<NicknameResult> => {
+  await requireMembership(groupId, actorId);
+
+  if (!isUuid(targetUserId)) {
+    throw ApiError.notFound('Kullanici bu grubun uyesi degil');
+  }
+
+  const membership = await groupModel.findMembership(groupId, targetUserId);
+  if (!membership) {
+    throw ApiError.notFound('Kullanici bu grubun uyesi degil');
+  }
+
+  const nickname = validateNickname(input.nickname);
+
+  if (nickname === null) {
+    await groupModel.removeNickname(groupId, actorId, targetUserId);
+    return { user_id: targetUserId, nickname: null };
+  }
+
+  const row = await groupModel.upsertNickname({
+    group_id: groupId,
+    owner_user_id: actorId,
+    target_user_id: targetUserId,
+    nickname,
+  });
+
+  return { user_id: targetUserId, nickname: row.nickname };
 };
 
 /**
@@ -385,6 +488,7 @@ export default {
   createInvite,
   joinByCode,
   removeMember,
+  setMemberNickname,
   deleteGroup,
   requireMembership,
   requireOwnership,
@@ -394,6 +498,7 @@ export {
   ACCESS_DENIED,
   MAX_NAME_LENGTH,
   MAX_DESCRIPTION_LENGTH,
+  MAX_NICKNAME_LENGTH,
   requireMembership,
   requireOwnership,
 };

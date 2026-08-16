@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -120,6 +120,20 @@ vi.mock('./api/settlements', () => ({
   },
 }));
 
+// Kok adres ve giris sonrasi yonlendirmelerin hedefi artik /home; o sayfa da
+// ozet cekiyor. Bu dosyanin derdi rota agaci oldugu icin ozet sabitleniyor.
+vi.mock('./api/summary', () => ({
+  __esModule: true,
+  default: {
+    getHomeSummary: vi.fn().mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 0,
+      pendingSettlementsCount: 0,
+    }),
+  },
+}));
+
 // `vi.mock` vitest tarafindan dosyanin en ustune tasinir, bu yuzden asagidaki
 // import mock'lanmis modulu alir.
 import authApi from './api/auth';
@@ -202,11 +216,11 @@ describe('giris yapilmamis kullanici', () => {
 /* =================================================== giris yapmis kullanici */
 
 describe('giris yapmis kullanici', () => {
-  it('/login istedigi halde gruplara yonlendirilir', async () => {
+  it('/login istedigi halde Home sayfasina yonlendirilir', async () => {
     signIn();
     renderAt('/login');
 
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Merhaba, Burak' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Giris yap' })).not.toBeInTheDocument();
   });
 
@@ -214,7 +228,7 @@ describe('giris yapmis kullanici', () => {
     signIn();
     renderAt('/register');
 
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Merhaba, Burak' })).toBeInTheDocument();
   });
 
   it('/groups sayfasinda kalir ve kullanici adini gorur', async () => {
@@ -226,9 +240,21 @@ describe('giris yapmis kullanici', () => {
     expect(screen.getByText('Burak')).toBeInTheDocument();
   });
 
-  it('kok adres /groups sayfasina yonlenir', async () => {
+  // 2.7: kok adres /groups yerine /home'a duser. `/groups` kaldirilmadi —
+  // Home bir gecit degil, gezinmeden her an ulasilabilen esit bir sayfa.
+  it('kok adres /home sayfasina yonlenir', async () => {
     signIn();
     renderAt('/');
+
+    expect(await screen.findByRole('heading', { name: 'Merhaba, Burak' })).toBeInTheDocument();
+  });
+
+  it('Home acikken gezinmeden Gruplar sayfasina gecilebilir', async () => {
+    signIn();
+    renderAt('/home');
+    await screen.findByRole('heading', { name: 'Merhaba, Burak' });
+
+    fireEvent.click(screen.getByRole('link', { name: 'Gruplar' }));
 
     expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
   });
@@ -273,11 +299,11 @@ describe('giris yapmis kullanici', () => {
 /* ============================================================ admin rotasi */
 
 describe('admin rotasi', () => {
-  it('normal kullanici /admin isteyince /groups gorur', async () => {
+  it('normal kullanici /admin isteyince Home gorur', async () => {
     signIn('user');
     renderAt('/admin');
 
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Merhaba, Burak' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Admin' })).not.toBeInTheDocument();
   });
 

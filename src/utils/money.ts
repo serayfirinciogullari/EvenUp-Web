@@ -72,6 +72,22 @@ export const formatCents = (cents: number): string => {
 };
 
 /**
+ * Netlestirme ciktisindaki tutari kurusa cevirir.
+ *
+ * NEDEN `parseAmountToCents` KULLANILAMIYOR
+ * -----------------------------------------
+ * O fonksiyon **kullanicidan** gelen tutar icin: deseni isaret kabul etmez ve
+ * `-120.50` gibi bir degeri reddeder. Net bakiye ise tanimi geregi negatif
+ * olabilir (borclu taraf). Ayri bir kapi olmasinin nedeni bu, gevseklik degil.
+ *
+ * Burada `Math.round(x * 100)` guvenli, cunku girdi kullanicidan gelmiyor:
+ * `netting.service` degeri zaten kurustan uretiyor (`cents / 100`), yani en
+ * fazla iki ondalik basamak tasiyor. Kullanici girdisinde ayni carpim
+ * `Math.round(1.005 * 100) === 100` gibi sapmalar verebilirdi — o yol kapali.
+ */
+export const netAmountToCents = (amount: number): number => Math.round(amount * 100);
+
+/**
  * Yuzdeyi baz puana (basis point: yuzdenin yuzde biri) cevirir.
  * 33.33% -> 3333 bp. Yuzdelerin toplaminin tam 100 oldugunu tam sayi
  * karsilastirmasiyla dogrulayabilmek icin gerekli: `33.33 * 3 === 99.99`
@@ -106,6 +122,7 @@ export default {
   MAX_AMOUNT_CENTS,
   parseAmountToCents,
   formatCents,
+  netAmountToCents,
   parsePercentageToBasisPoints,
   formatBasisPoints,
 };

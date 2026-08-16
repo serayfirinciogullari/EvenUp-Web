@@ -26,6 +26,11 @@ router.delete('/:id', asyncHandler(groupController.remove));
 router.post('/:id/invite', asyncHandler(groupController.invite));
 router.delete('/:id/members/:userId', asyncHandler(groupController.removeMember));
 
+// Takma isim uyeligin altinda: hedefi bir **uye**, kapsami tek bir grup.
+// `/users/me/...` altina konsaydi grup baglami govdeye tasinirdi ve "hangi
+// grupta?" sorusu adresten okunamaz hale gelirdi.
+router.put('/:id/members/:userId/nickname', asyncHandler(groupController.setMemberNickname));
+
 // Harcama ekleme/listeleme grup baglaminda anlamli oldugu icin burada duruyor;
 // tek bir harcama uzerindeki islemler /expenses altinda (expense.routes.ts).
 router.post('/:id/expenses', asyncHandler(expenseController.create));

@@ -38,6 +38,7 @@ jest.mock('../src/models/group.model', () => ({
     findMembership: jest.fn(),
     listForUser: jest.fn(),
     listMembers: jest.fn(),
+    listMemberIds: jest.fn(),
     createWithOwner: jest.fn(),
     removeMember: jest.fn(),
     softDelete: jest.fn(),
@@ -188,6 +189,8 @@ const installInMemoryModel = (): void => {
     members.find((member) => member.group_id === groupId && member.user_id === userId)
   );
 
+  // Bu dosyada takma isim senaryosu yok; alan `null` — gercek sorgunun
+  // takma ismi olmayan uye icin dondurdugu deger.
   mockedGroupModel.listMembers.mockImplementation(async (groupId: string) =>
     members
       .filter((member) => member.group_id === groupId)
@@ -199,8 +202,13 @@ const installInMemoryModel = (): void => {
           email: user.email,
           role: member.role,
           joined_at: member.joined_at,
+          nickname: null,
         };
       })
+  );
+
+  mockedGroupModel.listMemberIds.mockImplementation(async (groupId: string) =>
+    members.filter((member) => member.group_id === groupId).map((member) => member.user_id)
   );
 
   // Silinmis harcama ve silinmis grubun harcamasi netlestirmeye girmez.

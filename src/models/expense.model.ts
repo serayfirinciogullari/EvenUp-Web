@@ -85,6 +85,16 @@ export interface NettingData {
   shares: NettingShare[];
 }
 
+/** Coklu grup okumasinda satirin hangi gruba ait oldugu da lazim. */
+export interface NettingExpenseOfGroup extends NettingExpense {
+  group_id: string;
+}
+
+export interface GroupedNettingData {
+  expenses: NettingExpenseOfGroup[];
+  shares: NettingShare[];
+}
+
 /* -------------------------------------------------------------- yardimcilar */
 
 /** Canli harcamalar icin temel sorgu. Silinmis grubun harcamasi da gelmez. */
@@ -215,6 +225,68 @@ const listForNetting = async (groupId: string): Promise<NettingData> => {
   return { expenses, shares };
 };
 
+/**
+ * `listForNetting`in **coklu grup** hali: kac grup verilirse verilsin toplam
+ * iki sorgu atar (harcamalar + paylar), grup basina degil.
+ *
+ * NEDEN AYRI BIR FONKSIYON — DONGUDE `listForNetting` DEGIL
+ * ---------------------------------------------------------
+ * Home ozeti (docs/decisions/home-summary.md) kullanicinin **tum** gruplarinin
+ * bakiyesini birden istiyor. `listForNetting`i N kez cagirmak 2N sorgu demekti;
+ * 10 gruplu bir kullanicida her Home acilisinda 20 gidis-donus. Sorgu sayisi
+ * grup sayisindan bagimsiz olmali — `attachShares`taki (1.5) ilkenin aynisi.
+ *
+ * Paylar gruba gore degil **harcamaya** gore filtreleniyor: bir pay satiri
+ * zaten tek bir harcamaya bagli, harcama da tek bir gruba. Cagiran taraf
+ * `expense_id -> group_id` esleme ile bellekte gruplayabilir.
+ */
+const listForNettingByGroups = async (groupIds: readonly string[]): Promise<GroupedNettingData> => {
+  // Bos liste ile sorguya cikmak gereksiz: `WHERE ... IN ()` hicbir sey donmez.
+  if (groupIds.length === 0) {
+    return { expenses: [], shares: [] };
+  }
+
+  const expenses = (await aliveExpenses()
+    .whereIn('expenses.group_id', groupIds as string[])
+    .select(
+      'expenses.id',
+      'expenses.group_id',
+      'expenses.paid_by',
+      'expenses.amount'
+    )) as unknown as NettingExpenseOfGroup[];
+
+  const shares = (await db('expense_shares')
+    .whereIn(
+      'expense_id',
+      expenses.map((expense) => expense.id)
+    )
+    .select('expense_id', 'user_id', 'share_amount')) as unknown as NettingShare[];
+
+  return { expenses, shares };
+};
+
+/**
+ * Kullanicinin **odedigi** harcamalarin belirli bir tarih araliktaki toplami —
+ * grup ayrimi olmadan, tek sorguda.
+ *
+ * Aralik `[from, to)`: ust sinir disarida. Ay sonunu `<= ayin son gunu` diye
+ * yazmak, gunun 00:00'dan sonraki kayitlarini disarida birakirdi; "sonraki ayin
+ * 1'inden kucuk" demek bu sinif hatalari tamamen ortadan kaldiriyor.
+ *
+ * Toplam SQL'de aliniyor: `amount` NUMERIC, PostgreSQL'in SUM'i de tam ondalik.
+ * Satirlari cekip JS'te toplamak float dunyasina girmek olurdu (bkz. 1.5).
+ * Donen deger NUMERIC metni; hic satir yoksa SUM `NULL` verir, `'0'`a cevriliyor.
+ */
+const sumPaidByUserBetween = async (userId: string, from: Date, to: Date): Promise<string> => {
+  const [row] = (await aliveExpenses()
+    .where('expenses.paid_by', userId)
+    .where('expenses.created_at', '>=', from)
+    .where('expenses.created_at', '<', to)
+    .sum('expenses.amount as total')) as unknown as { total: string | null }[];
+
+  return row?.total ?? '0';
+};
+
 /* ------------------------------------------------------------------ yazma */
 
 /**
@@ -314,6 +386,8 @@ export default {
   findWithShares,
   listByGroup,
   listForNetting,
+  listForNettingByGroups,
+  sumPaidByUserBetween,
   create,
   update,
   softDelete,

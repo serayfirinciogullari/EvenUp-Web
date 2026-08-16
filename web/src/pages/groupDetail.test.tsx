@@ -43,6 +43,7 @@ vi.mock('../api/groups', () => ({
     getGroup: vi.fn(),
     createInvite: vi.fn(),
     getGroupBalances: vi.fn(),
+    setMemberNickname: vi.fn(),
   },
 }));
 
@@ -104,6 +105,7 @@ const groupDetail: GroupDetail = {
       email: 'deniz@evenup.dev',
       role: 'owner',
       joined_at: '2026-08-01T10:00:00.000Z',
+      nickname: null,
     },
     {
       user_id: ECE_ID,
@@ -111,6 +113,7 @@ const groupDetail: GroupDetail = {
       email: 'ece@evenup.dev',
       role: 'member',
       joined_at: '2026-08-01T10:00:00.000Z',
+      nickname: null,
     },
     {
       user_id: ALI_ID,
@@ -118,6 +121,7 @@ const groupDetail: GroupDetail = {
       email: 'ali@evenup.dev',
       role: 'member',
       joined_at: '2026-08-01T10:00:00.000Z',
+      nickname: null,
     },
   ],
 };
@@ -292,12 +296,13 @@ beforeEach(() => {
 /* ============================================================== sekmeler */
 
 describe('sekmeli gorunum', () => {
-  it('iki sekme gosterilir ve varsayilan Harcamalar', async () => {
+  it('uc sekme gosterilir ve varsayilan Harcamalar', async () => {
     renderDetail();
     await waitForPage();
 
     expect(screen.getByRole('tab', { name: 'Harcamalar' })).toHaveAttribute('data-state', 'active');
     expect(screen.getByRole('tab', { name: /Bakiyeler/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Kisiler' })).toBeInTheDocument();
     expect(screen.getByText('Market alisverisi')).toBeInTheDocument();
   });
 
@@ -325,6 +330,177 @@ describe('sekmeli gorunum', () => {
     renderDetail();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Bu gruba erisim yetkiniz yok');
+  });
+});
+
+/* ======================================================= kisiler sekmesi */
+
+describe('kisiler sekmesi — takma isimler', () => {
+  const openMembers = async () => {
+    await waitForPage();
+    selectTab('Kisiler');
+    return screen.findByText('ece@evenup.dev');
+  };
+
+  /*
+    Sorgular sekme panelinin **icine** kapsanmali: "Deniz" ayni anda Layout
+    basliginda da (giris yapan kisi) geciyor ve kapsamsiz sorgu iki oge bulur.
+  */
+  const panel = () => screen.getByRole('tabpanel');
+
+  /** Bir uyenin satirini adindan bulur. */
+  const rowOf = (name: string) =>
+    within(panel()).getByText(name).closest('li') as HTMLElement;
+
+  it('uyeler adi, e-postasi ve rolu ile listelenir', async () => {
+    renderDetail();
+    await openMembers();
+
+    const list = within(panel());
+
+    expect(list.getByText('Deniz')).toBeInTheDocument();
+    expect(list.getByText('Ece')).toBeInTheDocument();
+    expect(list.getByText('Ali')).toBeInTheDocument();
+    expect(within(rowOf('Deniz')).getByText('Sahip')).toBeInTheDocument();
+  });
+
+  it('istekte bulunan kendi satirinda Sen rozeti gorur', async () => {
+    renderDetail();
+    await openMembers();
+
+    expect(within(rowOf('Deniz')).getByText('Sen')).toBeInTheDocument();
+  });
+
+  it('takma ismi olmayan uyede "Takma isim ver" yazar', async () => {
+    renderDetail();
+    await openMembers();
+
+    expect(
+      within(rowOf('Ece')).getByRole('button', { name: 'Takma isim ver' })
+    ).toBeInTheDocument();
+  });
+
+  it('takma isim kaydedilir ve uc nokta dogru cagrilir', async () => {
+    mockedGroups.setMemberNickname.mockResolvedValue({
+      user_id: ECE_ID,
+      nickname: 'Ev Arkadasi',
+    });
+
+    renderDetail();
+    await openMembers();
+
+    fireEvent.click(within(rowOf('Ece')).getByRole('button', { name: 'Takma isim ver' }));
+
+    fireEvent.change(screen.getByLabelText('Ece icin takma isim'), {
+      target: { value: 'Ev Arkadasi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Takma ismi kaydet' }));
+
+    await waitFor(() =>
+      expect(mockedGroups.setMemberNickname).toHaveBeenCalledWith(
+        GROUP_ID,
+        ECE_ID,
+        'Ev Arkadasi'
+      )
+    );
+  });
+
+  it('kaydettikten sonra grup detayi ve bakiye yeniden istenir', async () => {
+    mockedGroups.setMemberNickname.mockResolvedValue({ user_id: ECE_ID, nickname: 'Ev Arkadasi' });
+
+    renderDetail();
+    await openMembers();
+
+    const detailCallsBefore = mockedGroups.getGroup.mock.calls.length;
+    const balanceCallsBefore = mockedGroups.getGroupBalances.mock.calls.length;
+
+    fireEvent.click(within(rowOf('Ece')).getByRole('button', { name: 'Takma isim ver' }));
+    fireEvent.change(screen.getByLabelText('Ece icin takma isim'), {
+      target: { value: 'Ev Arkadasi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Takma ismi kaydet' }));
+
+    // Adlar bakiye satirlarinda da geciyor; ikisi ayri istek, ikisi de eskiyor.
+    await waitFor(() =>
+      expect(mockedGroups.getGroup.mock.calls.length).toBeGreaterThan(detailCallsBefore)
+    );
+    await waitFor(() =>
+      expect(mockedGroups.getGroupBalances.mock.calls.length).toBeGreaterThan(balanceCallsBefore)
+    );
+  });
+
+  it('takma isim varsa gercek ad kaybolmuyor, altta duruyor', async () => {
+    mockedGroups.getGroup.mockResolvedValue({
+      ...groupDetail,
+      members: groupDetail.members.map((member) =>
+        member.user_id === ECE_ID ? { ...member, nickname: 'Ev Arkadasi' } : member
+      ),
+    });
+
+    renderDetail();
+    await waitForPage();
+    selectTab('Kisiler');
+
+    const row = (await screen.findByText('Ev Arkadasi')).closest('li') as HTMLElement;
+
+    // Gorunen ad takma isim, ama gercek ad ve e-posta yaninda.
+    expect(within(row).getByText(/Ece · ece@evenup\.dev/)).toBeInTheDocument();
+    expect(
+      within(row).getByRole('button', { name: 'Takma ismi degistir' })
+    ).toBeInTheDocument();
+  });
+
+  it('bos birakip kaydetmek takma ismi kaldirir', async () => {
+    mockedGroups.getGroup.mockResolvedValue({
+      ...groupDetail,
+      members: groupDetail.members.map((member) =>
+        member.user_id === ECE_ID ? { ...member, nickname: 'Ev Arkadasi' } : member
+      ),
+    });
+    mockedGroups.setMemberNickname.mockResolvedValue({ user_id: ECE_ID, nickname: null });
+
+    renderDetail();
+    await waitForPage();
+    selectTab('Kisiler');
+    await screen.findByText('Ev Arkadasi');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Takma ismi degistir' }));
+    fireEvent.change(screen.getByLabelText('Ece icin takma isim'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Takma ismi kaydet' }));
+
+    await waitFor(() =>
+      expect(mockedGroups.setMemberNickname).toHaveBeenCalledWith(GROUP_ID, ECE_ID, '')
+    );
+  });
+
+  it('vazgecmek istegi hic baslatmaz', async () => {
+    renderDetail();
+    await openMembers();
+
+    fireEvent.click(within(rowOf('Ece')).getByRole('button', { name: 'Takma isim ver' }));
+    fireEvent.change(screen.getByLabelText('Ece icin takma isim'), {
+      target: { value: 'Yazildi ama vazgecildi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Vazgec' }));
+
+    expect(mockedGroups.setMemberNickname).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Ece icin takma isim')).not.toBeInTheDocument();
+  });
+
+  it('takma isim bakiye satirlarinda da gorunur', async () => {
+    // Backend bakiye adlarina takma ismi kendisi uyguluyor; arayuz onu
+    // oldugu gibi gosteriyor.
+    mockedGroups.getGroupBalances.mockResolvedValue({
+      ...owingBalances,
+      balances: owingBalances.balances.map((balance) =>
+        balance.user_id === ECE_ID ? { ...balance, name: 'Ev Arkadasi' } : balance
+      ),
+    });
+
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getAllByText(/Ev Arkadasi/).length).toBeGreaterThan(0);
   });
 });
 

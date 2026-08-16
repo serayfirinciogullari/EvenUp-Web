@@ -1,7 +1,7 @@
 import expenseModel from '../models/expense.model';
 import groupModel from '../models/group.model';
 import settlementModel from '../models/settlement.model';
-import { formatCents } from '../utils/money';
+import { formatCents, netAmountToCents as toCents } from '../utils/money';
 import { requireMembership } from './group.service';
 import {
   calculateNetBalances,
@@ -61,8 +61,47 @@ export interface BalanceResult {
   };
 }
 
-/** TL cinsinden gelen net bakiyeyi kurusa cevirir (netting ciktisi zaten 2 ondalik). */
-const toCents = (amount: number): number => Math.round(amount * 100);
+/** Netlestirmeye giren minimal odeme gorunumu (`listConfirmed` / `listConfirmedByGroups`). */
+interface ConfirmedInput {
+  id: string;
+  from_user: string;
+  to_user: string;
+  amount: string;
+}
+
+/**
+ * Harcamalari ve onaylanmis odemeleri netlestirmenin bekledigi tek listeye
+ * cevirir — yukaridaki "onaylanmis odeme = sanal harcama" kuralinin **tek**
+ * uygulamasi.
+ *
+ * Disari aciliyor cunku Home ozeti (`summary.service`) ayni donusumu tum
+ * gruplar icin yapiyor. Iki kopya birakilsaydi 1.7'nin semantigi bir gun
+ * degistiginde biri sessizce eskirdi — ve eskiyen kopyanin belirtisi "bakiye
+ * yanlis" olurdu, yani en gec fark edilen hata turu.
+ */
+export const buildNettingInputs = (
+  expenses: readonly ExpenseInput[],
+  shares: readonly ExpenseShareInput[],
+  confirmed: readonly ConfirmedInput[]
+): { expenses: ExpenseInput[]; shares: ExpenseShareInput[] } => ({
+  // Settlement ID'leri harcama ID'lerinden ayri uuid'ler oldugu icin cakisma olmaz.
+  expenses: [
+    ...expenses,
+    ...confirmed.map((settlement) => ({
+      id: settlement.id,
+      paid_by: settlement.from_user,
+      amount: settlement.amount,
+    })),
+  ],
+  shares: [
+    ...shares,
+    ...confirmed.map((settlement) => ({
+      expense_id: settlement.id,
+      user_id: settlement.to_user,
+      share_amount: settlement.amount,
+    })),
+  ],
+});
 
 /**
  * GET /groups/:id/balances
@@ -74,33 +113,16 @@ const getGroupBalances = async (groupId: string, userId: string): Promise<Balanc
   await requireMembership(groupId, userId);
 
   const [members, { expenses, shares }, confirmed, counts] = await Promise.all([
-    groupModel.listMembers(groupId),
+    // `userId` gorunum icin de gerekli: takma isimler kisiye ozel, yani
+    // bakiye satirlarindaki adlar kime dondugune gore degisiyor.
+    groupModel.listMembers(groupId, userId),
     expenseModel.listForNetting(groupId),
     settlementModel.listConfirmed(groupId),
     settlementModel.countByStatus(groupId),
   ]);
 
-  // Onaylanmis odemeler sanal harcama olarak eklenir. Settlement ID'leri harcama
-  // ID'lerinden ayri uuid'ler oldugu icin cakisma olmaz.
-  const nettingExpenses: ExpenseInput[] = [
-    ...expenses,
-    ...confirmed.map((settlement) => ({
-      id: settlement.id,
-      paid_by: settlement.from_user,
-      amount: settlement.amount,
-    })),
-  ];
-
-  const nettingShares: ExpenseShareInput[] = [
-    ...shares,
-    ...confirmed.map((settlement) => ({
-      expense_id: settlement.id,
-      user_id: settlement.to_user,
-      share_amount: settlement.amount,
-    })),
-  ];
-
-  const netBalances = calculateNetBalances(nettingExpenses, nettingShares);
+  const netting = buildNettingInputs(expenses, shares, confirmed);
+  const netBalances = calculateNetBalances(netting.expenses, netting.shares);
 
   // `optimalNetting` yalnizca sifir olmayan bakiyeleri sayar; limiti de ona gore
   // kontrol etmeliyiz, yoksa dengede olan uyeler yuzunden gereksiz greedy'ye duserdik.
@@ -109,7 +131,15 @@ const getGroupBalances = async (groupId: string, userId: string): Promise<Balanc
   const transfers =
     algorithm === 'optimal' ? optimalNetting(netBalances) : greedyNetting(netBalances);
 
-  const nameByUser = new Map(members.map((member) => [member.user_id, member.name]));
+  /*
+    Takma isim varsa o kazaniyor: kullanici birine ad verdiyse, o kisiyi
+    bakiye listesinde de o adla gormek ister — takma ismin butun anlami
+    "kimin kim oldugunu benim kelimemle gor". Gercek ad kaybolmuyor, uye
+    listesinde (Kisiler sekmesi) yaninda duruyor.
+  */
+  const nameByUser = new Map(
+    members.map((member) => [member.user_id, member.nickname ?? member.name])
+  );
   const centsByUser = new Map(
     netBalances.map((balance) => [balance.userId, toCents(balance.netBalance)])
   );

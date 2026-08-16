@@ -35,6 +35,11 @@ export interface ConfirmedSettlement {
   amount: string;
 }
 
+/** Coklu grup okumasinda satirin hangi gruba ait oldugu da lazim. */
+export interface ConfirmedSettlementOfGroup extends ConfirmedSettlement {
+  group_id: string;
+}
+
 export interface SettlementCounts {
   pending: number;
   confirmed: number;
@@ -179,6 +184,55 @@ const countByStatus = async (groupId: string): Promise<SettlementCounts> => {
   return counts;
 };
 
+/**
+ * `listConfirmed`in **coklu grup** hali: kac grup verilirse verilsin tek sorgu.
+ * Gerekcesi `expenseModel.listForNettingByGroups` ile ayni — Home ozetinde
+ * sorgu sayisi grup sayisiyla birlikte buyumemeli.
+ *
+ * `confirmed` filtresi burada da bir **is kurali**, parametre degil: bekleyen
+ * bir odemenin bakiyeye girmesi 1.7'nin ihlali olurdu.
+ */
+const listConfirmedByGroups = async (
+  groupIds: readonly string[]
+): Promise<ConfirmedSettlementOfGroup[]> => {
+  if (groupIds.length === 0) {
+    return [];
+  }
+
+  return aliveSettlements()
+    .whereIn('settlements.group_id', groupIds as string[])
+    .where('settlements.status', 'confirmed')
+    .orderBy('settlements.confirmed_at', 'asc')
+    .select(
+      'settlements.id',
+      'settlements.group_id',
+      'settlements.from_user',
+      'settlements.to_user',
+      'settlements.amount'
+    ) as unknown as Promise<ConfirmedSettlementOfGroup[]>;
+};
+
+/**
+ * Kullaniciyi **ilgilendiren** bekleyen odeme sayisi: odemeyi o baslatmis
+ * (`from_user`) ya da onayi ondan bekleniyor (`to_user`). Grup ayrimi yok.
+ *
+ * `countByStatus` ile karistirilmamali: o, tek bir grubun durum dagilimini
+ * verir ve kullanicidan bagimsizdir. Burasi tersi — kullanici bazli, grup
+ * bagimsiz. Ayni fonksiyonda birlestirmek iki opsiyonel parametre ve "hangisi
+ * verilirse ne olur" tablosu demekti.
+ */
+const countPendingForUser = async (userId: string): Promise<number> => {
+  const [{ count }] = await aliveSettlements()
+    .where('settlements.status', 'pending')
+    .where((builder) =>
+      builder.where('settlements.from_user', userId).orWhere('settlements.to_user', userId)
+    )
+    .count<{ count: string }[]>('settlements.id as count');
+
+  // pg surucusu COUNT'u string dondurur; API'de sayi bekleniyor.
+  return Number(count);
+};
+
 /* ------------------------------------------------------------------ yazma */
 
 /**
@@ -232,7 +286,9 @@ export default {
   findPendingBetween,
   listByGroup,
   listConfirmed,
+  listConfirmedByGroups,
   countByStatus,
+  countPendingForUser,
   create,
   resolve,
 };
