@@ -30,6 +30,23 @@ vi.mock('../api/groups', () => ({
   },
 }));
 
+/*
+  Sidebar (Layout) bekleyen odeme rozetini paylasilan saglayicidan okuyor,
+  yani her korunan sayfa bu ucu tetikliyor. Bu dosyanin derdi baska oldugu
+  icin cevap sabitleniyor; mock'lanmasaydi testler gercek bir istek denerdi.
+*/
+vi.mock('../api/summary', () => ({
+  __esModule: true,
+  default: {
+    getHomeSummary: vi.fn().mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 0,
+      pendingSettlementsCount: 0,
+    }),
+  },
+}));
+
 import authApi from '../api/auth';
 import groupsApi from '../api/groups';
 

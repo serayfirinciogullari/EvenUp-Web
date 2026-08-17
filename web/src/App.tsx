@@ -8,6 +8,8 @@ import GuestRoute from './components/GuestRoute';
 import Layout from './components/Layout';
 import AppCursor from './components/AppCursor';
 import ProtectedRoute from './components/ProtectedRoute';
+import AppDataProvider from './context/AppDataProvider';
+import ActivityPage from './pages/ActivityPage';
 import AdminPage from './pages/AdminPage';
 import GroupDetailPage from './pages/GroupDetailPage';
 import GroupsPage from './pages/GroupsPage';
@@ -27,7 +29,7 @@ import SettingsPage from './pages/SettingsPage';
  *
  *   /                 -> Landing (halka acik, guard YOK)
  *   GuestRoute        -> /login, /register        (giris yapmisken erisilmez)
- *   ProtectedRoute    -> /home, /groups, /groups/:id, /settings
+ *   ProtectedRoute    -> /home, /groups, /groups/:id, /activity, /settings
  *     + AdminRoute    -> /admin
  *
  * KOK ADRES: ONCE /groups, SONRA /home, SIMDI LANDING
@@ -73,9 +75,23 @@ const App = () => (
       </Route>
 
       <Route element={<ProtectedRoute />}>
-        <Route element={<Layout />}>
+        {/*
+          `AppDataProvider` Layout'un **disinda ve ProtectedRoute'un altinda**:
+          grup listesi ile home ozeti korunan alana girildiginde bir kez
+          cekiliyor, sayfa gecislerinde yeniden istenmiyor. Sidebar ve sayfalar
+          ayni nesneyi okudugu icin grup olusturunca ikisi birden guncelleniyor
+          (bkz. context/AppDataContext.ts).
+        */}
+        <Route
+          element={
+            <AppDataProvider>
+              <Layout />
+            </AppDataProvider>
+          }
+        >
           <Route path="/home" element={<HomePage />} />
           <Route path="/groups" element={<GroupsPage />} />
+          <Route path="/activity" element={<ActivityPage />} />
           <Route path="/groups/:id" element={<GroupDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
 

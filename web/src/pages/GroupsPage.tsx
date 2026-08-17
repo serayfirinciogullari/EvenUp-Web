@@ -1,17 +1,14 @@
 import { Plus } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 
 import GroupCard from '@/components/GroupCard';
 import GroupsEmptyState from '@/components/GroupsEmptyState';
 import NewGroupModal from '@/components/NewGroupModal';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import groupsApi from '../api/groups';
-import useAsync from '../hooks/useAsync';
+import { useGroupsData } from '../hooks/useAppData';
 import useAuth from '../hooks/useAuth';
-
-import type { GroupSummary } from '../types/models';
 
 /**
  * Gruplarim ekrani.
@@ -28,8 +25,12 @@ import type { GroupSummary } from '../types/models';
 const GroupsPage = () => {
   const { user } = useAuth();
 
-  const fetchGroups = useCallback(() => groupsApi.listGroups(), []);
-  const groups = useAsync<GroupSummary[]>(fetchGroups, 'Gruplar yuklenemedi');
+  /*
+    Liste artik sayfaya degil `AppDataProvider`a ait: ayni listeyi sidebar'daki
+    grup kisayollari da okuyor. Bunun gorunur karsiligi `onCreated`da — tek bir
+    `reload`, iki yeri birden tazeliyor.
+  */
+  const groups = useGroupsData();
 
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -100,6 +101,9 @@ const GroupsPage = () => {
           `GET /groups` satiri `role`, `joined_at` ve `member_count` gibi
           alanlari da tasiyor; `POST /groups` cevabi yalnizca grup satirini
           donuyor. Elle eklemek eksik bir kart uretirdi.
+
+          Liste paylasilan durumda oldugu icin bu tek cagri sidebar'daki grup
+          kisayollarini da tazeliyor — ikinci bir istek ya da olay yok.
         */
         onCreated={groups.reload}
       />

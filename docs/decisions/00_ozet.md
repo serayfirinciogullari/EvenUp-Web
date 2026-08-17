@@ -61,6 +61,7 @@ Görevlerin ilerleyişi:
 | —     | [Görsel kimlik](gorsel-kimlik.md) — Tailwind + shadcn/ui + Magic UI, yüzey ayrımı |
 | —     | [Home ızgarası ve boş durum](home-ve-bos-durum-duzeltme.md) — carousel kaldırıldı, tek renk ailesi, Gruplar karşılama ekranı |
 | —     | [Landing sayfası](landing-page.md) — halka açık `/`, bir kez oynayan netleştirme animasyonu, sakin "Neden EvenUp" |
+| —     | [Sol sidebar](sidebar-navigasyon.md) — üst bar taşındı, paylaşılan sunucu durumu, türetilmiş grup rengi |
 | —     | [Home özeti](home-summary.md) — ilk toplu (aggregate) uç, N+1'in önlenmesi |
 
 ---

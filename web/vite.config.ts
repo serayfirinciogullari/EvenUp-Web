@@ -21,5 +21,13 @@ export default defineConfig({
     // Gercek backend isteyen testler burada calismaz; ayri komutu var
     // (`npm run test:api`, vitest.api.config.ts). Gerekcesi o dosyada.
     exclude: ['node_modules/**', 'dist/**', 'src/**/*.integration.test.{ts,tsx}'],
+    /*
+      Varsayilan 5sn, `findBy*` beklemesi de 5sn (src/test/setup.ts). Ikisi ayni
+      olunca yavas bir makinede test, beklemesi daha bitmeden **zaman asimina**
+      dusuyordu — hata mesaji da "eleman bulunamadi" degil "test timed out"
+      oluyor, yani teshis edilemez hale geliyor. Test suresi bekleme suresinin
+      belirgin uzerinde olmali.
+    */
+    testTimeout: 20000,
   },
 });

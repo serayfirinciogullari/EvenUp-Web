@@ -1,17 +1,14 @@
 import { ArrowRight, TriangleAlert } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
 import HomeFeatureCard from '@/components/HomeFeatureCard';
 import HomeStatCard from '@/components/HomeStatCard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import summaryApi from '../api/summary';
-import useAsync from '../hooks/useAsync';
+import { useSummaryData } from '../hooks/useAppData';
 import useAuth from '../hooks/useAuth';
 import { RECEIPT_TILE, buildHomeTiles, ctaHintOf } from '../utils/homeCards';
-
-import type { HomeSummary } from '../types/models';
 
 /**
  * Home — giris sonrasi ilk ekran.
@@ -42,8 +39,12 @@ import type { HomeSummary } from '../types/models';
 const HomePage = () => {
   const { user } = useAuth();
 
-  const fetchSummary = useCallback(() => summaryApi.getHomeSummary(), []);
-  const summary = useAsync<HomeSummary>(fetchSummary, 'Ozet yuklenemedi');
+  /*
+    Ozet artik sayfaya degil `AppDataProvider`a ait: ayni veriyi sidebar'daki
+    bekleyen odeme rozeti de okuyor. Sayfa kendi istegini atsaydi Home her
+    acildiginda ayni uc noktaya ikinci bir istek gitmis olurdu.
+  */
+  const summary = useSummaryData();
 
   const tiles = useMemo(() => buildHomeTiles(summary.data), [summary.data]);
 

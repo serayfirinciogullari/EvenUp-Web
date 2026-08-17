@@ -657,6 +657,39 @@
 
 /*
   ============================================================================
+  SIDEBAR
+  ============================================================================
+  Aktif satir iki kanaldan isaretleniyor: zemin (`bg-rose/10`, bilesende) ve
+  sol kenar cizgisi (burada). Yalnizca renk kullanilsaydi renk korlugu olan
+  kullanicida "neredeyim" sorusu cevapsiz kalirdi — projede tekrar eden kural:
+  renk bilgiyi tasimaz, yalnizca hizlandirir.
+
+  Cizgi `::before` ile ciziliyor, `border-left` ile degil: kenarlik satirin
+  genisligini degistirir ve aktif satir bir piksel kayardi.
+*/
+.sidebar__item--active::before {
+  content: '';
+  position: absolute;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-rose);
+}
+
+/*
+  Dar haldeki isim ipucu buradan **kaldirildi**.
+
+  Mutlak konumlu bir balon (`.sidebar__tip`) satirin sagina, sidebar'in disina
+  tasiyordu. Kapta `overflow-y: auto` oldugu icin CSS yatay ekseni de `auto`ya
+  ceviriyor ve o tasma altta kalici bir yatay kaydirma cubugu uretiyordu. Ipucu
+  artik yerel `title` ile veriliyor (bkz. Sidebar.tsx); erisilebilir ad zaten
+  `sr-only` metinden geliyor, yani hicbir bilgi kaybi yok.
+*/
+
+/*
+  ============================================================================
   LANDING — SON CTA HALESI
   ============================================================================
   Hale yalnizca hover/odakta. Sabit bir parilti, sayfa yuklendigi anda gozu

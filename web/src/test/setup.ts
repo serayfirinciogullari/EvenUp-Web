@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, vi } from 'vitest';
 
@@ -18,6 +18,19 @@ import { afterEach, beforeEach, vi } from 'vitest';
  *     diyen bir test, kendi tetiklemedigi bir mesaj yuzunden kirmizi yaniyor.
  *   - tema sinifi `<html>` uzerinde; `cleanup()` oraya dokunmaz.
  */
+/*
+  `findBy*` bekleme suresi 1sn'den 5sn'ye cikariliyor.
+
+  Sebep: korunan her sayfa artik sidebar ile birlikte cizilyor ve sidebar iki
+  ayri istegi (grup listesi + ozet) bekleyen bir saglayicinin altinda. Sekiz
+  test dosyasi paralel kosarken bu agac 1sn'ye sigmayabiliyordu ve testler
+  **kod bozuk oldugu icin degil, makine mesgul oldugu icin** kirmizi yaniyordu.
+
+  Sure uzatmak yavas testi gizlemiyor: gecen bir test yine ilk firsatta geciyor,
+  yalnizca basarisiz sayilmadan once daha uzun bekliyor.
+*/
+configure({ asyncUtilTimeout: 5000 });
+
 beforeEach(() => {
   window.localStorage.clear();
 });

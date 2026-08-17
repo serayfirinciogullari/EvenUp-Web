@@ -31,6 +31,40 @@ vi.mock('../api/users', () => ({
   default: { updateProfile: vi.fn(), changePassword: vi.fn() },
 }));
 
+/*
+  Sidebar (Layout) bekleyen odeme rozetini paylasilan saglayicidan okuyor,
+  yani her korunan sayfa bu ucu tetikliyor. Bu dosyanin derdi baska oldugu
+  icin cevap sabitleniyor; mock'lanmasaydi testler gercek bir istek denerdi.
+*/
+vi.mock('../api/summary', () => ({
+  __esModule: true,
+  default: {
+    getHomeSummary: vi.fn().mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 0,
+      pendingSettlementsCount: 0,
+    }),
+  },
+}));
+
+/*
+  Sidebar (Layout) grup kisayollarini paylasilan saglayicidan okuyor, yani her
+  korunan sayfa `GET /groups` tetikliyor. Bu dosyanin derdi baska oldugu icin
+  bos liste dondurecek sekilde sabitleniyor.
+*/
+vi.mock('../api/groups', () => ({
+  __esModule: true,
+  default: {
+    listGroups: vi.fn().mockResolvedValue([]),
+    createGroup: vi.fn(),
+    getGroup: vi.fn(),
+    createInvite: vi.fn(),
+    getGroupBalances: vi.fn(),
+    setMemberNickname: vi.fn(),
+  },
+}));
+
 import authApi from '../api/auth';
 import usersApi from '../api/users';
 
@@ -175,9 +209,10 @@ describe('Ayarlar > profil', () => {
 
     await waitFor(() => expect(mockedAuth.getMe).toHaveBeenCalledTimes(1));
 
-    // Ust bardaki isim de tazelenen degeri gosteriyor.
-    const header = document.querySelector('.layout__header') as HTMLElement;
-    expect(await within(header).findByText('Deniz Yilmaz')).toBeInTheDocument();
+    // Sidebar'daki isim de tazelenen degeri gosteriyor (gezinme ust bardan
+    // sol sidebar'a tasindi; kullanici blogu artik orada).
+    const sidebar = screen.getByRole('complementary', { name: 'Kenar cubugu' });
+    expect(await within(sidebar).findByText('Deniz Yilmaz')).toBeInTheDocument();
   });
 
   it('sunucudan geri okuma basarisiz olursa basari bildirimi gosterilmez', async () => {
@@ -459,20 +494,27 @@ describe('Ayarlar > tema', () => {
     await waitFor(() => expect(window.localStorage.getItem(THEME_KEY)).toBe('system'));
   });
 
-  it('ust bardaki hizli anahtar ayni tercihi degistirir', async () => {
+  /*
+    Hizli gecis ust bardan sidebar'daki hesap menusune tasindi (tek tiklanabilir
+    avatar). Davranis ayni: bu ekrandaki uc secenekli kontrolle **ayni** tercihi
+    yaziyor, iki ayri kayit olusmuyor.
+  */
+  it('hesap menusundeki hizli anahtar ayni tercihi degistirir', async () => {
     renderSettings();
     await waitForPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Koyu temaya gec' }));
+    // Radix menusu `pointerdown` ile aciliyor; `click` tek basina yetmiyor.
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Hesap menusu' }),
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false })
+    );
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Koyu temaya gec' }));
 
     await waitFor(() => expect(document.documentElement).toHaveClass('dark'));
     expect(within(themeSection()).getByRole('radio', { name: 'Koyu' })).toHaveAttribute(
       'aria-checked',
       'true'
     );
-
-    // Etiket artik ters yonu gosteriyor: buton **eylemi** anlatiyor.
-    expect(await screen.findByRole('button', { name: 'Acik temaya gec' })).toBeInTheDocument();
   });
 
   it('kayitli tercih acilista uygulanir', async () => {

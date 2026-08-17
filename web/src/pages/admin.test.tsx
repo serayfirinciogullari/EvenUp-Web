@@ -43,6 +43,23 @@ vi.mock('../api/summary', () => ({
   },
 }));
 
+/*
+  Sidebar (Layout) grup kisayollarini paylasilan saglayicidan okuyor, yani her
+  korunan sayfa `GET /groups` tetikliyor. Bu dosyanin derdi baska oldugu icin
+  bos liste dondurecek sekilde sabitleniyor.
+*/
+vi.mock('../api/groups', () => ({
+  __esModule: true,
+  default: {
+    listGroups: vi.fn().mockResolvedValue([]),
+    createGroup: vi.fn(),
+    getGroup: vi.fn(),
+    createInvite: vi.fn(),
+    getGroupBalances: vi.fn(),
+    setMemberNickname: vi.fn(),
+  },
+}));
+
 vi.mock('../api/admin', () => ({
   __esModule: true,
   default: {

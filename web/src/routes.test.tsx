@@ -291,7 +291,7 @@ describe('giris yapmis kullanici', () => {
     renderAt('/home');
     await screen.findByRole('heading', { name: 'Merhaba, Burak' });
 
-    fireEvent.click(screen.getByRole('link', { name: 'Gruplar' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Gruplarim' }));
 
     expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
   });
@@ -357,7 +357,7 @@ describe('admin rotasi', () => {
     await screen.findByRole('heading', { name: 'Gruplar' });
 
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gruplarim' })).toBeInTheDocument();
   });
 
   it('admin menusunde Admin baglantisi cikar', async () => {
