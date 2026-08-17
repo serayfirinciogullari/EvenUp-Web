@@ -15,6 +15,13 @@ export interface Config {
   jwtExpiresIn: string;
   bcryptSaltRounds: number;
   logLevel: string;
+  /** Anthropic API anahtari. Yoksa null; dogal dil harcama ucu (ai.service)
+   *  cagrildiginda 503 dondurur, uygulamanin geri kalani etkilenmez. */
+  anthropicApiKey: string | null;
+  /** Dogal dil harcama ayristirmada kullanilan model. Isim/katilimci
+   *  eslestirme hata riski tasidigi icin varsayilan Sonnet (bkz.
+   *  docs/decisions/grup-detay-sohbet.md). */
+  anthropicModel: string;
   isProduction: boolean;
   isDevelopment: boolean;
 }
@@ -45,6 +52,8 @@ const config: Config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   bcryptSaltRounds: clampSaltRounds(toNumber(process.env.BCRYPT_SALT_ROUNDS, 12)),
   logLevel: process.env.LOG_LEVEL || 'dev',
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
+  anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5',
   isProduction: env === 'production',
   isDevelopment: env === 'development',
 };

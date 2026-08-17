@@ -28,6 +28,13 @@ export type ExpenseSplitType = 'equal' | 'exact' | 'percentage';
 /** Odeme kaydinin durumu. `pending` **bakiyeyi etkilemez**; yalnizca alacaklinin
  *  onayladigi (`confirmed`) kayitlar netlestirmeye girer (bkz. docs/decisions/1.7.md). */
 export type SettlementStatus = 'pending' | 'confirmed' | 'rejected';
+/** Grup sohbetindeki bir satirin turu. Hangi kolonun dolu oldugunu belirler
+ *  (bkz. migration 13, `group_messages_shape_check`):
+ *    user_text / ai_clarification -> content dolu
+ *    expense_created              -> expense_id dolu
+ *    receipt_draft_ref            -> receipt_draft_id dolu (3.5.2 ile aktiflesir) */
+export type GroupMessageType =
+  'user_text' | 'ai_clarification' | 'expense_created' | 'receipt_draft_ref';
 
 /* ------------------------------------------------------------------ users */
 
@@ -253,6 +260,40 @@ export interface MemberNicknameInsert {
 
 export type MemberNicknameUpdate = Partial<Omit<MemberNicknameInsert, 'id'>>;
 
+/* --------------------------------------------------------- group_messages */
+
+/**
+ * Grup sohbetindeki tek bir olay. `type` hangi kolonun dolu oldugunu belirler
+ * (bkz. migration 13). `sender_id` sistem/AI mesajlarinda `null`; `content`
+ * yalnizca metin turlerinde, `expense_id`/`receipt_draft_id` yalnizca kendi
+ * referans turlerinde dolu. `deleted_at` "geri al" icin soft delete.
+ */
+export interface GroupMessageRow {
+  id: string;
+  group_id: string;
+  sender_id: string | null;
+  type: GroupMessageType;
+  content: string | null;
+  expense_id: string | null;
+  receipt_draft_id: string | null;
+  created_at: Date;
+  deleted_at: Date | null;
+}
+
+export interface GroupMessageInsert {
+  id?: string;
+  group_id: string;
+  sender_id?: string | null;
+  type: GroupMessageType;
+  content?: string | null;
+  expense_id?: string | null;
+  receipt_draft_id?: string | null;
+  created_at?: Date;
+  deleted_at?: Date | null;
+}
+
+export type GroupMessageUpdate = Partial<Omit<GroupMessageInsert, 'id'>>;
+
 declare module 'knex/types/tables' {
   interface Tables {
     users: Knex.CompositeTableType<UserRow, UserInsert, UserUpdate>;
@@ -270,6 +311,11 @@ declare module 'knex/types/tables' {
       MemberNicknameRow,
       MemberNicknameInsert,
       MemberNicknameUpdate
+    >;
+    group_messages: Knex.CompositeTableType<
+      GroupMessageRow,
+      GroupMessageInsert,
+      GroupMessageUpdate
     >;
   }
 }

@@ -2,6 +2,7 @@ import { Router } from 'express';
 
 import expenseController from '../controllers/expense.controller';
 import groupController from '../controllers/group.controller';
+import messageController from '../controllers/message.controller';
 import settlementController from '../controllers/settlement.controller';
 import { requireAuth } from '../middlewares/auth.middleware';
 import asyncHandler from '../utils/asyncHandler';
@@ -35,6 +36,11 @@ router.put('/:id/members/:userId/nickname', asyncHandler(groupController.setMemb
 // tek bir harcama uzerindeki islemler /expenses altinda (expense.routes.ts).
 router.post('/:id/expenses', asyncHandler(expenseController.create));
 router.get('/:id/expenses', asyncHandler(expenseController.listByGroup));
+
+// Sohbet feed'i: dogal dil harcama ekleme ve birlesik mesaj akisi. Grup
+// baglaminda anlamli oldugu icin harcamalarla ayni yerde (bkz. 3.5 sohbet karari).
+router.post('/:id/messages', asyncHandler(messageController.create));
+router.get('/:id/messages', asyncHandler(messageController.listByGroup));
 
 // Ayni gerekce: odeme kaydi acmak ve bakiye okumak grup baglaminda anlamli;
 // onay/red ise /settlements altinda (settlement.routes.ts).

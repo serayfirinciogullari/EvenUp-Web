@@ -1,5 +1,6 @@
 import expenseModel from '../models/expense.model';
 import groupModel from '../models/group.model';
+import messageModel from '../models/message.model';
 import ApiError from '../utils/ApiError';
 import { parseAmountToCents, parsePercentageToBasisPoints } from '../utils/money';
 import {
@@ -361,6 +362,16 @@ const createExpense = async (
     shares,
   });
 
+  // Harcama olusunca sohbet feed'ine "expense_created" satiri ekle. Bu adim
+  // BILEREK createExpense icinde: hem form ucu (POST /groups/:id/expenses) hem
+  // chat servisi bu fonksiyonu cagirir, dolayisiyla feed satiri tek bir yerden,
+  // tek bir kod yolundan uretilir (DRY). Gerekce docs/decisions/grup-detay-sohbet.md
+  await messageModel.insertExpenseCreated({
+    group_id: expense.group_id,
+    sender_id: userId,
+    expense_id: expense.id,
+  });
+
   return toPublicExpense(expense);
 };
 
@@ -498,6 +509,10 @@ const deleteExpense = async (
   if (!deleted || !deleted.deleted_at) {
     throw ApiError.forbidden(ACCESS_DENIED);
   }
+
+  // "Geri al": harcama silinince feed'deki expense_created karti da kalksin.
+  // Ayni soft-delete deseni; harcama geri gelirse mesaj da geri getirilebilir.
+  await messageModel.softDeleteByExpenseId(expense.id);
 
   return { id: deleted.id, deleted_at: deleted.deleted_at };
 };
