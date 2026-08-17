@@ -132,13 +132,13 @@ describe('liste durumlari', () => {
     expect(screen.queryByLabelText('Gruplar yukleniyor')).not.toBeInTheDocument();
   });
 
-  it('hic grup yoksa bos durum ve olusturma CTA gosterilir', async () => {
+  it('hic grup yoksa karsilama ekrani ve olusturma CTA gosterilir', async () => {
     mockedGroups.listGroups.mockResolvedValue([]);
 
     renderGroups();
 
-    expect(await screen.findByText('Henuz bir grubun yok.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Ilk grubunu olustur' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "EvenUp'a hos geldin" })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ilk grubunu olustur/ })).toBeInTheDocument();
   });
 
   it('API hatasinda anlamli mesaj ve tekrar dene gosterilir', async () => {
@@ -149,7 +149,7 @@ describe('liste durumlari', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Sunucu hatasi');
     // Hata, "grup yok" ile karistirilmamali.
-    expect(screen.queryByText('Henuz bir grubun yok.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: "EvenUp'a hos geldin" })).not.toBeInTheDocument();
   });
 
   it('tekrar dene listeyi yeniden ister', async () => {
@@ -172,6 +172,48 @@ describe('liste durumlari', () => {
     renderGroups();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Sunucuya ulasilamiyor');
+  });
+});
+
+/* ============================================================== bos durum */
+
+describe('bos durum ekrani', () => {
+  it('grup nedir bolumu ve dort ozellik kutusu gosterilir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([]);
+
+    renderGroups();
+
+    expect(await screen.findByRole('heading', { name: 'Grup nedir?' })).toBeInTheDocument();
+
+    // Kutular gercek ozelliklere referans veriyor; henuz yazilmamis olanlar
+    // (sohbet, AI'in kalemlere ayirmasi) rozetle isaretli.
+    for (const title of ['Sohbet & fisler', 'Harcama kalemleri', 'Bakiyeler', 'Grup ayarlari']) {
+      expect(screen.getByRole('heading', { name: new RegExp(title) })).toBeInTheDocument();
+    }
+
+    expect(screen.getAllByText('Yakinda')).toHaveLength(2);
+  });
+
+  it('karsilama kartindaki buton grup olusturma modalini acar', async () => {
+    mockedGroups.listGroups.mockResolvedValue([]);
+
+    renderGroups();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Ilk grubunu olustur/ }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('Grup adi')).toBeInTheDocument();
+  });
+
+  it('en az bir grup varken bos durum degil kart listesi gosterilir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group()]);
+
+    renderGroups();
+
+    await findCard('Ev Arkadaslari');
+
+    expect(screen.queryByRole('heading', { name: "EvenUp'a hos geldin" })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Grup nedir?' })).not.toBeInTheDocument();
   });
 });
 

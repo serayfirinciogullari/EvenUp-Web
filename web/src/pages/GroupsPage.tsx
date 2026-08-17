@@ -1,9 +1,9 @@
-import { Plus, Users } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useCallback, useState } from 'react';
 
-import GlassCard from '@/components/GlassCard';
 import GroupCard from '@/components/GroupCard';
+import GroupsEmptyState from '@/components/GroupsEmptyState';
 import NewGroupModal from '@/components/NewGroupModal';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -64,20 +64,13 @@ const GroupsPage = () => {
         </div>
       )}
 
+      {/*
+        Bos durum artik tek satirlik bir mesaj degil, kendi ekrani
+        (bkz. GroupsEmptyState). Kosul aynen duruyor: **yalnizca** istek
+        basariyla dondu ve dizi bos ise. Hata ile bos ayni sey degil.
+      */}
       {!groups.loading && !groups.error && groups.data?.length === 0 && (
-        <GlassCard as="section" className="state-box mt-6 p-10 text-center">
-          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-rose/10">
-            <Users className="size-6 text-rose" aria-hidden />
-          </div>
-          <h2 className="text-xl">Henuz bir grubun yok.</h2>
-          <p className="placeholder mx-auto mt-2 max-w-sm text-sm text-ink-muted">
-            Bir ev, tatil ya da proje icin grup olustur; harcamalari paylasmaya baslayin.
-          </p>
-          <Button className="mt-5" onClick={() => setModalOpen(true)}>
-            <Plus className="size-4" aria-hidden />
-            Ilk grubunu olustur
-          </Button>
-        </GlassCard>
+        <GroupsEmptyState onCreate={() => setModalOpen(true)} />
       )}
 
       {!groups.loading && !groups.error && groups.data && groups.data.length > 0 && (

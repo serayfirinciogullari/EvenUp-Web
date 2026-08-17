@@ -1,4 +1,4 @@
-import { BellRing, ReceiptText, ScanLine, Tags, UsersRound, Wallet } from 'lucide-react';
+import { ReceiptText, ScanLine, Wallet } from 'lucide-react';
 
 import { formatCents, parseAmountToCents } from './money';
 import { labelOfTone, toneOfCents } from './balance';
@@ -8,66 +8,62 @@ import type { HomeSummary } from '../types/models';
 import type { LucideIcon } from 'lucide-react';
 
 /**
- * Home carousel'inin kart listesi — **tek kapi**.
+ * Home izgarasinin icerigi — **tek kapi**.
  *
- * Hem kisisel (veri) hem tanitim (statik) kartlari burada uretiliyor. Ayri bir
- * modul olmasinin sebebi: sira kurali bir **karar**, bir bilesenin icinde
- * kaybolmamali. Ustelik saf bir fonksiyon oldugu icin testi mock istemiyor.
+ * IZGARA, CAROUSEL DEGIL
+ * ----------------------
+ * Onceki surumde alti kart bir carousel icinde donusumlu siralaniyordu ve
+ * siranin kendisi bir karardi. Sabit izgarada boyle bir karar yok: kutu
+ * sayisi kadar icerik var, hepsi ayni anda ekranda. Bu yuzden bu modul artik
+ * "sirala" degil **"ne yazacagini hesapla"** isini yapiyor; sira duzenin
+ * kendisinden (HomePage) geliyor.
  *
- * KART SIRASI NASIL BELIRLENDI
+ * NEDEN YINE DE AYRI BIR MODUL
  * ----------------------------
- * Sira **sabit ve donusumlu** (stat, feature, stat, feature, ...):
+ * Tutar ayristirma ve ton secimi saf mantik; bilesenin icine gomulseydi testi
+ * DOM uzerinden yapmak gerekirdi. Ayrica `null` ozet durumunda **hicbir
+ * kisisel kart uretilmemesi** kurali burada tek satirda duruyor.
  *
- *     1. Toplam net bakiye     (kisisel)
- *     2. Fis tarama            (tanitim)
- *     3. Bu ayki harcama       (kisisel)
- *     4. Takma isimler         (tanitim)
- *     5. Aktif grup sayisi     (kisisel)
- *     6. Hatirlatma            (tanitim)
- *
- * Uc karar var:
- *
- * 1. **Ilk kart kisisel.** Kullanici Home'a kendi durumunu ogrenmeye geliyor;
- *    ilk gordugu sey bir reklam olsaydi carousel'in tamami reklam sanilir ve
- *    kaydirilmadan gecilirdi.
- * 2. **Donusumlu, kumelenmis degil.** Uc kisisel kart art arda gelseydi
- *    tanitim kartlari "sondaki dolgu" olurdu; kullanicilarin cogu ucuncu
- *    karttan sonrasini gormez. Aralara serpistirmek her tanitim kartina bir
- *    kisisel kart kadar gorunme sansi veriyor.
- * 3. **Rastgele DEGIL.** Karistirma cazip geliyor ("her acilista taze
- *    gorunsun") ama kotu bir fikir: kullanici "bakiyem soldan ikinci karttaydi"
- *    diye hatirlayamaz, ayni kart iki farkli yerde cikar ve kas hafizasi hic
- *    olusmaz. Ayrica testler ve ekran goruntuleri belirsizlesir.
- *
- * Toplam **6 kart** — ust sinir bilincli, fazlasi dikkat dagitir.
+ * KART SAYISI DUSTU — NEDEN
+ * -------------------------
+ * Carousel alti kart tasiyabiliyordu cunku ucu her zaman ekran disindaydi.
+ * Izgarada hepsi ayni anda gorunur; alti kutu bir "gosterge paneli" olurdu ve
+ * Home'un tek isi (kullaniciyi gruplarina yollamak) o panelin icinde kaybolurdu.
+ * Kalanlar: iki kisisel deger + bir tanitim. "Aktif grup sayisi" karti CTA'nin
+ * altindaki cumleye tasindi (bkz. HomePage) — veri korundu, kutu eksildi.
  */
 
-export interface StatCardModel {
-  kind: 'stat';
-  id: string;
-  /** Kartin ustundeki kucuk etiket: "Toplam net bakiyen". */
+/** Karo yuzeyi. Uc deger de ayni rose/ink ailesinden; bkz. index.css. */
+export type HomeTileSurface = 'balance' | 'spend';
+
+export interface HomeStatTile {
+  id: 'net-balance' | 'monthly-spend';
+  /** Karonun ustundeki kucuk etiket: "Toplam net bakiyen". */
   label: string;
   /** Buyuk deger — zaten bicimlendirilmis metin. */
   value: string;
   /** Degerin altindaki aciklama; renk tek basina birakilmasin diye her zaman var. */
   caption: string;
   /**
-   * Sinyal tonu. `neutral` = parasal yonu olmayan kart (grup sayisi gibi);
-   * yesil/kirmizi yalnizca gercekten alacak/borc anlatan kartlarda.
+   * Sinyal tonu. `neutral` = parasal yonu olmayan karo (aylik harcama gibi);
+   * yesil/kirmizi yalnizca gercekten alacak/borc anlatan karoda.
+   *
+   * Ton YALNIZCA **sayinin rengini** degistiriyor, karonun zeminini degil
+   * (bkz. index.css `.home-tile--credit`).
    */
   tone: BalanceTone | 'neutral';
+  surface: HomeTileSurface;
   icon: LucideIcon;
 }
 
-export interface FeatureCardModel {
-  kind: 'feature';
+export interface HomeFeatureTile {
   id: string;
   title: string;
   description: string;
-  /** Kartin uzerindeki eylem metni. */
+  /** Karonun uzerindeki eylem metni. */
   cta: string;
   /**
-   * Gidilecek rota. `null` = ozellik henuz yok; kart tiklanabilir kalir ama
+   * Gidilecek rota. `null` = ozellik henuz yok; karo tiklanabilir kalir ama
    * bir bildirim gosterir. Var olmayan bir adrese gonderip 404 ile
    * karsilastirmaktansa durumu acikca soylemek dogru.
    */
@@ -75,63 +71,39 @@ export interface FeatureCardModel {
   icon: LucideIcon;
 }
 
-export type HomeCardModel = StatCardModel | FeatureCardModel;
-
-/** Carousel'de gosterilecek en fazla kart. Fazlasi dikkat dagitir. */
-const MAX_HOME_CARDS = 6;
-
 /**
- * Tanitim kartlari — statik icerik, kodda tanimli.
+ * Tam genislikteki tanitim karosu.
  *
- * `to: null` olanlar henuz yazilmamis ozellikler. Rota geldiginde tek
- * yapilacak sey buradaki `null` yerine adresi yazmak; kart bilesenleri
- * degismiyor.
+ * Tek tanitim karosu kaldi ve o da fis tarama: uygulamanin asil vaadi bu.
+ * Ikinci/ucuncu tanitim karosu (takma isimler, hatirlatma) izgarada CTA ile
+ * yarisiyordu; ikisi de zaten uygulamanin icinde kesfedilebilir yerler.
  */
-const FEATURE_CARDS: readonly FeatureCardModel[] = [
-  {
-    kind: 'feature',
-    id: 'receipt-scan',
-    title: 'Fisi cek, AI duzenlesin',
-    description: 'Fisin fotografini yukle; kalemleri ve tutari kendisi cikarsin.',
-    cta: 'Fis tara',
-    to: null,
-    icon: ScanLine,
-  },
-  {
-    kind: 'feature',
-    id: 'nicknames',
-    title: 'Herkese kendi takma ismini ver',
-    description: 'Grup icinde kimin kim oldugunu kendi verdigin adlarla gor.',
-    cta: 'Gruba git',
-    /*
-      2.9'da gercek bir ozellik oldu (Kisiler sekmesi). Hedef `/groups`:
-      takma isim **grup basina** tanimli, dolayisiyla once bir grup secilmeli.
-      Rastgele bir gruba gondermek, kullanicinin aklindaki grup olmama
-      ihtimali yuksek oldugu icin daha kotu olurdu.
-    */
-    to: '/groups',
-    icon: Tags,
-  },
-  {
-    kind: 'feature',
-    id: 'reminders',
-    title: 'Borcunu unutma, hatirlat',
-    description: 'Bekleyen odemeler icin kibar bir hatirlatma gonder.',
-    cta: 'Hatirlatma kur',
-    to: null,
-    icon: BellRing,
-  },
-];
+export const RECEIPT_TILE: HomeFeatureTile = {
+  id: 'receipt-scan',
+  title: 'Fisi cek, AI duzenlesin',
+  description: 'Fisin fotografini yukle; kalemleri ve tutari kendisi cikarsin, sen yalnizca onayla.',
+  cta: 'Fis tara',
+  to: null,
+  icon: ScanLine,
+};
 
 /**
- * Ozet verisinden kisisel kartlari uretir.
+ * Ozet verisinden kisisel karolari uretir.
  *
  * Tutarlar kurusa cevrilip oyle bicimlendiriliyor (`utils/money`): backend
  * metin donuyor ve `Number(...)` cevrimi yalnizca gosterim aninda yapilmali.
- * Ayristirilamayan bir deger `null` doner — sessizce 0 saymak yerine kart
+ * Ayristirilamayan bir deger `null` doner — sessizce 0 saymak yerine karo
  * "hesaplanamadi" diyor, cunku 0,00 ₺ gecerli ve **cok farkli** bir cevap.
+ *
+ * `summary` yoksa (yukleniyor / hata) **bos dizi** doner: uydurma bir sifir
+ * gostermektense kisisel karolari hic cizmemek dogru. Tanitim karosu ve CTA o
+ * durumda da ayakta kaliyor, yani sayfa isini yapmaya devam ediyor.
  */
-const statCards = (summary: HomeSummary): StatCardModel[] => {
+export const buildHomeTiles = (summary: HomeSummary | null): HomeStatTile[] => {
+  if (!summary) {
+    return [];
+  }
+
   const balanceCents = parseAmountToCents(summary.totalNetBalance);
   const spendCents = parseAmountToCents(summary.monthlySpend);
 
@@ -140,7 +112,6 @@ const statCards = (summary: HomeSummary): StatCardModel[] => {
 
   return [
     {
-      kind: 'stat',
       id: 'net-balance',
       label: 'Toplam net bakiyen',
       value: balanceCents === null ? 'Hesaplanamadi' : formatCents(balanceCents),
@@ -151,64 +122,39 @@ const statCards = (summary: HomeSummary): StatCardModel[] => {
           ? 'Ozet su an okunamadi'
           : `${labelOfTone(toneOfCents(balanceCents))} · tum gruplar`,
       tone,
+      surface: 'balance',
       icon: Wallet,
     },
     {
-      kind: 'stat',
       id: 'monthly-spend',
       label: 'Bu ay harcadigin',
       value: spendCents === null ? 'Hesaplanamadi' : formatCents(spendCents),
-      caption: 'Bu ay senin odedigin harcamalar',
+      caption: 'Senin odedigin harcamalar',
       // Harcama bir borc degil: kirmizi gostermek "kotu bir sey yaptin"
       // demek olurdu. Notr kaliyor.
       tone: 'neutral',
+      surface: 'spend',
       icon: ReceiptText,
-    },
-    {
-      kind: 'stat',
-      id: 'active-groups',
-      label: 'Aktif oldugun grup',
-      value: String(summary.activeGroupsCount),
-      caption:
-        summary.activeGroupsCount === 0
-          ? 'Henuz bir gruba katilmadin'
-          : 'Uyesi oldugun grup sayisi',
-      tone: 'neutral',
-      icon: UsersRound,
     },
   ];
 };
 
 /**
- * Kisisel ve tanitim kartlarini donusumlu olarak orer.
+ * CTA'nin altindaki yardimci cumle.
  *
- * `summary` yoksa (yukleniyor / hata) yalnizca tanitim kartlari doner: bos bir
- * carousel gostermektense kullanicinin okuyabilecegi bir sey birakmak daha iyi,
- * ve kart sayisinin degismesi iskelet ile gercek icerik arasindaki gecisi
- * bozmuyor (iskelet zaten tek kart genisliginde).
+ * Carousel'deki "Aktif oldugun grup" karti buraya tasindi: sayi bir kutuyu
+ * hak edecek kadar onemli degildi ama kullaniciyi gruplarina yollayan
+ * butonun hemen altinda **baglami** kuruyor. Ozet yoksa cumle yine var,
+ * yalnizca sayisiz.
  */
-export const buildHomeCards = (summary: HomeSummary | null): HomeCardModel[] => {
+export const ctaHintOf = (summary: HomeSummary | null): string => {
   if (!summary) {
-    return FEATURE_CARDS.slice(0, MAX_HOME_CARDS);
+    return 'Kim kime ne kadar borclu, hepsi orada.';
   }
 
-  const stats = statCards(summary);
-  const cards: HomeCardModel[] = [];
-
-  // Donusumlu orgu. Iki liste esit uzunlukta (3+3) ama dongu yine de ikisinin
-  // uzununa gore yaziliyor: yarin bir kart eklenirse sira kendiliginden dogru
-  // kalsin, burasi yeniden yazilmasin.
-  for (let index = 0; index < Math.max(stats.length, FEATURE_CARDS.length); index++) {
-    if (stats[index]) {
-      cards.push(stats[index]);
-    }
-
-    if (FEATURE_CARDS[index]) {
-      cards.push(FEATURE_CARDS[index]);
-    }
+  if (summary.activeGroupsCount === 0) {
+    return 'Henuz bir gruba katilmadin — ilk grubunu orada olusturabilirsin.';
   }
 
-  // Ust sinir burada uygulaniyor, cagiran tarafta degil: kart eklemek isteyen
-  // biri once bu satiri gormek zorunda kalsin.
-  return cards.slice(0, MAX_HOME_CARDS);
+  return `${summary.activeGroupsCount} grupta aktifsin · kim kime ne kadar borclu, hepsi orada.`;
 };

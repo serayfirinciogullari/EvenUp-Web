@@ -525,6 +525,208 @@
 }
 
 /*
+  ============================================================================
+  HOME IZGARASI — TEK RENK AILESI
+  ============================================================================
+
+  KURAL: Home'daki uc karo da **tek bir renk ailesinden** boyanir (rose -> ink).
+  Karolar arasindaki fark yalnizca **koyuluk ve gradyan yonu**. Yesil, mavi,
+  lila gibi ikinci bir hue zemin olarak kullanilmaz.
+
+  NEDEN
+  -----
+  Onceki surumde her kart kendi pastel zeminini tasiyordu. Sonuc "hazir sablon"
+  hissiydi: ekranda dort ayri aile birden yarisiyor, hicbiri digerine gore
+  onemli gorunmuyordu. Tek aile ile hiyerarsi koyuluktan okunuyor ve sayfa
+  kasitli duruyor. Ayrinti: docs/decisions/home-ve-bos-durum-duzeltme.md.
+
+  SINYAL RENGI ZEMINE DEGIL, YALNIZCA SAYIYA
+  ------------------------------------------
+  Alacak/borc rengi karonun **rakamina** uygulanir; zemin asla sinyal rengine
+  boyanmaz. 1.6/2.3'teki "sinyal marka renginden bagimsizdir" ilkesi burada
+  metin duzeyinde yasiyor: zemine tasinsaydi bir bakiye karosu bir uyari
+  kutusuna donusur, uc karo da uc ayri renge dagilirdi.
+
+  DEGERLER TEMADAN BAGIMSIZ
+  -------------------------
+  Karo zeminleri iki temada da ayni koyu gradyan, dolayisiyla uzerlerindeki
+  metin de sabit acik ton. `--color-ink` kullanilsaydi acik temada koyu metin
+  koyu zemine dusup okunamaz olurdu. Bu yuzden asagidaki degerler `:root`ta
+  tanimli ve `.dark` blogunda **cevrilmiyor**.
+
+  KONTRAST (WCAG 2.1 AA — olculdu, en acik zemin #5C2E3D uzerinde)
+  ---------------------------------------------------------------
+    tile-ink       #F7ECE9 / #5C2E3D ................ 10.55:1 ✓
+    tile-ink-muted #D6BDC0 / #5C2E3D ................. 6.79:1 ✓
+    tile-positive  #7EDCB4 / #3D1F26 ................. 9.82:1 ✓
+    tile-negative  #E4847A / #3D1F26 ................. 5.79:1 ✓
+*/
+:root {
+  --home-tile-ink: #f7ece9;
+  --home-tile-ink-muted: #d6bdc0;
+  /* Koyu zemin icin sinyal cifti. `--color-signal-*` burada kullanilamaz:
+     o degerler cream zemin icin secildi ve koyu karo uzerinde okunmuyor. */
+  --home-tile-positive: #7edcb4;
+  --home-tile-negative: #e4847a;
+}
+
+.home-tile {
+  position: relative;
+  border-radius: var(--radius);
+  /* Kenarlik zeminden degil isiktan: koyu yuzeylerde koyu bir kenar
+     gorunmez, ustten gelen ince beyaz cizgi karoyu zeminden ayiriyor. */
+  border: 1px solid rgb(255 255 255 / 0.07);
+  color: var(--home-tile-ink);
+  box-shadow: 0 12px 32px -22px rgb(42 20 24 / 0.7);
+}
+
+/* Uc yuzey, tek aile. Sira: en koyu -> en acik. */
+.home-tile--balance {
+  background-image: linear-gradient(135deg, #3d1f26, #2a1418);
+}
+
+.home-tile--spend {
+  background-image: linear-gradient(135deg, #4a2530, #2a1418);
+}
+
+.home-tile--feature {
+  background-image: linear-gradient(135deg, #5c2e3d, #3d1f26);
+  transition: filter 160ms ease-out;
+}
+
+.home-tile--feature:hover {
+  /* Hover'da renk degismiyor, yalnizca aydinlaniyor — aile korunuyor. */
+  filter: brightness(1.12);
+}
+
+.home-tile__label,
+.home-tile__caption {
+  color: var(--home-tile-ink-muted);
+}
+
+.home-tile__amount,
+.home-tile__title,
+.home-tile__cta {
+  color: var(--home-tile-ink);
+}
+
+.home-tile__icon {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--home-tile-ink);
+}
+
+.home-tile__badge {
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--home-tile-ink-muted);
+}
+
+/* Ton: yalnizca rakam. Zemin sinifi degismiyor. */
+.home-tile--credit .home-tile__amount {
+  color: var(--home-tile-positive);
+}
+
+.home-tile--debt .home-tile__amount {
+  color: var(--home-tile-negative);
+}
+
+/*
+  Birincil CTA. Ayni aile, tek aydinlik yuzey — sayfadaki en parlak sey eylem
+  olsun diye.
+
+  KONTRAST: beyaz metin, gradyanin **sol/orta** bandinda 7.14:1 (#7A4A56) ile
+  4.75:1 (~orta nokta) arasinda ✓. En acik ucta (#B87B8C) deger 3.36:1'e
+  duser; bu yuzden buton icerigi ortalanmis durumda ve o banda yalnizca ok
+  ikonu (grafik oge, esik 3:1) tasabiliyor.
+*/
+.home-cta {
+  background-image: linear-gradient(90deg, #7a4a56, #b87b8c);
+  color: #ffffff;
+  border: none;
+  transition: filter 160ms ease-out;
+}
+
+.home-cta:hover {
+  /* shadcn'in `hover:bg-primary/90` kurali gradyanin altinda kaldigi icin
+     gorunmez; parlaklik hover'i gradyanin uzerinde calisiyor. */
+  filter: brightness(1.08);
+}
+
+/*
+  ============================================================================
+  LANDING — SON CTA HALESI
+  ============================================================================
+  Hale yalnizca hover/odakta. Sabit bir parilti, sayfa yuklendigi anda gozu
+  butona kilitler ve ustundeki metnin okunmasini engeller; hover'da belirmesi
+  ise yalnizca zaten oraya yonelmis kullaniciyi odullendiriyor.
+
+  Golge rengi token uzerinden: koyu temada `--shadow-glow` siyaha donuyor
+  (bkz. `.dark`), yani koyu zeminde pembe bir neon olusmuyor.
+*/
+.landing-cta [data-slot='button'] {
+  transition: box-shadow 240ms ease-out;
+}
+
+.landing-cta:hover [data-slot='button'],
+.landing-cta:focus-within [data-slot='button'] {
+  box-shadow: 0 14px 38px -14px color-mix(in srgb, var(--shadow-glow) 70%, transparent);
+}
+
+/*
+  ============================================================================
+  GRUPLAR — BOS DURUM KARSILAMA KARTI
+  ============================================================================
+  Tek pastel yuzey, bilerek: bu kart bir **karsilama**, bir veri yuzeyi degil.
+  Home'un koyu ailesiyle celismiyor cunku ayni ekranda degiller; ikisi de tek
+  bir yuzey uzerinde tek bir gradyan tasiyor.
+
+  Zemin iki temada da ayni acik pastel, dolayisiyla metin sabit `ink`:
+  token kullanilsaydi koyu temada acik metin acik zemine duserdi.
+  Kontrast: #2A1418 / en acik durak #F4C6D8 -> 12.4:1 ✓
+*/
+.welcome-card {
+  background-image: linear-gradient(120deg, #f4c6d8, #e4d2e8, #d9e4f0);
+  color: #2a1418;
+  border-radius: var(--radius);
+  border: 1px solid rgb(255 255 255 / 0.5);
+  box-shadow: 0 12px 34px -24px rgb(42 20 24 / 0.55);
+}
+
+/* Base katmanindaki `h2 { color: var(--color-ink) }` kurali koyu temada
+   metni acikliga cevirirdi; kart kendi rengini dayatiyor. */
+.welcome-card h2 {
+  color: inherit;
+}
+
+.welcome-card__badge {
+  background: rgb(255 255 255 / 0.5);
+  color: #2a1418;
+}
+
+.welcome-card__text {
+  color: rgb(42 20 24 / 0.75);
+}
+
+/*
+  Dolgusu ink olan buton: pastel zeminde rose bir buton yeterince ayrismiyordu
+  (ikisi de acik ve ayni sicaklikta). Siyah/beyaz degil **ink** — palet disina
+  cikmadan en yuksek kontrast. #FAF4F2 / #2A1418 -> 15.92:1 ✓
+*/
+.welcome-card__cta {
+  background: #2a1418;
+  color: #faf4f2;
+  border: none;
+  transition: background-color 160ms ease-out;
+}
+
+.welcome-card__cta:hover {
+  background: #3d1f26;
+}
+
+/*
   ORTA YOGUNLUK KURALI
   --------------------
   Gecisler yumusak, hover'da hafif olcek/parilti. Surekli hareket eden arka

@@ -1,59 +1,75 @@
-import GlassCard from '@/components/GlassCard';
+import { cn } from '@/lib/utils';
 
-import type { StatCardModel } from '../utils/homeCards';
+import type { HomeStatTile } from '../utils/homeCards';
 
 /**
- * Kisisel veri karti — **glass** yuzey.
+ * Kisisel veri karosu — koyu rose/ink gradyani.
  *
- * Yuzey secimi tesaduf degil, index.css'teki kurala uyuyor: glass = ozet/durum
- * yuzeyi, yani bir seyin **sonucunu** gosteren kartlar. Grup kartindaki bakiye
- * ozeti de ayni aileden. Tanitim karti ise solid (bkz. HomeFeatureCard):
- * kullanici "bu bir istatistik mi, oneri mi?" ayrimini okumadan once
- * yuzeyden yapabilsin.
+ * TEK RENK AILESI
+ * ---------------
+ * Karonun zemini her zaman ayni aileden: rose->ink gradyani. Karolar arasindaki
+ * fark **yalnizca koyuluk ve gradyan yonu** (bkz. index.css `.home-tile--*`).
+ * Farkli hue'lar (yesil/mavi/lila zemin) bilerek yok — ayrintili gerekce:
+ * docs/decisions/home-ve-bos-durum-duzeltme.md.
  *
- * Ayrim yalnizca yuzeyde degil, uc kanalda birden:
- *   - yuzey   -> glass (parilti var) / solid (duz)
- *   - tipografi -> buyuk rakam (Fraunces) / normal baslik
- *   - ikon    -> daire icinde, notr tonda / rose dolgulu kare
+ * SINYAL RENGI YALNIZCA SAYIDA
+ * ----------------------------
+ * Alacak/borc rengi karonun zeminine degil **rakama** uygulaniyor
+ * (`home-tile--credit` / `--debt`). Zemini yesile boyamak, bir bakiyeyi
+ * "durum bildirimi"ne cevirir ve sayfadaki uc karo uc ayri renge dagilirdi.
+ *
+ * KART ICI BOSLUK
+ * ---------------
+ * `justify-between` + icerige yakin bir `min-h`: etiket tepede, rakam ortada,
+ * aciklama altta ve aralarindaki bosluk dengeli. Onceki surumde karo yuksekligi
+ * icerikten cok fazlaydi, rakam bosluga asili kaliyordu.
  */
-const HomeStatCard = ({ card }: { card: StatCardModel }) => {
-  const { icon: Icon } = card;
+
+const SURFACE_CLASS = {
+  balance: 'home-tile--balance',
+  spend: 'home-tile--spend',
+} as const;
+
+/** Ton -> yalnizca rakamin rengi. `neutral` ve `settled` icin ek sinif yok. */
+const TONE_CLASS = {
+  credit: 'home-tile--credit',
+  debt: 'home-tile--debt',
+  settled: '',
+  neutral: '',
+} as const;
+
+const HomeStatCard = ({ tile }: { tile: HomeStatTile }) => {
+  const { icon: Icon } = tile;
 
   return (
-    <GlassCard
-      as="article"
-      className={`home-card home-card--stat balance--${card.tone} flex h-full flex-col gap-3 border-l-4 p-5`}
+    <article
+      className={cn(
+        'home-tile flex min-h-36 flex-col justify-between gap-4 p-5 sm:p-6',
+        SURFACE_CLASS[tile.surface],
+        TONE_CLASS[tile.tone]
+      )}
     >
       <header className="flex items-center gap-2">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink/5">
-          <Icon className="size-4 text-ink-muted" aria-hidden />
+        <span className="home-tile__icon flex size-7 shrink-0 items-center justify-center rounded-full">
+          <Icon className="size-3.5" aria-hidden />
         </span>
-        <p className="home-card__label text-sm text-ink-muted">{card.label}</p>
+        <p className="home-tile__label text-sm">{tile.label}</p>
       </header>
 
       {/*
-        Deger Fraunces ile ve buyuk: kartin tasidigi asil sey bu. `home-card__amount`
-        sinifi bilerek `group-card__amount` ile ayni ton kurallarina bagli
-        (index.css) — ayni bilgi iki ekranda ayni renkte gorunsun.
-
-        `flex-1 items-center` sarmalayici: kart yuksekligi icerikten fazla
-        (min-h-72) ve artan bosluk **rakamin etrafina** dagitiliyor. Aksi halde
-        deger basligin hemen altina yapisir, altinda da buyuk bir bosluk
-        kalirdi — kart yarim doldurulmus gibi gorunurdu. Boylece yukseklik
-        degisse de duzen kendini toparliyor.
+        Deger Fraunces ile ve buyuk: karonun tasidigi asil sey bu. Sinif adi
+        `home-tile__amount`, ton kurallari index.css'te ona bagli.
       */}
-      <div className="flex flex-1 items-center">
-        <p className="home-card__amount font-display text-3xl leading-none font-semibold sm:text-4xl">
-          {card.value}
-        </p>
-      </div>
+      <p className="home-tile__amount font-display text-3xl leading-none font-semibold sm:text-4xl">
+        {tile.value}
+      </p>
 
       {/*
         Renk bilgiyi TASIMIYOR: yon her zaman yazili. Renk korlugu olan
-        kullanicida kart yine tam anlamli (bkz. utils/balance.ts).
+        kullanicida karo yine tam anlamli (bkz. utils/balance.ts).
       */}
-      <p className="home-card__caption mt-auto text-xs text-ink-muted">{card.caption}</p>
-    </GlassCard>
+      <p className="home-tile__caption text-xs">{tile.caption}</p>
+    </article>
   );
 };
 

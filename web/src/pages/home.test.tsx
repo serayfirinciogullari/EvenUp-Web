@@ -8,18 +8,18 @@ import AuthProvider from '../context/AuthProvider';
 import type { HomeSummary, User } from '../types/models';
 
 /**
- * Home ekrani testleri (2.7).
+ * Home ekrani testleri.
  *
  * Ag katmani mock'lanir; geri kalan her sey gercek kod: rota agaci, guard'lar,
- * `useAsync`, kart siralamasi (`utils/homeCards`), para bicimlendirmesi ve
- * carousel'in kendisi.
+ * `useAsync`, karo icerigi (`utils/homeCards`), para bicimlendirmesi ve
+ * izgaranin kendisi.
  *
- * CAROUSEL VE jsdom
- * -----------------
- * Embla gercek olcu (layout) okur; jsdom'da her sey 0 piksel oldugu icin
- * kaydirma **fiziksel olarak** dogrulanamaz. Bu yuzden testler kaydirmanin
- * kendisini degil, kullanicinin gordugu sozlesmeyi kontrol ediyor: dogru
- * kartlar, dogru sirada, dogru sayida nokta ve **otomatik kaymadigi**.
+ * CAROUSEL GITTI — TESTLER DE BUNU KORUYOR
+ * ----------------------------------------
+ * Sabit izgaraya gecildi (bkz. docs/decisions/home-ve-bos-durum-duzeltme.md).
+ * Asagida bunun icin ayri bir blok var: ok butonu / nokta gostergesi / slide
+ * rolu **hic** olmamali. Testin isi yalnizca yeni duzeni dogrulamak degil,
+ * eskisinin geri sizmasini engellemek.
  */
 
 vi.mock('../api/auth', () => ({
@@ -83,20 +83,20 @@ const renderHome = () => {
 };
 
 /**
- * Sayfanin hazir olmasi = karsilama **ve** carousel.
+ * Sayfanin hazir olmasi = karsilama **ve** izgara.
  *
- * Ikisini birden beklemek sart: karsilama `/auth/me`den, kartlar ozet
+ * Ikisini birden beklemek sart: karsilama `/auth/me`den, karolar ozet
  * ucundan geliyor ve ikincisi gec kalabiliyor. Yalnizca basligi beklemek,
- * kartlar hala iskeletken sorgu yapan kirilgan testler uretirdi — iskeletin
+ * karolar hala iskeletken sorgu yapan kirilgan testler uretirdi — iskeletin
  * `region` rolu yok, cunku o asamada okunacak bir sey de yok.
  */
 const waitForPage = async () => {
   await screen.findByRole('heading', { name: 'Merhaba, Deniz' });
-  return screen.findByRole('region', { name: 'Ozet ve oneriler' });
+  return screen.findByRole('region', { name: 'Ozetin ve oneriler' });
 };
 
-/** Carousel bolumu: kart sorgulari sayfanin geri kalanina tasmasin. */
-const carousel = () => screen.getByRole('region', { name: 'Ozet ve oneriler' });
+/** Izgara bolumu: karo sorgulari sayfanin geri kalanina tasmasin. */
+const grid = () => screen.getByRole('region', { name: 'Ozetin ve oneriler' });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -122,18 +122,31 @@ describe('Home — karsilama', () => {
   });
 });
 
-/* -------------------------------------------------------------- kartlar */
+/* ---------------------------------------------------------------- karolar */
 
-describe('Home — carousel kartlari', () => {
-  it('kisisel veriler kartlarda gorunur', async () => {
+describe('Home — izgara karolari', () => {
+  it('kisisel veriler karolarda gorunur', async () => {
     renderHome();
     await waitForPage();
 
-    const cards = within(carousel());
+    const tiles = within(grid());
 
-    expect(cards.getByText('230,00 ₺')).toBeInTheDocument();
-    expect(cards.getByText('450,00 ₺')).toBeInTheDocument();
-    expect(cards.getByText('3')).toBeInTheDocument();
+    expect(tiles.getByText('230,00 ₺')).toBeInTheDocument();
+    expect(tiles.getByText('450,00 ₺')).toBeInTheDocument();
+  });
+
+  it('izgara sabit: iki kisisel karo + bir tanitim karosu, hepsi ayni anda', async () => {
+    renderHome();
+    await waitForPage();
+
+    const tiles = within(grid());
+
+    expect(tiles.getByText('Toplam net bakiyen')).toBeInTheDocument();
+    expect(tiles.getByText('Bu ay harcadigin')).toBeInTheDocument();
+    expect(tiles.getByText('Fisi cek, AI duzenlesin')).toBeInTheDocument();
+
+    // Kisisel karolar `article`; tanitim karosu bir buton. Toplam uc kutu.
+    expect(tiles.getAllByRole('article')).toHaveLength(2);
   });
 
   it('negatif bakiye eksi isaretiyle ve borclu etiketiyle gosterilir', async () => {
@@ -142,101 +155,75 @@ describe('Home — carousel kartlari', () => {
     renderHome();
     await waitForPage();
 
-    const cards = within(carousel());
+    const tiles = within(grid());
 
-    expect(cards.getByText('-120,50 ₺')).toBeInTheDocument();
+    expect(tiles.getByText('-120,50 ₺')).toBeInTheDocument();
     // Renk bilgiyi tasimiyor: yon her zaman yazili (bkz. utils/balance.ts).
-    expect(cards.getByText(/Sen borclusun/)).toBeInTheDocument();
+    expect(tiles.getByText(/Sen borclusun/)).toBeInTheDocument();
   });
 
-  it('ozet ve tanitim kartlari donusumlu siralanir, toplam 6 kart olur', async () => {
+  it('henuz yazilmamis ozellik Yakinda rozeti tasir ve bildirim gosterir', async () => {
     renderHome();
     await waitForPage();
 
-    const slides = within(carousel()).getAllByRole('group');
+    expect(within(grid()).getByText('Yakinda')).toBeInTheDocument();
 
-    expect(slides).toHaveLength(6);
+    fireEvent.click(within(grid()).getByRole('button', { name: /Fisi cek, AI duzenlesin/ }));
 
-    // Sira: kisisel, tanitim, kisisel, tanitim, kisisel, tanitim.
-    // Ilk kartin kisisel olmasi bilincli — bkz. utils/homeCards.ts.
-    expect(slides[0]).toHaveTextContent('Toplam net bakiyen');
-    expect(slides[1]).toHaveTextContent('Fisi cek, AI duzenlesin');
-    expect(slides[2]).toHaveTextContent('Bu ay harcadigin');
-    expect(slides[3]).toHaveTextContent('Herkese kendi takma ismini ver');
-    expect(slides[4]).toHaveTextContent('Aktif oldugun grup');
-    expect(slides[5]).toHaveTextContent('Borcunu unutma, hatirlat');
-  });
-
-  /*
-    Takma isimler 2.9'da gercek bir ozellik oldu, dolayisiyla artik iki kart
-    "Yakinda" (fis tarama ve hatirlatma). Bu sayi bilerek sabitlenmis: bir
-    ozellik yazildiginda `homeCards.ts` icindeki `to` alani guncellenmezse
-    test kirmizi yanar ve kart yanlis yere "yakinda" demeye devam etmez.
-  */
-  it('yalnizca henuz yazilmamis kartlar Yakinda rozeti tasir', async () => {
-    renderHome();
-    await waitForPage();
-
-    expect(within(carousel()).getAllByText('Yakinda')).toHaveLength(2);
-  });
-
-  it('yazilmis bir ozelligin karti ilgili sayfaya goturur', async () => {
-    renderHome();
-    await waitForPage();
-
-    fireEvent.click(
-      within(carousel()).getByRole('button', { name: /Herkese kendi takma ismini ver/ })
-    );
-
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(await screen.findByText('Bu ozellik yakinda')).toBeInTheDocument();
   });
 });
 
-/* ----------------------------------------------------------- gostergeler */
+/* ------------------------------------------------------------ renk kurali */
 
-describe('Home — nokta gostergeleri', () => {
-  it('kart sayisi kadar nokta cikar ve ilki aktiftir', async () => {
+describe('Home — tek renk ailesi', () => {
+  /*
+    jsdom stil dosyasini yuklemiyor, dolayisiyla gercek zemin rengi
+    olculemiyor. Kural bu yuzden **sinif duzeyinde** korunuyor: her karo
+    yalnizca `home-tile--{balance|spend|feature}` yuzeylerinden birini
+    tasiyabilir ve bunlarin ucu de index.css'te rose/ink gradyanidir.
+  */
+  const SURFACES = /home-tile--(balance|spend|feature)/;
+
+  it('her karo tek aileden bir yuzey sinifi tasir', async () => {
     renderHome();
     await waitForPage();
 
-    const dots = within(carousel()).getAllByRole('button', { name: /\. karta git$/ });
+    const tiles = grid().querySelectorAll('.home-tile');
 
-    expect(dots).toHaveLength(6);
-    expect(dots[0]).toHaveAttribute('aria-current', 'true');
+    expect(tiles).toHaveLength(3);
+    tiles.forEach((tile) => expect(tile.className).toMatch(SURFACES));
   });
 
-  it('carousel kendiliginden kaymaz — bekledikten sonra da ilk kart aktif', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  it('sinyal rengi zemine degil yalnizca sayiya uygulanir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue(summaryOf({ totalNetBalance: '-120.50' }));
 
-    try {
-      renderHome();
-      await waitForPage();
-
-      const activeBefore = within(carousel())
-        .getAllByRole('button', { name: /\. karta git$/ })
-        .findIndex((dot) => dot.getAttribute('aria-current') === 'true');
-
-      // Otomatik kayan bir carousel bu sure icinde en az bir kez ilerlerdi.
-      await vi.advanceTimersByTimeAsync(15_000);
-
-      const activeAfter = within(carousel())
-        .getAllByRole('button', { name: /\. karta git$/ })
-        .findIndex((dot) => dot.getAttribute('aria-current') === 'true');
-
-      expect(activeAfter).toBe(activeBefore);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('ileri/geri butonlari erisilebilir adlarla var', async () => {
     renderHome();
     await waitForPage();
 
-    const cards = within(carousel());
+    const amount = within(grid()).getByText('-120,50 ₺');
 
-    expect(cards.getByRole('button', { name: 'Onceki kart' })).toBeInTheDocument();
-    expect(cards.getByRole('button', { name: 'Sonraki kart' })).toBeInTheDocument();
+    // Ton sinifi karonun uzerinde ama zemini degistiren `balance--*`
+    // ailesinden degil; rakamin rengini index.css bu sinif uzerinden veriyor.
+    expect(amount.closest('.home-tile')?.className).toMatch(/home-tile--debt/);
+    expect(grid().querySelector('.balance--debt')).toBeNull();
+    expect(grid().querySelector('.balance--credit')).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------- carousel kalintisi */
+
+describe('Home — carousel kaldirildi', () => {
+  it('nokta gostergesi, ok butonu ve slide rolu kalmadi', async () => {
+    renderHome();
+    await waitForPage();
+
+    expect(screen.queryByRole('button', { name: /karta git$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Onceki kart' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sonraki kart' })).not.toBeInTheDocument();
+    // Embla her slide'i `role="group"` ile duyuruyordu.
+    expect(screen.queryAllByRole('group')).toHaveLength(0);
+    expect(document.querySelector('[aria-roledescription="carousel"]')).toBeNull();
   });
 });
 
@@ -257,6 +244,13 @@ describe('Home — yonlendirme', () => {
     await waitForPage();
 
     expect(screen.getByRole('link', { name: /Gruplarini Gor/ })).toHaveAttribute('href', '/groups');
+  });
+
+  it('aktif grup sayisi CTA altindaki cumlede yasiyor', async () => {
+    renderHome();
+    await waitForPage();
+
+    expect(screen.getByText(/3 grupta aktifsin/)).toBeInTheDocument();
   });
 });
 
@@ -286,7 +280,7 @@ describe('Home — bekleyen odeme uyarisi', () => {
 /* ---------------------------------------------------------- hata / bos */
 
 describe('Home — ozet okunamadiginda', () => {
-  it('sayfa ayakta kalir: CTA ve tanitim kartlari gorunmeye devam eder', async () => {
+  it('sayfa ayakta kalir: CTA ve tanitim karosu gorunmeye devam eder', async () => {
     mockedSummary.getHomeSummary.mockRejectedValue(new Error('bozuk'));
 
     renderHome();
@@ -296,17 +290,18 @@ describe('Home — ozet okunamadiginda', () => {
 
     // Home'un asil isi (gruplara yonlendirmek) ozet olmadan da yapilabiliyor.
     expect(screen.getByRole('link', { name: /Gruplarini Gor/ })).toBeInTheDocument();
-    expect(within(carousel()).getByText('Fisi cek, AI duzenlesin')).toBeInTheDocument();
+    expect(within(grid()).getByText('Fisi cek, AI duzenlesin')).toBeInTheDocument();
   });
 
-  it('hicbir kisisel kart uydurulmuyor — sifir degil, hic gosterilmiyor', async () => {
+  it('hicbir kisisel karo uydurulmuyor — sifir degil, hic gosterilmiyor', async () => {
     mockedSummary.getHomeSummary.mockRejectedValue(new Error('bozuk'));
 
     renderHome();
     await waitForPage();
     await screen.findByRole('alert');
 
-    expect(within(carousel()).queryByText('Toplam net bakiyen')).not.toBeInTheDocument();
+    expect(within(grid()).queryByText('Toplam net bakiyen')).not.toBeInTheDocument();
+    expect(within(grid()).queryAllByRole('article')).toHaveLength(0);
   });
 
   it('tekrar dene ucu yeniden cagirir', async () => {
@@ -319,8 +314,8 @@ describe('Home — ozet okunamadiginda', () => {
     mockedSummary.getHomeSummary.mockResolvedValue(summaryOf());
     fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }));
 
-    // `carousel()` ile sarmalanmiyor: yeniden yukleme sirasinda iskelet
-    // ciziliyor ve o an bolge yok. Tutar zaten yalnizca kartta gecebilir.
+    // `grid()` ile sarmalanmiyor: yeniden yukleme sirasinda iskelet ciziliyor
+    // ve o an bolge yok. Tutar zaten yalnizca karoda gecebilir.
     expect(await screen.findByText('230,00 ₺')).toBeInTheDocument();
   });
 });

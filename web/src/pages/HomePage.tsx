@@ -2,13 +2,14 @@ import { ArrowRight, TriangleAlert } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
-import HomeCarousel from '@/components/HomeCarousel';
+import HomeFeatureCard from '@/components/HomeFeatureCard';
+import HomeStatCard from '@/components/HomeStatCard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import summaryApi from '../api/summary';
 import useAsync from '../hooks/useAsync';
 import useAuth from '../hooks/useAuth';
-import { buildHomeCards } from '../utils/homeCards';
+import { RECEIPT_TILE, buildHomeTiles, ctaHintOf } from '../utils/homeCards';
 
 import type { HomeSummary } from '../types/models';
 
@@ -19,20 +20,24 @@ import type { HomeSummary } from '../types/models';
  * ------------------------------------------
  * Home bir vitrin degil bir **giris holu**. Kullanici bu uygulamaya borcunu
  * gormeye geliyor; Home'un isi o yolu kisaltmak, uzatmak degil. Bu yuzden
- * carousel'in hemen altinda tek ve buyuk bir CTA var ("Gruplarini Gor") ve
- * sayfada onunla yarisan ikinci bir birincil eylem yok.
+ * izgaranin altinda tek ve buyuk bir CTA var ("Gruplarini Gor") ve sayfada
+ * onunla yarisan ikinci bir birincil eylem yok.
  *
- * Ayni sebeple Home bir **gecit** de degil: ust bardaki "Gruplar" baglantisi
- * yerinde duruyor, kullanici Home'a hic ugramadan da isine gidebiliyor ve
- * geri donebiliyor (bkz. Layout.tsx).
+ * CAROUSEL KALDIRILDI
+ * -------------------
+ * Onceki surumde ayni icerik bir carousel icindeydi: ok butonlari, nokta
+ * gostergeleri, swipe. Uc kutuluk bir icerik icin bunlarin hepsi **gereksiz
+ * mekanikti** — kullanici okumadan once "kac kart var, hepsini gordum mu?"
+ * sorusuna takiliyordu ve kartlarin yarisi her zaman ekran disindaydi. Sabit
+ * izgarada her sey ilk bakista gorunuyor, tiklanacak hicbir gezinme ogesi yok.
+ * Ayrintili gerekce: docs/decisions/home-ve-bos-durum-duzeltme.md.
  *
  * HATA DURUMU SAYFAYI DUSURMUYOR
  * ------------------------------
- * Ozet cekilemezse sayfa hata ekranina donmuyor: karsilama, tanitim kartlari
- * ve CTA ayakta kaliyor, yalnizca kisisel kartlarin yerinde kucuk bir uyari
+ * Ozet cekilemezse sayfa hata ekranina donmuyor: karsilama, tanitim karosu ve
+ * CTA ayakta kaliyor, yalnizca kisisel karolarin yerinde kucuk bir uyari
  * cikiyor. Gerekce — Home'un asil isi (kullaniciyi gruplarina yonlendirmek)
- * ozet olmadan da yapilabilir; tamamini bir istegin basarisina baglamak
- * kullaniciyi hicbir sey yapamaz halde birakirdi.
+ * ozet olmadan da yapilabilir.
  */
 const HomePage = () => {
   const { user } = useAuth();
@@ -40,43 +45,20 @@ const HomePage = () => {
   const fetchSummary = useCallback(() => summaryApi.getHomeSummary(), []);
   const summary = useAsync<HomeSummary>(fetchSummary, 'Ozet yuklenemedi');
 
-  const cards = useMemo(() => buildHomeCards(summary.data), [summary.data]);
+  const tiles = useMemo(() => buildHomeTiles(summary.data), [summary.data]);
 
   const pending = summary.data?.pendingSettlementsCount ?? 0;
 
   return (
     /*
-      SAYFA IKI BLOKTAN OLUSUYOR
-      --------------------------
-      Ust blok (karsilama + bekleyen odeme uyarisi) sayfanin **tepesine
-      sabit**; orta blok (carousel + CTA) kalan alanda ortalaniyor.
-
-      Neden ikisi ayri: karsilama bir baslik, yani sayfanin kim icin oldugunu
-      soyleyen sabit bir isaret. Kartlarla birlikte ortalansaydi ekranin
-      ortasinda asili durur ve baslik gibi degil, kartlarin bir parcasi gibi
-      okunurdu. Diger sayfalarda da (Gruplar, Ayarlar, Admin) baslik hep
-      tepede — Home'un farkli davranmasi icin bir sebep yok.
-
-      DIKEY ORTALAMA — YALNIZCA BU SAYFADA
-      ------------------------------------
-      Home'un icerigi kisa; carousel sayfanin tepesine yapisik durunca ekranin
-      alt yarisi bos kaliyordu. Ortalama Layout'un `<main>`ine degil buraya
-      konuyor: diger uc ekran uzun listeler ve onlarin ustten baslamasi dogru.
-
-      Yukseklik hesabi: ekran - (ust bar ~59px) - (main'in dikey dolgusu).
-      Cikarilan deger bilerek birkac piksel **fazla**: eksik cikarmak sayfaya
-      gereksiz bir kaydirma cubugu ekler, fazla cikarmak yalnizca birkac piksel
-      daha yukari alir.
-
-      `dvh` (`vh` degil): mobilde adres cubugu acilip kapandikca gercek gorunur
-      yukseklik degisir; `vh` en buyuk hali sabitler ve icerik ekranin altina
-      tasar.
-
-      Icerik bu yuksekligi asarsa (dar ekran + hata kutusu + banner birlikte)
-      kap kendiliginden buyuyor ve `justify-center` etkisiz kaliyor — yani
-      hicbir sey kirpilmiyor.
+      Sayfa artik dikey olarak ortalanmiyor. Onceki surumde carousel tek satir
+      oldugu icin ekranin alt yarisi bos kaliyordu ve `min-h` + `justify-center`
+      ile bu bosluk kapatiliyordu. Izgara ekranin dogal akisini zaten dolduruyor;
+      ortalama burada icerigi yukaridan koparmaktan baska bir sey yapmazdi ve
+      diger uc ekranin (Gruplar, Ayarlar, Admin) ustten baslama davranisiyla da
+      celisirdi.
     */
-    <section className="home-page flex min-h-[calc(100dvh-7rem)] flex-col gap-6 sm:min-h-[calc(100dvh-8rem)]">
+    <section className="home-page flex flex-col gap-6">
       <header className="home-page__head">
         {/*
           Ad gelmeden once iskelet: "Merhaba, undefined" ya da bir kare
@@ -93,39 +75,81 @@ const HomePage = () => {
         </p>
       </header>
 
-      {/* Uyari da ust blokta: bir bildirim, basligin hemen altinda beklenir. */}
+      {/* Uyari basligin hemen altinda: bir bildirim orada beklenir. */}
       {pending > 0 && <PendingBanner count={pending} />}
 
       {/*
-        Orta blok. `flex-1` kalan yuksekligi aliyor, `justify-center` icerigi
-        o alanin ortasina koyuyor. Hata kutusu de burada: kartlarla ilgili
-        oldugu icin onlarla birlikte hareket etmeli.
+        Ozet okunamadiysa izgara yine ciziliyor — yalnizca kisisel karolar
+        eksik — ama neden eksik olduklari soyleniyor. Sessizce iki karo
+        gostermemek "ozetin yok" izlenimi verirdi.
       */}
-      <div className="home-page__body flex flex-1 flex-col justify-center gap-6">
-        {/*
-          Ozet okunamadiysa carousel yine ciziliyor — `buildHomeCards(null)`
-          yalnizca tanitim kartlarini dondurur — ama neden eksik olduklari
-          soyleniyor. Sessizce uc kart gostermek "ozetin yok" izlenimi verirdi.
-        */}
-        {!summary.loading && summary.error && (
-          <div
-            className="state-box state-box--error card-solid border-destructive/30 p-4 text-sm"
-            role="alert"
-          >
-            <p className="text-destructive">{summary.error}</p>
-            <Button variant="outline" size="sm" className="mt-2" onClick={summary.reload}>
-              Tekrar dene
-            </Button>
-          </div>
-        )}
+      {!summary.loading && summary.error && (
+        <div
+          className="state-box state-box--error card-solid border-destructive/30 p-4 text-sm"
+          role="alert"
+        >
+          <p className="text-destructive">{summary.error}</p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={summary.reload}>
+            Tekrar dene
+          </Button>
+        </div>
+      )}
 
-        <HomeCarousel cards={cards} loading={summary.loading} />
+      {summary.loading ? <HomeGridSkeleton /> : <HomeGrid tiles={tiles} />}
 
-        <PrimaryCta />
-      </div>
+      <PrimaryCta hint={ctaHintOf(summary.data)} />
     </section>
   );
 };
+
+/**
+ * Sabit izgara.
+ *
+ * DUZEN
+ * -----
+ *   ust satir : genis karo (net bakiye) + dar karo (bu ay harcanan)
+ *   alt satir : tam genislikte tanitim karosu
+ *
+ * Genislik farki `sm:grid-cols-3` + `col-span-2` ile: net bakiye sayfanin
+ * tasidigi **asil** sayi, dolayisiyla daha genis kutuyu o aliyor. Esit iki
+ * kutu olsaydi ikisi de "esit onemde" okunurdu.
+ *
+ * Dar ekranda tek sutuna dusuyor ve sira aynen korunuyor.
+ *
+ * Kisisel karolar yoksa (ozet okunamadi) izgara tek elemanli kaliyor: tanitim
+ * karosu tam genislikte, tek basina. Yer tutan bos kutu birakilmiyor.
+ */
+const HomeGrid = ({ tiles }: { tiles: ReturnType<typeof buildHomeTiles> }) => (
+  <div
+    className="home-grid grid gap-4 sm:grid-cols-3"
+    role="region"
+    aria-label="Ozetin ve oneriler"
+  >
+    {tiles.map((tile) => (
+      <div key={tile.id} className={tile.surface === 'balance' ? 'sm:col-span-2' : ''}>
+        <HomeStatCard tile={tile} />
+      </div>
+    ))}
+
+    <div className="sm:col-span-3">
+      <HomeFeatureCard tile={RECEIPT_TILE} />
+    </div>
+  </div>
+);
+
+/**
+ * Yukleme iskeleti.
+ *
+ * Kutu olculeri gercek izgarayla **ayni** (`sm:col-span-*`, `min-h-36`): ozet
+ * gelince sayfa ziplamiyor, karolar yerinde doluyor.
+ */
+const HomeGridSkeleton = () => (
+  <div className="home-grid grid gap-4 sm:grid-cols-3" aria-busy="true" aria-label="Ozet yukleniyor">
+    <Skeleton className="min-h-36 rounded-xl sm:col-span-2" />
+    <Skeleton className="min-h-36 rounded-xl" />
+    <Skeleton className="min-h-24 rounded-xl sm:col-span-3" />
+  </div>
+);
 
 /**
  * Bekleyen odeme uyarisi.
@@ -134,9 +158,6 @@ const HomePage = () => {
  * kirilimi yok. Bu yuzden hedef `/groups` — kullanici hangi grupta oldugunu
  * orada bir bakista goruyor. Rastgele bir gruba gondermek, yanlis gruba
  * goturmenin yarisindan fazla ihtimalle mumkun oldugu icin daha kotu olurdu.
- *
- * `role="status"` degil duz bir link: bu bir bildirim degil, sayfanin kalici
- * bir parcasi. Ekran okuyucuya kendini tekrar tekrar duyurmasi gerekmiyor.
  */
 const PendingBanner = ({ count }: { count: number }) => (
   <Link
@@ -162,17 +183,21 @@ const PendingBanner = ({ count }: { count: number }) => (
  * Buton `asChild` ile gercek bir `<a>`: sag tikla "yeni sekmede ac" calissin
  * ve ekran okuyucu bunu link olarak duyursun. `onClick` + `navigate` ile
  * yapilsaydi ikisi de kaybolurdu.
+ *
+ * Tam genislikte ve izgaranin altinda: uc karo "durum", bu satir "eylem".
+ * Gradyani (`home-cta`) izgaranin ailesinden ama daha acik — sayfadaki tek
+ * aydinlik yuzey, dolayisiyla goz once oraya gidiyor.
  */
-const PrimaryCta = () => (
-  <div className="home-page__cta flex flex-col items-center gap-2 pt-2 text-center">
-    <Button asChild size="lg" className="w-full sm:w-auto sm:min-w-64">
+const PrimaryCta = ({ hint }: { hint: string }) => (
+  <div className="home-page__cta flex flex-col items-center gap-2 text-center">
+    <Button asChild size="lg" className="home-cta h-12 w-full text-base">
       <Link to="/groups">
         Gruplarini Gor
         <ArrowRight className="size-4" aria-hidden />
       </Link>
     </Button>
 
-    <p className="text-xs text-ink-muted">Kim kime ne kadar borclu, hepsi orada.</p>
+    <p className="text-xs text-ink-muted">{hint}</p>
   </div>
 );
 
