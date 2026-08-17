@@ -205,6 +205,28 @@ describe('giris yapilmamis kullanici', () => {
     expect(await screen.findByRole('heading', { name: 'Kayit ol' })).toBeInTheDocument();
   });
 
+  /*
+    Kok adres halka acik: guard yok, login formu yok. Onceki surumde `/`
+    dogrudan /home'a (yani login'e) duserdi; tanitim sayfasinin varlik sebebi
+    tam olarak bu.
+  */
+  it('kok adreste tanitim sayfasini gorur, login formunu degil', async () => {
+    renderAt('/');
+
+    expect(
+      await screen.findByRole('heading', { name: /Arkadas hesabi, tartismaya donusmesin/ })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Giris yap' })).not.toBeInTheDocument();
+  });
+
+  it('landing CTA kayit ekranina goturur', async () => {
+    renderAt('/');
+
+    fireEvent.click((await screen.findAllByRole('link', { name: /Hemen basla/ }))[0]);
+
+    expect(await screen.findByRole('heading', { name: 'Kayit ol' })).toBeInTheDocument();
+  });
+
   it('token yokken /auth/me istegi hic atilmaz', async () => {
     renderAt('/groups');
     await screen.findByRole('heading', { name: 'Giris yap' });
@@ -240,11 +262,26 @@ describe('giris yapmis kullanici', () => {
     expect(screen.getByText('Burak')).toBeInTheDocument();
   });
 
-  // 2.7: kok adres /groups yerine /home'a duser. `/groups` kaldirilmadi —
-  // Home bir gecit degil, gezinmeden her an ulasilabilen esit bir sayfa.
-  it('kok adres /home sayfasina yonlenir', async () => {
+  /*
+    Kok adres artik landing: giris yapmis kullanici da **ayni** sayfayi goruyor,
+    yonlendirilmiyor. Paylasilan bir `/` linki herkeste ayni seyi acmali.
+    Fark yalnizca butonda.
+  */
+  it('kok adreste landing gorunur, uygulamaya donus baglantisi tasir', async () => {
     signIn();
     renderAt('/');
+
+    const back = await screen.findAllByRole('link', { name: 'Uygulamaya don' });
+
+    expect(back[0]).toHaveAttribute('href', '/home');
+    expect(screen.queryByRole('link', { name: 'Giris yap' })).not.toBeInTheDocument();
+  });
+
+  it('landing uzerinden uygulamaya donulebilir', async () => {
+    signIn();
+    renderAt('/');
+
+    fireEvent.click((await screen.findAllByRole('link', { name: 'Uygulamaya don' }))[0]);
 
     expect(await screen.findByRole('heading', { name: 'Merhaba, Burak' })).toBeInTheDocument();
   });

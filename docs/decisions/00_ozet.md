@@ -59,6 +59,8 @@ Görevlerin ilerleyişi:
 | 2.8   | [Özel imleç](2.8-ozel-imlec.md) — para tomarı, portal, kabul edilen maliyet |
 | 2.9   | [Takma isimler](2.9-takma-isimler.md) — Kişiler sekmesi, kişiye özel adlar |
 | —     | [Görsel kimlik](gorsel-kimlik.md) — Tailwind + shadcn/ui + Magic UI, yüzey ayrımı |
+| —     | [Home ızgarası ve boş durum](home-ve-bos-durum-duzeltme.md) — carousel kaldırıldı, tek renk ailesi, Gruplar karşılama ekranı |
+| —     | [Landing sayfası](landing-page.md) — halka açık `/`, bir kez oynayan netleştirme animasyonu, sakin "Neden EvenUp" |
 | —     | [Home özeti](home-summary.md) — ilk toplu (aggregate) uç, N+1'in önlenmesi |
 
 ---

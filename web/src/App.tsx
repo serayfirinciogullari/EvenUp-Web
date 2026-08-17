@@ -1,5 +1,5 @@
 import { ThemeProvider } from 'next-themes';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 
 import { Toaster } from '@/components/ui/sonner';
 import { THEME_STORAGE_KEY } from '@/lib/theme';
@@ -12,6 +12,7 @@ import AdminPage from './pages/AdminPage';
 import GroupDetailPage from './pages/GroupDetailPage';
 import GroupsPage from './pages/GroupsPage';
 import HomePage from './pages/HomePage';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import RegisterPage from './pages/RegisterPage';
@@ -24,16 +25,23 @@ import SettingsPage from './pages/SettingsPage';
  * korunan sayfa eklendiginde korumayi devralir. Backend'de `requireAuth`'un
  * router seviyesinde takili olmasiyla ayni gerekce (bkz. group.routes.ts).
  *
- *   /                 -> /home (yonlendirme)
+ *   /                 -> Landing (halka acik, guard YOK)
  *   GuestRoute        -> /login, /register        (giris yapmisken erisilmez)
  *   ProtectedRoute    -> /home, /groups, /groups/:id, /settings
  *     + AdminRoute    -> /admin
  *
- * KOK ADRES NEDEN /home
- * ---------------------
- * 2.1'de `/` -> `/groups` idi. Home eklenince acilis ekrani degisti ama
- * `/groups` **kaldirilmadi**: Home bir gecit degil, geri donulebilir bir sayfa.
- * Ust bardaki gezinme ikisini de tasiyor (bkz. Layout.tsx).
+ * KOK ADRES: ONCE /groups, SONRA /home, SIMDI LANDING
+ * --------------------------------------------------
+ * 2.1'de `/` -> `/groups`, 2.7'de `/` -> `/home` idi; ikisi de giris yapmis
+ * kullaniciyi varsayiyordu ve giris yapmamis ziyaretci kok adreste yalnizca
+ * bir login formu goruyordu. Artik `/` bir tanitim sayfasi.
+ *
+ * Landing **hicbir guard'in altinda degil**. `GuestRoute` altina konsaydi
+ * oturumu acik olan herkes icin bir yonlendirmeye donusur, paylasilan kok adres
+ * linki onlarda hic acilmazdi. Giris yapmis kullanici da ayni sayfayi goruyor;
+ * fark yalnizca butonlarda ("Uygulamaya don"). Uygulama ici acilis ekrani
+ * `/home` olmaya devam ediyor: giris sonrasi hedef ve `GuestRoute`un
+ * varsayilan yonu degismedi.
  *
  * `Toaster` rota agacinin disinda: bir bildirim, onu tetikleyen sayfadan sonra
  * da (ornegin modal kapandiktan sonra) ayakta kalmali.
@@ -57,7 +65,7 @@ const App = () => (
     disableTransitionOnChange
   >
     <Routes>
-      <Route path="/" element={<Navigate to="/home" replace />} />
+      <Route path="/" element={<LandingPage />} />
 
       <Route element={<GuestRoute />}>
         <Route path="/login" element={<LoginPage />} />
