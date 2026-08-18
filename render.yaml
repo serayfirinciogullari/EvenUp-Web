@@ -1,0 +1,58 @@
+# Render blueprint: API + PostgreSQL.
+#
+# Panelde tek tek servis kurmak yerine bu dosya kullaniliyor; boylece
+# DATABASE_URL gibi baglantilar elle kopyalanmaz, Render kendisi baglar.
+#
+# Frontend burada YOK: o Vercel'de (web/vercel.json). Bu dosya sadece
+# repo kokundeki Express API'yi ve veritabanini tarif eder.
+
+services:
+  - type: web
+    name: evenup-api
+    runtime: node
+    plan: free
+
+    # `--include=dev` sart: derleme TypeScript ile yapiliyor ama typescript ve
+    # ts-node devDependencies altinda. Render uretim kurulumunda bunlari
+    # atlarsa build "tsc: not found" ile duser.
+    #
+    # Migration build sirasinda kosuyor. Hata verirse deploy da duser; bu
+    # istenen davranis, cunku semasi eksik bir API'nin ayaga kalkmasi
+    # hatayi calisma zamanina erteler ve teshisi zorlastirir.
+    buildCommand: npm ci --include=dev && npm run build && npm run migrate
+    startCommand: npm start
+
+    healthCheckPath: /health
+
+    envVars:
+      # knexfile production konfigurasyonunu NODE_ENV'e gore seciyor
+      # (src/config/database.ts).
+      - key: NODE_ENV
+        value: production
+
+      # Render'in yonetilen PostgreSQL'i SSL istiyor (src/config/env.ts:48).
+      - key: DATABASE_SSL
+        value: 'true'
+
+      # Baglanti adresini Render asagidaki veritabanindan kendisi doldurur.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: evenup-db
+          property: connectionString
+
+      # Rastgele uretilir ve panelde saklanir; repoya hicbir sekilde girmez.
+      - key: JWT_SECRET
+        generateValue: true
+
+      # Davet linklerinin koku. Kullanicinin gordugu adres frontend oldugu icin
+      # buraya API degil **Vercel** alan adi yazilmali; yoksa paylasilan davet
+      # linki API'ye gider ve karsisinda JSON bulunur.
+      # `sync: false` = degeri panelden elle gir.
+      - key: APP_URL
+        sync: false
+
+databases:
+  - name: evenup-db
+    databaseName: evenup
+    user: evenup
+    plan: free
