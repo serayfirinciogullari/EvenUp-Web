@@ -109,6 +109,16 @@ export const getErrorMessage = (error: unknown, fallback = 'Beklenmeyen bir hata
   return fallback;
 };
 
+/**
+ * Sunucuya hic ulasilamadi mi? (`error.response` yok)
+ *
+ * Ayrimin bedeli tek satir, karsiligi kullaniciya **dogru** seyi soylemek:
+ * ag hatasinda tekrar denemek ise yarar, sunucunun reddettigi bir istekte
+ * (ornegin suresi dolmus davet kodu) yaramaz.
+ */
+export const isNetworkError = (error: unknown): boolean =>
+  axios.isAxiosError(error) && !error.response;
+
 /** Alan bazli validasyon hatalari (`details`) — form altlarinda gosterilir. */
 export const getErrorDetails = (error: unknown): Record<string, string> => {
   if (axios.isAxiosError<ApiErrorBody>(error)) {

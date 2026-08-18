@@ -152,7 +152,7 @@ describe('gruplar ekrani gercek backend ile', () => {
     expect(await screen.findByText('Davet linki panoya kopyalandi.')).toBeInTheDocument();
 
     const copied = writeText.mock.calls[0][0] as string;
-    expect(copied.startsWith(`${window.location.origin}/groups/join/`)).toBe(true);
+    expect(copied.startsWith(`${window.location.origin}/join/`)).toBe(true);
 
     // Kod gercekten kullanilabilir bir davet: backend ayni kodu tanimali.
     const code = copied.split('/').pop() ?? '';

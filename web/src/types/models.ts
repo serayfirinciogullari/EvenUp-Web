@@ -104,6 +104,16 @@ export interface InviteResult {
   rotated: boolean;
 }
 
+/** `POST /groups/join/:inviteCode` cevabi. */
+export interface JoinResult {
+  group: Group;
+  /**
+   * true ise kullanici zaten uyeydi ve davet kotasindan dusulmedi. Hata degil:
+   * ayni linke ikinci kez tiklamak beklenen bir durum.
+   */
+  already_member: boolean;
+}
+
 export interface ExpenseShare {
   user_id: string;
   name: string;

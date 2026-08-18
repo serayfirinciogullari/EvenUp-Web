@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
 import useAuth from '../hooks/useAuth';
+import { afterAuthPath } from '../utils/afterAuth';
 import RouteFallback from './RouteFallback';
 
 /**
@@ -23,10 +24,17 @@ const GuestRoute = () => {
   }
 
   if (status === 'authenticated') {
-    const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-    // Varsayilan hedef Home: giris sonrasi akisin basi orasi. `from` varsa o
-    // kazaniyor — korunan bir sayfadan gelen kullanici basladigi yere donmeli.
-    return <Navigate to={from ?? '/home'} replace />;
+    /*
+      Varsayilan hedef Home: giris sonrasi akisin basi orasi. `from` varsa o
+      kazaniyor — korunan bir sayfadan gelen kullanici basladigi yere donmeli.
+
+      Hedef hesabi form sayfalariyla **ortak** (`utils/afterAuth.ts`) ve bu bir
+      zorunluluk: oturum acilir acilmaz bu yonlendirme ile `LoginPage`in kendi
+      `navigate`i ayni anda tetikleniyor, hangisinin kazanacagi da belirsiz.
+      Iki yer farkli hesap yapsaydi giris sonrasi hedef **kararsiz** olurdu —
+      davet linkinden gelen kullanici bazen gruba, bazen ana ekrana duserdi.
+    */
+    return <Navigate to={afterAuthPath(location.state, '/home')} replace />;
   }
 
   return <Outlet />;

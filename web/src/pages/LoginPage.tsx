@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import useAuth from '../hooks/useAuth';
 import useAuthForm from '../hooks/useAuthForm';
+import { afterAuthPath } from '../utils/afterAuth';
 import { validateLoginForm } from '../utils/validation';
 
 import type { LoginFormValues } from '../utils/validation';
@@ -30,9 +31,17 @@ const LoginPage = () => {
     async (values: LoginFormValues) => {
       await login(values);
 
-      // Korunan bir sayfadan yonlendirilmisse oraya don, degilse /groups.
-      const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-      navigate(from ?? '/groups', { replace: true });
+      /*
+        Korunan bir sayfadan yonlendirilmisse oraya don, bekleyen bir davet
+        varsa katilma sayfasina, yoksa Home (bkz. utils/afterAuth.ts).
+
+        Varsayilan `/groups` idi ama pratikte hicbir zaman calismiyordu: oturum
+        acilir acilmaz `GuestRoute` de bir yonlendirme uretiyor ve yarisi
+        genellikle o kazaniyor (test: "giris basarili olunca /home gorunur").
+        Iki taraf ayni varsayilani kullaninca hedef, yarisin sonucundan
+        bagimsiz hale geliyor.
+      */
+      navigate(afterAuthPath(location.state, '/home'), { replace: true });
     },
     [location.state, login, navigate]
   );
@@ -52,7 +61,15 @@ const LoginPage = () => {
       footer={
         <>
           Hesabiniz yok mu?{' '}
-          <Link to="/register" className="font-medium text-rose underline-offset-4 hover:underline">
+          {/*
+            `state` aynen tasiniyor: davet linkinden gelip "kayit olun"a
+            tiklayan kullanicinin `from`u bu hopta kaybolmasin.
+          */}
+          <Link
+            to="/register"
+            state={location.state}
+            className="font-medium text-rose underline-offset-4 hover:underline"
+          >
             Kayit olun
           </Link>
         </>

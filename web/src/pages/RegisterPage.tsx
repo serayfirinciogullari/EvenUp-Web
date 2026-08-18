@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import AuthShell from '@/components/AuthShell';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import useAuth from '../hooks/useAuth';
 import useAuthForm from '../hooks/useAuthForm';
+import { afterAuthPath } from '../utils/afterAuth';
 import { MIN_PASSWORD_LENGTH, validateRegisterForm } from '../utils/validation';
 
 import type { RegisterFormValues } from '../utils/validation';
@@ -27,13 +28,24 @@ import type { RegisterFormValues } from '../utils/validation';
 const RegisterPage = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleRegister = useCallback(
     async (values: RegisterFormValues) => {
       await register(values);
-      navigate('/groups', { replace: true });
+
+      /*
+        Hedef artik sabit `/groups` degil (bkz. utils/afterAuth.ts). Davet
+        linkinden gelen kullanici buraya bir **niyetle** dusuyor: gruba
+        katilmak. Kayit bitince onu uygulamanin girisine birakmak, o niyeti
+        kaybetmek ve linke tekrar tiklamasini beklemek olurdu.
+
+        Varsayilan Home; gerekcesi `GuestRoute` ile ayni hedefi vermek
+        (bkz. LoginPage).
+      */
+      navigate(afterAuthPath(location.state, '/home'), { replace: true });
     },
-    [navigate, register]
+    [location.state, navigate, register]
   );
 
   const { values, setField, fieldErrors, formError, pending, handleSubmit } =
@@ -51,7 +63,12 @@ const RegisterPage = () => {
       footer={
         <>
           Zaten hesabiniz var mi?{' '}
-          <Link to="/login" className="font-medium text-rose underline-offset-4 hover:underline">
+          {/* `state` aynen tasiniyor (ayni gerekce: LoginPage). */}
+          <Link
+            to="/login"
+            state={location.state}
+            className="font-medium text-rose underline-offset-4 hover:underline"
+          >
             Giris yapin
           </Link>
         </>

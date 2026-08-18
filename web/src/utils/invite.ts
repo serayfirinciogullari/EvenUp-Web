@@ -10,15 +10,22 @@
  *
  * Bu yuzden link istemcinin kendi origin'inden kuruluyor: kullanicinin
  * uygulamayi actigi adres, davet ettigi kisinin de acmasi gereken adrestir.
- *
- * ACIK MADDE: frontend'de `/groups/join/:code` rotasi **henuz yok** (App.tsx).
- * Link dogru adresi gosteriyor ama o sayfa sonraki gorevde yazilacak.
- * Backend tarafinda da `APP_URL`in frontend origin'ine cekilmesi gerekir ki
- * `join_url` anlamli hale gelsin.
+ * Deploy'da (Vercel) dogru alan adi kendiliginden geliyor; koda gomulu bir
+ * `localhost` olsaydi uretimde paylasilan her link bozuk olurdu.
  */
 
-export const buildJoinUrl = (code: string): string =>
-  `${window.location.origin}/groups/join/${code}`;
+/**
+ * Katilma sayfasinin uygulama ici yolu (rota: App.tsx `/join/:inviteCode`).
+ * Hem paylasilacak linkin hem de giris sonrasi otomatik yonlendirmenin
+ * (bkz. utils/afterAuth.ts) ayni yeri gostermesi icin tek kaynak.
+ *
+ * Kodlar base64url (`[A-Za-z0-9_-]`), yani `encodeURIComponent` bugun hicbir
+ * karakteri degistirmiyor; kod alfabesi degisirse linkin sessizce bozulmamasi
+ * icin yine de duruyor.
+ */
+export const joinPath = (code: string): string => `/join/${encodeURIComponent(code)}`;
+
+export const buildJoinUrl = (code: string): string => `${window.location.origin}${joinPath(code)}`;
 
 /**
  * Panoya yazar. **Basarisiz olabilir ve bu normaldir:** Clipboard API yalnizca

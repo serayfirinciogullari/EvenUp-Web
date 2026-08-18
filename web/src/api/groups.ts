@@ -6,6 +6,7 @@ import type {
   GroupDetail,
   GroupSummary,
   InviteResult,
+  JoinResult,
   NicknameResult,
 } from '../types/models';
 
@@ -41,6 +42,26 @@ export const createGroup = async (input: CreateGroupInput): Promise<Group> => {
  */
 export const createInvite = async (groupId: string): Promise<InviteResult> => {
   const { data } = await api.post<InviteResult>(`/groups/${groupId}/invite`, {});
+  return data;
+};
+
+/**
+ * `POST /groups/join/:inviteCode` — davet koduyla gruba katilir.
+ *
+ * Govde bos: kimlik `Authorization` header'inda, kod adreste. Uc nokta
+ * kimlik dogrulamasi istiyor; bu yuzden cagiran ekran (`pages/JoinPage`)
+ * once oturumun acik olmasini saglar.
+ *
+ * Gecersiz, suresi dolmus, kotasi dolmus ve silinmis grubun kodu **ayni 404'u**
+ * doner (backend bilincli olarak ayirmiyor, bkz. group.service.joinByCode).
+ * Yani arayuz de bu durumlari ayirt etmeye calismaz; backend'in mesajini
+ * gosterir.
+ */
+export const joinGroup = async (inviteCode: string): Promise<JoinResult> => {
+  const { data } = await api.post<JoinResult>(
+    `/groups/join/${encodeURIComponent(inviteCode)}`,
+    {}
+  );
   return data;
 };
 
@@ -87,6 +108,7 @@ export default {
   createGroup,
   getGroup,
   createInvite,
+  joinGroup,
   getGroupBalances,
   setMemberNickname,
 };

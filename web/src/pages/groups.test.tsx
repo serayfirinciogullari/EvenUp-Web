@@ -447,10 +447,12 @@ describe('davet linki kopyala', () => {
 
     expect(await screen.findByText('Davet linki panoya kopyalandi.')).toBeInTheDocument();
     expect(mockedGroups.createInvite).toHaveBeenCalledWith(group().id);
-    // Backend'in join_url'i API adresini gosteriyor; link istemci origin'inden kurulur.
-    expect(writeText).toHaveBeenCalledWith(
-      `${window.location.origin}/groups/join/${invite.invite.code}`
-    );
+    /*
+      Backend'in `join_url`i API adresini ve POST uc noktasini gosteriyor; link
+      istemci origin'inden ve tarayicida acilabilen `/join/:kod` rotasindan
+      kuruluyor (bkz. utils/invite.ts, pages/JoinPage.tsx).
+    */
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/join/${invite.invite.code}`);
   });
 
   it('pano kullanilamazsa link ekranda gosterilir', async () => {
@@ -469,7 +471,7 @@ describe('davet linki kopyala', () => {
     // Sessizce "kopyalandi" demek, kullanicinin bos pano yapistirmasi demekti.
     expect(await screen.findByText(/Pano kullanilamadi/)).toBeInTheDocument();
     expect(
-      screen.getByText(`${window.location.origin}/groups/join/${invite.invite.code}`)
+      screen.getByText(`${window.location.origin}/join/${invite.invite.code}`)
     ).toBeInTheDocument();
   });
 

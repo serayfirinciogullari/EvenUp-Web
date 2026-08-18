@@ -14,6 +14,7 @@ import AdminPage from './pages/AdminPage';
 import GroupDetailPage from './pages/GroupDetailPage';
 import GroupsPage from './pages/GroupsPage';
 import HomePage from './pages/HomePage';
+import JoinPage from './pages/JoinPage';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -28,6 +29,7 @@ import SettingsPage from './pages/SettingsPage';
  * router seviyesinde takili olmasiyla ayni gerekce (bkz. group.routes.ts).
  *
  *   /                 -> Landing (halka acik, guard YOK)
+ *   /join/:inviteCode -> Davet linki (halka acik, guard YOK)
  *   GuestRoute        -> /login, /register        (giris yapmisken erisilmez)
  *   ProtectedRoute    -> /home, /groups, /groups/:id, /activity, /settings
  *     + AdminRoute    -> /admin
@@ -68,6 +70,23 @@ const App = () => (
   >
     <Routes>
       <Route path="/" element={<LandingPage />} />
+
+      {/*
+        Davet linki de guard'siz — ama Landing'den farkli bir sebeple: hedef
+        kitlesi **giris yapmamis** kullanici. `ProtectedRoute` altinda olsaydi
+        ziyaretci /login'e duser ve davet kodu adres cubugundan silinirdi.
+        Sayfa kendi yonlendirmesini yapiyor ve kodu yaninda tasiyor
+        (bkz. pages/JoinPage.tsx).
+      */}
+      <Route path="/join/:inviteCode" element={<JoinPage />} />
+      {/*
+        Eski bicim: `utils/invite.buildJoinUrl` bir donem bu adresi uretiyordu
+        ve o linkler sohbetlerde durmaya devam ediyor. Rota agacinda tek satir,
+        karsiligi "daha once paylasilmis her davetin calismaya devam etmesi".
+        `/groups/:id` ile cakismiyor: uc parcali adres iki parcali kalibin
+        eslesme alanina girmiyor.
+      */}
+      <Route path="/groups/join/:inviteCode" element={<JoinPage />} />
 
       <Route element={<GuestRoute />}>
         <Route path="/login" element={<LoginPage />} />
