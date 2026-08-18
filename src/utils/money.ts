@@ -87,42 +87,9 @@ export const formatCents = (cents: number): string => {
  */
 export const netAmountToCents = (amount: number): number => Math.round(amount * 100);
 
-/**
- * Yuzdeyi baz puana (basis point: yuzdenin yuzde biri) cevirir.
- * 33.33% -> 3333 bp. Yuzdelerin toplaminin tam 100 oldugunu tam sayi
- * karsilastirmasiyla dogrulayabilmek icin gerekli: `33.33 * 3 === 99.99`
- * float'ta `99.99000000000001` cikar ve gecerli bir girdi reddedilirdi.
- */
-export const parsePercentageToBasisPoints = (value: unknown): number | null => {
-  if (typeof value !== 'number' && typeof value !== 'string') {
-    return null;
-  }
-
-  if (typeof value === 'number' && !Number.isFinite(value)) {
-    return null;
-  }
-
-  const text = String(value).trim();
-  const match = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(text);
-
-  if (!match) {
-    return null;
-  }
-
-  const [, whole, fraction = ''] = match;
-  const basisPoints = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
-
-  return basisPoints > 10_000 ? null : basisPoints;
-};
-
-/** Baz puani gosterilebilir yuzdeye cevirir: 3333 -> "33.33". */
-export const formatBasisPoints = (basisPoints: number): string => formatCents(basisPoints);
-
 export default {
   MAX_AMOUNT_CENTS,
   parseAmountToCents,
   formatCents,
   netAmountToCents,
-  parsePercentageToBasisPoints,
-  formatBasisPoints,
 };

@@ -8,16 +8,21 @@
  *
  * DEGISMEZ KURAL
  * --------------
- * Uc bolusme tipinde de:
+ * Iki bolusme tipinde de:
  *
  *     sum(paylar) === toplam tutar        (tam esitlik, tolerans yok)
  *
- * Kurus artiklari nasil dagitiliyor? Uc tip de tek bir fonksiyona,
+ * Kurus artiklari nasil dagitiliyor? Ikisi de tek bir fonksiyona,
  * `distributeByWeights`'e indirgenir:
  *
- *   - equal      -> herkesin agirligi 1
- *   - percentage -> agirlik = baz puan (33.33% -> 3333)
- *   - exact      -> dagitim yok, tutarlar zaten verilmis; sadece toplam dogrulanir
+ *   - equal -> herkesin agirligi 1
+ *   - exact -> dagitim yok, tutarlar zaten verilmis; sadece toplam dogrulanir
+ *
+ * UCUNCU BIR TIP YOK
+ * ------------------
+ * Yuzde (`percentage`) 1.5'te vardi, kaldirildi. Arayuzdeki "Kaca Bol" akisi
+ * ayri bir tip degil: secilen kisi listesiyle `equal` cagirir. Gerekce:
+ * docs/decisions/bolusum-basitlestirme.md
  *
  * `distributeByWeights` **en buyuk artik (largest remainder / Hamilton)**
  * yontemini kullanir: once herkese tam bolunen kisim (floor) verilir, artan
@@ -30,9 +35,9 @@
  * docs/decisions/1.5.md
  */
 
-export type SplitType = 'equal' | 'exact' | 'percentage';
+export type SplitType = 'equal' | 'exact';
 
-export const SPLIT_TYPES: readonly SplitType[] = ['equal', 'exact', 'percentage'];
+export const SPLIT_TYPES: readonly SplitType[] = ['equal', 'exact'];
 
 /** Hesaplanmis tek bir pay. `cents` her zaman tam sayi ve >= 0'dir. */
 export interface ShareAllocation {
@@ -52,13 +57,7 @@ export interface ExactSplitInput {
   shares: readonly ShareAllocation[];
 }
 
-export interface PercentageSplitInput {
-  type: 'percentage';
-  /** Baz puan (yuzdenin yuzde biri). Toplami tam 10000 (=%100) olmali. */
-  shares: readonly { userId: string; basisPoints: number }[];
-}
-
-export type SplitInput = EqualSplitInput | ExactSplitInput | PercentageSplitInput;
+export type SplitInput = EqualSplitInput | ExactSplitInput;
 
 /**
  * Bolusturme kurallarina uymayan girdi. Servis katmani bunu 400'e cevirir;
@@ -153,6 +152,10 @@ export function distributeByWeights(
 /**
  * Esit bolme. 100.00 TL / 3 kisi -> 33.34 + 33.33 + 33.33 = 100.00.
  * Fazla kurusu alan kisi userId sirasina gore secilir (bkz. distributeByWeights).
+ *
+ * Arayuzdeki iki ayri akis da buraya dusuyor: "Esit" tum secili uyelerle,
+ * "Kaca Bol" ise tam olarak N kisilik bir alt kumeyle cagirir. Ikisi arasindaki
+ * fark yalnizca `participants` listesinin nasil toplandigi.
  */
 export function splitEqual(totalCents: number, participants: readonly string[]): ShareAllocation[] {
   return distributeByWeights(
@@ -196,46 +199,11 @@ export function splitExact(
   return shares.map(({ userId, cents }) => ({ userId, cents }));
 }
 
-/* --------------------------------------------------------------- 3. yuzde */
-
-/**
- * Yuzdeye gore bolme. Yuzdelerin toplami tam %100 (10000 baz puan) olmali.
- * Tutarlar yuzdelere gore dagitilir; kurus artigi yine en buyuk artik
- * yontemiyle paylastirilir, boylece toplam tam tutar.
- */
-export function splitByPercentage(
-  totalCents: number,
-  shares: readonly { userId: string; basisPoints: number }[]
-): ShareAllocation[] {
-  assertParticipants(shares.map((share) => share.userId));
-
-  for (const share of shares) {
-    if (!Number.isInteger(share.basisPoints) || share.basisPoints <= 0) {
-      throw new SplitError('Yuzdeler sifirdan buyuk olmali', {
-        splitDetails: `Gecersiz yuzde: ${share.userId}`,
-      });
-    }
-  }
-
-  const total = shares.reduce((sum, share) => sum + share.basisPoints, 0);
-
-  if (total !== 10_000) {
-    throw new SplitError('Yuzdelerin toplami 100 olmali', {
-      splitDetails: `Gonderilen toplam: %${total / 100}`,
-    });
-  }
-
-  return distributeByWeights(
-    totalCents,
-    shares.map((share) => ({ userId: share.userId, weight: share.basisPoints }))
-  );
-}
-
 /* ---------------------------------------------------------------- giris */
 
 /**
  * Bolusme tipine gore dogru algoritmayi calistirir ve sonucu son bir kez
- * dogrular. Son kontrol savunma amacli: uc tipten biri ileride degistirilirse
+ * dogrular. Son kontrol savunma amacli: iki tipten biri ileride degistirilirse
  * invaryant sessizce bozulmasin, burada patlasin.
  */
 export function computeShares(totalCents: number, input: SplitInput): ShareAllocation[] {
@@ -253,9 +221,6 @@ export function computeShares(totalCents: number, input: SplitInput): ShareAlloc
       break;
     case 'exact':
       shares = splitExact(totalCents, input.shares);
-      break;
-    case 'percentage':
-      shares = splitByPercentage(totalCents, input.shares);
       break;
     default: {
       // Tip sistemi buraya dusmeyi engeller; yine de calisma zamaninda koruma.
@@ -282,5 +247,4 @@ export default {
   distributeByWeights,
   splitEqual,
   splitExact,
-  splitByPercentage,
 };

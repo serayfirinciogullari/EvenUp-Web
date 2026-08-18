@@ -247,25 +247,26 @@ POST /groups/:id/expenses
   "amount": "300.00",       // en fazla iki ondalik
   "category": "market",     // opsiyonel, varsayilan "genel"
   "paidBy": "<uuid>",       // opsiyonel, varsayilan istegi yapan kisi
-  "splitType": "equal",     // equal | exact | percentage
+  "splitType": "equal",     // equal | exact
   "splitDetails": { "participants": ["<uuid>", "<uuid>"] }
 }
 ```
 
 `splitDetails` bicimi bolusme tipine gore degisir:
 
-| `splitType`  | `splitDetails`                                          |
-| ------------ | ------------------------------------------------------- |
-| `equal`      | `{ participants: [uuid, ...] }` — verilmezse tum uyeler  |
-| `exact`      | `{ shares: [{ userId, amount: "33.34" }] }`             |
-| `percentage` | `{ shares: [{ userId, percentage: 33.34 }] }`           |
+| `splitType` | `splitDetails`                                         |
+| ----------- | ------------------------------------------------------ |
+| `equal`     | `{ participants: [uuid, ...] }` — verilmezse tum uyeler |
+| `exact`     | `{ shares: [{ userId, amount: "33.34" }] }`            |
+
+Arayuzdeki **"Kaca Bol"** secenegi ucuncu bir tip degil: secilen N kisilik
+listeyle `equal` gonderir (bkz. `docs/decisions/bolusum-basitlestirme.md`).
+Yuzdeli bolusme (`percentage`) kaldirildi.
 
 Bes davranis karari (detay: `docs/decisions/1.5.md`):
 
 - **Para tam sayi kurus uzerinden hesaplanir.** Tutarlarda en fazla iki ondalik kabul
   edilir; `12.345` ya da float artigi tasiyan bir deger sessizce yuvarlanmaz, 400 doner.
-  Yuzdeler de baz puana cevrilir (33.33% -> 3333), boylece "toplam tam %100 mu" sorusu
-  tam sayi karsilastirmasiyla yanitlanir.
 - **Paylarin toplami her zaman harcama tutarina esittir.** Kurus artigi "en buyuk artik"
   yontemiyle dagitilir: `100.00 / 3` -> `33.34 + 33.33 + 33.33`. Kimse digerinden 1
   kurustan fazla farkli odemez ve sonuc katilimci sirasindan bagimsizdir.

@@ -15,24 +15,41 @@ import { Label } from '@/components/ui/label';
 import { getErrorDetails, getErrorMessage } from '../api/client';
 import expensesApi from '../api/expenses';
 import { centsToApiAmount, formatCents, parseInputToCents } from '../utils/money';
-import { equalShares, toSplitDetails, validateSplit } from '../utils/split';
+import {
+  equalShares,
+  MIN_SPLIT_COUNT,
+  toApiSplitType,
+  toSplitDetails,
+  validateCount,
+  validateSplit,
+} from '../utils/split';
 
-import type { ExpenseSplitType, GroupMember } from '../types/models';
-import type { SplitRow } from '../utils/split';
+import type { GroupMember } from '../types/models';
+import type { SplitMode, SplitRow } from '../utils/split';
 import type { SubmitEvent } from 'react';
 
 /**
  * "Harcama ekle" modali — **solid** yuzey (doldurma yuzeyi, ozet degil).
  *
- * FORM BOLUSME TIPINE GORE DEGISIYOR
+ * FORM BOLUSME MODUNA GORE DEGISIYOR
  * ----------------------------------
- *   equal      -> yalnizca "kimler dahil" isaret kutulari + kisi basi onizleme
- *   exact      -> her katilimci icin tutar alani + ANLIK toplam karsilastirmasi
- *   percentage -> her katilimci icin yuzde alani + ANLIK %100 karsilastirmasi
+ *   equal -> yalnizca "kimler dahil" isaret kutulari + kisi basi onizleme
+ *   exact -> her katilimci icin tutar alani + ANLIK toplam karsilastirmasi
+ *   count -> once "kaca bolunsun?", sonra tam o sayida kisi isaretlenmesi
  *
- * Uc tipte de katilimci secimi ayni yerde duruyor (isaret kutusu): "bu kisi
- * dahil mi" sorusu bolusme tipinden bagimsiz ve tipi degistirince secimin
- * kaybolmamasi gerekiyor.
+ * "Kaca Bol" (`count`) ayri bir **bolusme tipi degil**: backend'e `equal`
+ * olarak, secilen kisilerin listesiyle gider. Yani yeni bir hesap yolu yok,
+ * yalnizca yeni bir secim akisi. Gerekce ve yuzdeli bolusmenin neden
+ * kaldirildigi: docs/decisions/bolusum-basitlestirme.md
+ *
+ * IKI AYRI SECIM DURUMU — BILEREK
+ * -------------------------------
+ * `rows[].included` (equal/exact) ile `countSelection` (kaca bol) ayri
+ * tutuluyor. Ayni duruma baglansalardi mod degistiren kullanicinin secimi
+ * digerine sizardi: "Esit"te hepsi isaretli oldugu icin "Kaca Bol"e gecen
+ * kullanici formu daha ilk anda hatali bulurdu ("2'ye bolunecek, 4 kisi
+ * secildi"). Iki listenin isaret kutulari ayni gorunuyor ama ayni soruyu
+ * sormuyor: biri "bu kisi dahil mi", digeri "bu kisi o N kisiden biri mi".
  *
  * ANLIK DOGRULAMA NEREDE
  * ----------------------
@@ -49,10 +66,14 @@ const DEFAULT_CATEGORY = 'genel'; // expense.service.ts -> DEFAULT_CATEGORY
  *  yazim birligini korumak icin ("market" / "Market" / "markt" ayrismasin). */
 const CATEGORIES = ['genel', 'market', 'yemek', 'ulasim', 'fatura', 'kira', 'eglence'];
 
-const SPLIT_OPTIONS: { value: ExpenseSplitType; label: string; hint: string }[] = [
+const SPLIT_OPTIONS: { value: SplitMode; label: string; hint: string }[] = [
   { value: 'equal', label: 'Esit', hint: 'Secili kisiler arasinda esit bolunur' },
   { value: 'exact', label: 'Ozel tutar', hint: 'Her kisinin tutarini sen yazarsin' },
-  { value: 'percentage', label: 'Yuzde', hint: 'Her kisinin yuzdesini sen yazarsin' },
+  {
+    value: 'count',
+    label: 'Kaca Bol',
+    hint: 'Once kaca bolunecegini sec, sonra tam o kadar kisi isaretle',
+  },
 ];
 
 interface AddExpenseModalProps {
@@ -77,8 +98,12 @@ const AddExpenseModal = ({
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState(DEFAULT_CATEGORY);
   const [paidBy, setPaidBy] = useState(currentUserId);
-  const [splitType, setSplitType] = useState<ExpenseSplitType>('equal');
+  const [splitMode, setSplitMode] = useState<SplitMode>('equal');
   const [rows, setRows] = useState<SplitRow[]>([]);
+
+  /** "Kaca Bol": bolen sayisi ve o sayida olmasi gereken secim. */
+  const [splitCount, setSplitCount] = useState(MIN_SPLIT_COUNT);
+  const [countSelection, setCountSelection] = useState<string[]>([]);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -102,8 +127,10 @@ const AddExpenseModal = ({
     setDescription('');
     setCategory(DEFAULT_CATEGORY);
     setPaidBy(currentUserId);
-    setSplitType('equal');
+    setSplitMode('equal');
     setRows(members.map((member) => ({ userId: member.user_id, value: '', included: true })));
+    setSplitCount(MIN_SPLIT_COUNT);
+    setCountSelection([]);
     setFieldErrors({});
     setFormError(null);
     // memberKey uye listesinin icerigini temsil ediyor; dizi kimligi her
@@ -118,24 +145,67 @@ const AddExpenseModal = ({
 
   const amountCents = parseInputToCents(amount);
 
-  /* ANLIK DOGRULAMA: her tusa basista yeniden hesaplanir, istek yok. */
-  const validation = validateSplit(splitType, amountCents, rows);
+  /*
+    Iki kisiden az uyesi olan grupta "kaca bol" sorusunun cevabi yok; secenek
+    hic gosterilmiyor. Gosterip devre disi birakmak, cozumu olmayan bir engeli
+    ekranda tutmak olurdu.
+  */
+  const countAvailable = members.length >= MIN_SPLIT_COUNT;
+  const splitOptions = SPLIT_OPTIONS.filter(
+    (option) => option.value !== 'count' || countAvailable
+  );
 
-  /** `equal` onizlemesi — backend'in kaydedecegi degerin aynisi. */
+  /*
+    Secim listesi her zaman uye sirasinda: `countSelection` tiklama sirasini
+    tutuyor, istege ve onizlemeye giden liste ise ekranda gorunen sirayla
+    gitsin — ayni secim her zaman ayni govdeyi uretsin.
+  */
+  const selectedForCount = useMemo(
+    () => rows.filter((row) => countSelection.includes(row.userId)).map((row) => row.userId),
+    [rows, countSelection]
+  );
+
+  /* ANLIK DOGRULAMA: her tusa basista yeniden hesaplanir, istek yok. */
+  const validation =
+    splitMode === 'count'
+      ? validateCount(splitCount, selectedForCount)
+      : validateSplit(splitMode, amountCents, rows);
+
+  /**
+   * Kisi basi onizleme — backend'in kaydedecegi degerin aynisi.
+   *
+   * `count` modunda yalnizca secim tamamlaninca gosteriliyor: 3'e bolunecek bir
+   * harcamada 2 kisi isaretliyken "50,00 ₺" yazmak, kaydedilmeyecek bir tutari
+   * kaydedilecekmis gibi gosterirdi.
+   */
   const preview = useMemo(() => {
-    if (splitType !== 'equal' || amountCents === null) {
+    if (amountCents === null) {
       return null;
     }
 
-    return equalShares(
-      amountCents,
-      rows.filter((row) => row.included).map((row) => row.userId)
-    );
-  }, [splitType, amountCents, rows]);
+    if (splitMode === 'equal') {
+      return equalShares(
+        amountCents,
+        rows.filter((row) => row.included).map((row) => row.userId)
+      );
+    }
+
+    if (splitMode === 'count' && selectedForCount.length === splitCount) {
+      return equalShares(amountCents, selectedForCount);
+    }
+
+    return null;
+  }, [splitMode, amountCents, rows, selectedForCount, splitCount]);
 
   const updateRow = (userId: string, patch: Partial<SplitRow>) => {
     setRows((current) =>
       current.map((row) => (row.userId === userId ? { ...row, ...patch } : row))
+    );
+  };
+
+  const toggleCountSelection = (userId: string) => {
+    setCountSelection((current) =>
+      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]
     );
   };
 
@@ -147,11 +217,7 @@ const AddExpenseModal = ({
       return;
     }
 
-    // Yuzde de para gibi tam sayi uzerinden dagitiliyor: 10000 baz puan = %100.
-    // Ayni fonksiyon, cunku problem ayni — kalan birimleri kimseye iki kez
-    // vermeden dagitmak.
-    const total = splitType === 'percentage' ? 10_000 : (amountCents ?? 0);
-    const distribution = equalShares(total, included);
+    const distribution = equalShares(amountCents ?? 0, included);
 
     setRows((current) =>
       current.map((row) =>
@@ -214,8 +280,8 @@ const AddExpenseModal = ({
         description: trimmedDescription,
         category: category.trim() || DEFAULT_CATEGORY,
         paidBy,
-        splitType,
-        splitDetails: toSplitDetails(splitType, rows),
+        splitType: toApiSplitType(splitMode),
+        splitDetails: toSplitDetails(splitMode, rows, selectedForCount),
       })
       .then(() => {
         onCreated();
@@ -324,11 +390,11 @@ const AddExpenseModal = ({
             <legend className="mb-1 text-sm font-medium text-ink">Bolusme</legend>
 
             <div className="split-type flex flex-wrap gap-2" role="radiogroup" aria-label="Bolusme">
-              {SPLIT_OPTIONS.map((option) => (
+              {splitOptions.map((option) => (
                 <label
                   key={option.value}
                   className={`split-type__option flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${
-                    splitType === option.value
+                    splitMode === option.value
                       ? 'border-rose bg-rose/10 text-rose'
                       : 'border-blush text-ink-muted'
                   }`}
@@ -337,8 +403,8 @@ const AddExpenseModal = ({
                     type="radio"
                     name="splitType"
                     value={option.value}
-                    checked={splitType === option.value}
-                    onChange={() => setSplitType(option.value)}
+                    checked={splitMode === option.value}
+                    onChange={() => setSplitMode(option.value)}
                     className="sr-only"
                   />
                   {option.label}
@@ -347,61 +413,102 @@ const AddExpenseModal = ({
             </div>
 
             <p className="text-xs text-ink-muted">
-              {SPLIT_OPTIONS.find((option) => option.value === splitType)?.hint}
+              {splitOptions.find((option) => option.value === splitMode)?.hint}
             </p>
           </fieldset>
 
+          {/*
+            "KACA BOL" — ONCE SAYI, SONRA KISILER.
+            Sayi secimi listenin ustunde duruyor cunku altindaki isaret
+            kutularinin kac tane isaretlenecegini o belirliyor; tersi sirada
+            kullanici once secip sonra "yanlis sayida secmisim" derdi.
+          */}
+          {splitMode === 'count' && (
+            <div className="split-count grid gap-1.5">
+              <Label htmlFor="expense-split-count">Kaca bolunsun?</Label>
+              <select
+                id="expense-split-count"
+                className="h-9 w-28 rounded-md border border-input bg-surface px-3 text-sm"
+                value={splitCount}
+                onChange={(event) => setSplitCount(Number(event.target.value))}
+                disabled={pending}
+              >
+                {Array.from(
+                  { length: members.length - MIN_SPLIT_COUNT + 1 },
+                  (_, index) => index + MIN_SPLIT_COUNT
+                ).map((option) => (
+                  <option key={option} value={option}>
+                    {option} kisi
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-ink-muted">
+                Tutar, isaretledigin {splitCount} kisi arasinda esit bolunur.
+              </p>
+            </div>
+          )}
+
           {/* -------------------------------------- katilimcilar (dinamik) */}
           <div className="split-rows flex flex-col gap-1.5">
-            {rows.map((row) => (
-              <div
-                key={row.userId}
-                className="split-row flex items-center justify-between gap-3 rounded-md border border-blush/60 px-3 py-2"
-              >
-                <label className="flex min-w-0 items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={row.included}
-                    onChange={(event) => updateRow(row.userId, { included: event.target.checked })}
-                    disabled={pending}
-                    aria-label={`${nameOf(row.userId)} dahil`}
-                  />
-                  <span className="truncate">
-                    {row.userId === currentUserId ? `${nameOf(row.userId)} (sen)` : nameOf(row.userId)}
-                  </span>
-                </label>
+            {rows.map((row) => {
+              const selected =
+                splitMode === 'count' ? countSelection.includes(row.userId) : row.included;
+              const name = nameOf(row.userId);
 
-                {splitType === 'equal' ? (
-                  <span className="split-row__preview shrink-0 text-sm text-ink-muted">
-                    {row.included && preview?.has(row.userId)
-                      ? formatCents(preview.get(row.userId) as number)
-                      : '—'}
-                  </span>
-                ) : (
-                  <span className="flex shrink-0 items-center gap-1">
-                    <Input
-                      className="h-8 w-24 text-right"
-                      inputMode="decimal"
-                      value={row.value}
-                      onChange={(event) => updateRow(row.userId, { value: event.target.value })}
-                      disabled={pending || !row.included}
-                      aria-label={`${nameOf(row.userId)} ${
-                        splitType === 'exact' ? 'tutari' : 'yuzdesi'
-                      }`}
-                      aria-invalid={
-                        validation.invalidRows.includes(row.userId) ? true : undefined
+              return (
+                <div
+                  key={row.userId}
+                  className="split-row flex items-center justify-between gap-3 rounded-md border border-blush/60 px-3 py-2"
+                >
+                  <label className="flex min-w-0 items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={(event) =>
+                        splitMode === 'count'
+                          ? toggleCountSelection(row.userId)
+                          : updateRow(row.userId, { included: event.target.checked })
                       }
-                      placeholder={splitType === 'exact' ? '0,00' : '0'}
+                      disabled={pending}
+                      /*
+                        Iki liste ayni gorunuyor ama ayni soruyu sormuyor;
+                        ekran okuyucu icin de ayri okunmalari gerekiyor.
+                      */
+                      aria-label={`${name} ${splitMode === 'count' ? 'secili' : 'dahil'}`}
                     />
-                    <span className="w-3 text-sm text-ink-muted">
-                      {splitType === 'exact' ? '₺' : '%'}
+                    <span className="truncate">
+                      {row.userId === currentUserId ? `${name} (sen)` : name}
                     </span>
-                  </span>
-                )}
-              </div>
-            ))}
+                  </label>
 
-            {splitType !== 'equal' && (
+                  {splitMode === 'exact' ? (
+                    <span className="flex shrink-0 items-center gap-1">
+                      <Input
+                        className="h-8 w-24 text-right"
+                        inputMode="decimal"
+                        value={row.value}
+                        onChange={(event) => updateRow(row.userId, { value: event.target.value })}
+                        disabled={pending || !row.included}
+                        aria-label={`${name} tutari`}
+                        aria-invalid={
+                          validation.invalidRows.includes(row.userId) ? true : undefined
+                        }
+                        placeholder="0,00"
+                      />
+                      <span className="w-3 text-sm text-ink-muted">₺</span>
+                    </span>
+                  ) : (
+                    <span className="split-row__preview shrink-0 text-sm text-ink-muted">
+                      {selected && preview?.has(row.userId)
+                        ? formatCents(preview.get(row.userId) as number)
+                        : '—'}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+
+            {splitMode === 'exact' && (
               <div className="flex justify-end">
                 <Button
                   type="button"

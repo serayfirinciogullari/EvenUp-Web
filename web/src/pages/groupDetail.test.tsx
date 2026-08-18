@@ -5,8 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import { AuthProvider } from '../context/AuthProvider';
 import { formatExpenseDate } from '../utils/datetime';
-import { formatBasisPoints, parseInputToCents, parsePercentageToBasisPoints } from '../utils/money';
-import { equalShares, validateExact, validatePercentage, toSplitDetails } from '../utils/split';
+import { parseInputToCents } from '../utils/money';
+import { equalShares, validateCount, validateExact, toSplitDetails } from '../utils/split';
 import { dative } from '../utils/turkish';
 
 import type {
@@ -784,73 +784,138 @@ describe('harcama ekleme - ozel tutar (anlik toplam)', () => {
   });
 });
 
-/* ============================================== harcama ekleme: yuzde */
+/* ============================================ harcama ekleme: kaca bol */
 
-describe('harcama ekleme - yuzde (anlik toplam)', () => {
-  it('%100 olmayan toplam aninda gosterilir', async () => {
+describe('harcama ekleme - kaca bol', () => {
+  it('once bolen sayisi sorulur, varsayilan 2 ve secim bos baslar', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    chooseSplit('Kaca Bol');
+
+    expect(screen.getByLabelText('Kaca bolunsun?')).toHaveValue('2');
+    // "Esit"teki isaretler sizmiyor: bu liste kendi secimini tutuyor.
+    expect(screen.getByLabelText('Deniz secili')).not.toBeChecked();
+    expect(await screen.findByText('2 kisiye bolunecek: 2 kisi daha sec')).toBeInTheDocument();
+  });
+
+  it('bolen sayisi grup uye sayisina kadar secilebilir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    chooseSplit('Kaca Bol');
+
+    // Uc kisilik grup: 2 ve 3. "1 kisi" bolusme degil, "4 kisi" grupta yok.
+    const options = within(screen.getByLabelText('Kaca bolunsun?'))
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+
+    expect(options).toEqual(['2 kisi', '3 kisi']);
+  });
+
+  it('eksik secim istegi durdurur', async () => {
     renderDetail();
     await openExpenseModal();
 
     fillBasics('100');
-    chooseSplit('Yuzde');
+    chooseSplit('Kaca Bol');
+    fireEvent.change(screen.getByLabelText('Kaca bolunsun?'), { target: { value: '3' } });
+    fireEvent.click(screen.getByLabelText('Deniz secili'));
+    fireEvent.click(screen.getByLabelText('Ece secili'));
 
-    fireEvent.change(screen.getByLabelText('Deniz yuzdesi'), { target: { value: '50' } });
-    fireEvent.change(screen.getByLabelText('Ece yuzdesi'), { target: { value: '30' } });
-    fireEvent.change(screen.getByLabelText('Ali yuzdesi'), { target: { value: '10' } });
+    expect(await screen.findByText('3 kisiye bolunecek: 1 kisi daha sec')).toBeInTheDocument();
 
-    expect(await screen.findByText('Toplam %90,00 - %10,00 eksik')).toBeInTheDocument();
+    submitExpense();
+
+    expect(mockedExpenses.createExpense).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent('1 kisi daha sec');
+  });
+
+  it('fazla secim de kabul edilmez', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    chooseSplit('Kaca Bol');
+
+    for (const name of ['Deniz', 'Ece', 'Ali']) {
+      fireEvent.click(screen.getByLabelText(`${name} secili`));
+    }
+
+    // Bolen 2, secim 3.
+    expect(
+      await screen.findByText('2 kisiye bolunecek: 1 kisinin isaretini kaldir')
+    ).toBeInTheDocument();
 
     submitExpense();
     expect(mockedExpenses.createExpense).not.toHaveBeenCalled();
   });
 
-  it('toplam %100 olunca gonderilir', async () => {
+  it('kisi basi tutar yalnizca secim tamamlaninca gosterilir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    chooseSplit('Kaca Bol');
+    fireEvent.click(screen.getByLabelText('Deniz secili'));
+
+    // Tek kisi isaretliyken "100,00 ₺" yazmak, kaydedilmeyecek bir tutari
+    // kaydedilecekmis gibi gosterirdi.
+    expect(screen.queryByText('100,00 ₺')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Ece secili'));
+
+    await waitFor(() => expect(screen.getAllByText('50,00 ₺')).toHaveLength(2));
+  });
+
+  it('tam secimde ESIT bolusme govdesiyle gonderilir', async () => {
     mockedExpenses.createExpense.mockResolvedValue(expense());
 
     renderDetail();
     await openExpenseModal();
 
-    fillBasics('100', 'Kira');
-    chooseSplit('Yuzde');
+    fillBasics('100', 'Tasi');
+    chooseSplit('Kaca Bol');
+    fireEvent.click(screen.getByLabelText('Ece secili'));
+    fireEvent.click(screen.getByLabelText('Ali secili'));
 
-    fireEvent.change(screen.getByLabelText('Deniz yuzdesi'), { target: { value: '50' } });
-    fireEvent.change(screen.getByLabelText('Ece yuzdesi'), { target: { value: '30' } });
-    fireEvent.change(screen.getByLabelText('Ali yuzdesi'), { target: { value: '20' } });
-
-    expect(await screen.findByText('Toplam %100')).toBeInTheDocument();
+    expect(await screen.findByText('2 kisi arasinda esit bolunuyor')).toBeInTheDocument();
 
     submitExpense();
 
+    // Backend'de "kaca bol" diye bir tip yok: istek `equal` + katilimci listesi.
     await waitFor(() =>
       expect(mockedExpenses.createExpense).toHaveBeenCalledWith(
         GROUP_ID,
         expect.objectContaining({
-          splitType: 'percentage',
-          splitDetails: {
-            shares: [
-              { userId: ME_ID, percentage: '50.00' },
-              { userId: ECE_ID, percentage: '30.00' },
-              { userId: ALI_ID, percentage: '20.00' },
-            ],
-          },
+          splitType: 'equal',
+          splitDetails: { participants: [ECE_ID, ALI_ID] },
         })
       )
     );
   });
 
-  it('33,33 x 3 = %99,99 kabul edilmez', async () => {
+  it('mod degistirmek "Esit" secimini bozmuyor', async () => {
     renderDetail();
     await openExpenseModal();
 
     fillBasics('100');
-    chooseSplit('Yuzde');
+    chooseSplit('Kaca Bol');
+    fireEvent.click(screen.getByLabelText('Ece secili'));
+    chooseSplit('Esit');
 
+    // "Esit" listesi acildigi gibi duruyor: uc kisi de dahil.
     for (const name of ['Deniz', 'Ece', 'Ali']) {
-      fireEvent.change(screen.getByLabelText(`${name} yuzdesi`), { target: { value: '33,33' } });
+      expect(screen.getByLabelText(`${name} dahil`)).toBeChecked();
     }
+    expect(screen.getByText('3 kisi arasinda esit bolunuyor')).toBeInTheDocument();
+  });
 
-    // Float toplaminda "99.99000000000001" cikardi; baz puanda 9999 - kesin.
-    expect(await screen.findByText('Toplam %99,99 - %0,01 eksik')).toBeInTheDocument();
+  it('yuzde secenegi kaldirildi', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    expect(screen.queryByLabelText('Yuzde')).not.toBeInTheDocument();
   });
 });
 
@@ -1283,28 +1348,22 @@ describe('bolusme kurallari (birim)', () => {
     });
   });
 
-  it('yuzde toplami baz puan uzerinden karsilastirilir', () => {
-    const rows = ['33.33', '33.33', '33.33'].map((value, index) => ({
-      userId: `u${index}`,
-      value,
-      included: true,
-    }));
-
-    const result = validatePercentage(rows);
-
-    expect(result.valid).toBe(false);
-    expect(result.entered).toBe(9999);
-    expect(result.difference).toBe(1);
+  it('kaca bol yalnizca TAM sayida secimi gecerli sayar', () => {
+    expect(validateCount(3, ['a', 'b']).valid).toBe(false);
+    expect(validateCount(3, ['a', 'b']).difference).toBe(1);
+    expect(validateCount(3, ['a', 'b', 'c', 'd']).valid).toBe(false);
+    expect(validateCount(3, ['a', 'b', 'c', 'd']).difference).toBe(-1);
+    expect(validateCount(3, ['a', 'b', 'c']).valid).toBe(true);
   });
 
-  it('sifir yuzde gecersiz sayilir (backend ile ayni kural)', () => {
+  it('kaca bol govdesi esit bolusmenin govdesi', () => {
     const rows = [
-      { userId: 'a', value: '100', included: true },
-      { userId: 'b', value: '0', included: true },
+      { userId: 'a', value: '', included: true },
+      { userId: 'b', value: '', included: true },
     ];
 
-    expect(validatePercentage(rows).valid).toBe(false);
-    expect(validatePercentage(rows).invalidRows).toEqual(['b']);
+    // `included` degil, ayri secim listesi kullaniliyor.
+    expect(toSplitDetails('count', rows, ['b', 'c'])).toEqual({ participants: ['b', 'c'] });
   });
 
   it('bozuk metin sessizce 0 sayilmaz', () => {
@@ -1312,8 +1371,6 @@ describe('bolusme kurallari (birim)', () => {
     expect(parseInputToCents('-5')).toBeNull();
     expect(parseInputToCents('1.005')).toBeNull();
     expect(parseInputToCents('12,50')).toBe(1250);
-    expect(parsePercentageToBasisPoints('101')).toBeNull();
-    expect(formatBasisPoints(9999)).toBe('%99,99');
   });
 });
 

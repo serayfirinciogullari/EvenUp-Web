@@ -20,10 +20,15 @@ import type { Expense, ExpenseSplitType } from '../types/models';
  * gerekce — "harcama yok" ile "harcamalar alinamadi" ayni ekran olamaz.
  */
 
+/*
+  Listede yalnizca iki etiket var cunku backend'de iki tip var. 'Kaca Bol' ile
+  eklenen harcama burada 'Esit' gorunur — kaydedilen sey gercekten de esit
+  bolusme; 'kaca bolundugu' girisi kolaylastiran bir form adimi, harcamanin
+  kalici bir ozelligi degil (docs/decisions/bolusum-basitlestirme.md).
+*/
 const SPLIT_LABELS: Record<ExpenseSplitType, string> = {
   equal: 'Esit',
   exact: 'Ozel tutar',
-  percentage: 'Yuzde',
 };
 
 interface ExpensesTabProps {

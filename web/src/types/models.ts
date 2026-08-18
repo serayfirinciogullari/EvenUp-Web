@@ -21,7 +21,9 @@ export type UserRole = 'admin' | 'user';
 /** Grup **ici** rol. Bir kullanici A grubunda owner, B grubunda member olabilir. */
 export type GroupMemberRole = 'owner' | 'member';
 
-export type ExpenseSplitType = 'equal' | 'exact' | 'percentage';
+/** Backend'in tanidigi iki tip. Formdaki 'Kaca Bol' secenegi ayri bir tip degil:
+ *  istege `equal` olarak cikar (bkz. utils/split.ts -> SplitMode). */
+export type ExpenseSplitType = 'equal' | 'exact';
 
 export type SettlementStatus = 'pending' | 'confirmed' | 'rejected';
 

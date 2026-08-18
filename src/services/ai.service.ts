@@ -65,7 +65,7 @@ export type ParseResult = ParsedExpense | ParsedClarification;
 
 /**
  * create_expense: mesaj tamamlanabilirse. `splitType` su an yalnizca 'equal'
- * — chat uzerinden pay-basi tutar/yuzde gerektiren bolusmeler desteklenmiyor,
+ * — chat uzerinden kisi basi ayri tutar gerektiren bolusmeler desteklenmiyor,
  * onlar forma birakildi (bkz. karar dokumani). paidByUserId nullable: kim
  * odedigi belirtilmemisse model null birakir.
  */

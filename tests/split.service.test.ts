@@ -2,14 +2,10 @@ import {
   computeShares,
   splitEqual,
   splitExact,
-  splitByPercentage,
   SplitError,
+  SPLIT_TYPES,
 } from '../src/services/split.service';
-import {
-  formatCents,
-  parseAmountToCents,
-  parsePercentageToBasisPoints,
-} from '../src/utils/money';
+import { formatCents, parseAmountToCents } from '../src/utils/money';
 
 import type { ShareAllocation } from '../src/services/split.service';
 
@@ -165,80 +161,10 @@ describe('splitExact', () => {
   });
 });
 
-/* ============================================================== yuzde */
-
-describe('splitByPercentage', () => {
-  it('yuzdelere gore boler ve toplami korur', () => {
-    const shares = splitByPercentage(10_000, [
-      { userId: ALI, basisPoints: 5000 },
-      { userId: BURAK, basisPoints: 2500 },
-      { userId: CEM, basisPoints: 2500 },
-    ]);
-
-    expect(asMap(shares)).toEqual({ [ALI]: 5000, [BURAK]: 2500, [CEM]: 2500 });
-    expect(sum(shares)).toBe(10_000);
-  });
-
-  it('yuzdelerin toplami 100 degilse reddeder', () => {
-    expect(() =>
-      splitByPercentage(10_000, [
-        { userId: ALI, basisPoints: 3333 },
-        { userId: BURAK, basisPoints: 3333 },
-        { userId: CEM, basisPoints: 3333 },
-      ])
-    ).toThrow(/toplami 100 olmali/i);
-  });
-
-  it('bolunmeyen tutarda kurus artigi kaybolmaz', () => {
-    // 0.05 TL, %33.34 / %33.33 / %33.33 -> 5 kurus tam dagilmali
-    const shares = splitByPercentage(5, [
-      { userId: ALI, basisPoints: 3334 },
-      { userId: BURAK, basisPoints: 3333 },
-      { userId: CEM, basisPoints: 3333 },
-    ]);
-
-    expect(sum(shares)).toBe(5);
-  });
-
-  it('artik en buyuk paya sahip olana gider (en buyuk artik yontemi)', () => {
-    // 10.00 TL: %60 -> 6.00, %20 -> 2.00, %20 -> 2.00 (artik yok)
-    // 10.01 TL: 600.6 / 200.2 / 200.2 -> 601 / 200 / 200
-    const shares = splitByPercentage(1001, [
-      { userId: ALI, basisPoints: 6000 },
-      { userId: BURAK, basisPoints: 2000 },
-      { userId: CEM, basisPoints: 2000 },
-    ]);
-
-    expect(asMap(shares)).toEqual({ [ALI]: 601, [BURAK]: 200, [CEM]: 200 });
-    expect(sum(shares)).toBe(1001);
-  });
-
-  it('sifir yuzde kabul etmez', () => {
-    expect(() =>
-      splitByPercentage(10_000, [
-        { userId: ALI, basisPoints: 10_000 },
-        { userId: BURAK, basisPoints: 0 },
-      ])
-    ).toThrow(/sifirdan buyuk/i);
-  });
-
-  it('her tutar icin %33.34 / %33.33 / %33.33 dagilimi toplami korur', () => {
-    for (let cents = 1; cents <= 20_000; cents += 3) {
-      const shares = splitByPercentage(cents, [
-        { userId: ALI, basisPoints: 3334 },
-        { userId: BURAK, basisPoints: 3333 },
-        { userId: CEM, basisPoints: 3333 },
-      ]);
-
-      expect(sum(shares)).toBe(cents);
-    }
-  });
-});
-
 /* ============================================================ computeShares */
 
 describe('computeShares', () => {
-  it('uc bolusme tipinde de toplam her zaman harcama tutarina esittir', () => {
+  it('iki bolusme tipinde de toplam her zaman harcama tutarina esittir', () => {
     const total = 10_000;
 
     const cases = [
@@ -251,19 +177,33 @@ describe('computeShares', () => {
           { userId: CEM, cents: 2000 },
         ],
       }),
-      computeShares(total, {
-        type: 'percentage',
-        shares: [
-          { userId: ALI, basisPoints: 3334 },
-          { userId: BURAK, basisPoints: 3333 },
-          { userId: CEM, basisPoints: 3333 },
-        ],
-      }),
     ];
 
     for (const shares of cases) {
       expect(sum(shares)).toBe(total);
     }
+  });
+
+  it('yuzde tipi artik taninmiyor', () => {
+    // Arayuzdeki "Kaca Bol" akisi da buraya `equal` olarak duser; uc numarali
+    // bir tip yok (docs/decisions/bolusum-basitlestirme.md).
+    expect(SPLIT_TYPES).toEqual(['equal', 'exact']);
+
+    expect(() =>
+      computeShares(10_000, {
+        // Eski istemcilerden gelebilecek govde: tip sistemi disindan zorlaniyor.
+        type: 'percentage',
+        shares: [{ userId: ALI, basisPoints: 10_000 }],
+      } as unknown as Parameters<typeof computeShares>[1])
+    ).toThrow(SplitError);
+  });
+
+  it('"Kaca Bol" bir tip degil: N kisilik liste ile esit bolusme', () => {
+    // Dort kisilik grupta "3'e bol" -> secilen uc kisiyle equal.
+    const shares = computeShares(10_000, { type: 'equal', participants: [ALI, BURAK, CEM] });
+
+    expect(asMap(shares)).toEqual({ [ALI]: 3334, [BURAK]: 3333, [CEM]: 3333 });
+    expect(sum(shares)).toBe(10_000);
   });
 
   it('sifir ya da negatif tutari reddeder', () => {
@@ -322,14 +262,5 @@ describe('money', () => {
     for (let cents = 0; cents <= 5000; cents++) {
       expect(parseAmountToCents(formatCents(cents))).toBe(cents);
     }
-  });
-
-  it('yuzdeyi baz puana cevirir ve 100 ustunu reddeder', () => {
-    expect(parsePercentageToBasisPoints(33.33)).toBe(3333);
-    expect(parsePercentageToBasisPoints('100')).toBe(10_000);
-    expect(parsePercentageToBasisPoints(0)).toBe(0);
-    expect(parsePercentageToBasisPoints(100.01)).toBeNull();
-    expect(parsePercentageToBasisPoints('33.333')).toBeNull();
-    expect(parsePercentageToBasisPoints(-5)).toBeNull();
   });
 });

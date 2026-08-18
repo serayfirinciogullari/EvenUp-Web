@@ -85,33 +85,6 @@ export const parseInputToCents = (value: string): number | null => {
   return cents === null || cents < 0 ? null : cents;
 };
 
-/**
- * Yuzdeyi **baz puana** (yuzdenin yuzde biri) cevirir: "33.33" -> 3333.
- *
- * Yuzde de para gibi tam sayi uzerinden toplanir. `33.33 * 3` float'ta
- * `99.99000000000001` eder ve "toplam 100 mu?" sorusu motorun yuvarlamasina
- * kalirdi; baz puanla 3333 * 3 = 9999, kesin ve yanlis — yani hata dogru
- * yerde gorulur. Backend'deki karsiligi `parsePercentageToBasisPoints`.
- */
-export const parsePercentageToBasisPoints = (value: string): number | null => {
-  const normalized = value.trim().replace(',', '.');
-
-  if (!normalized) {
-    return null;
-  }
-
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(normalized);
-
-  if (!match) {
-    return null;
-  }
-
-  const [, whole, fraction = ''] = match;
-  const basisPoints = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
-
-  return basisPoints > 10_000 ? null : basisPoints;
-};
-
 /* --------------------------------------------------------- API'ye yazma */
 
 /**
@@ -126,20 +99,6 @@ export const centsToApiAmount = (cents: number): string => {
   const absolute = Math.abs(cents);
 
   return `${negative ? '-' : ''}${Math.floor(absolute / 100)}.${(absolute % 100)
-    .toString()
-    .padStart(2, '0')}`;
-};
-
-/** Baz puan -> backend'in bekledigi yuzde metni (3333 -> "33.33"). */
-export const basisPointsToApiPercentage = (basisPoints: number): string =>
-  centsToApiAmount(basisPoints);
-
-/** Baz puani ekranda gosterir: 3333 -> "%33,33". */
-export const formatBasisPoints = (basisPoints: number): string => {
-  const negative = basisPoints < 0;
-  const absolute = Math.abs(basisPoints);
-
-  return `${negative ? '-' : ''}%${Math.floor(absolute / 100)},${(absolute % 100)
     .toString()
     .padStart(2, '0')}`;
 };

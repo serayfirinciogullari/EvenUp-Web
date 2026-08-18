@@ -23,8 +23,9 @@ export type UserRole = 'admin' | 'user';
  *  bir kullanici A grubunda owner, B grubunda member olabilir. */
 export type GroupMemberRole = 'owner' | 'member';
 /** Harcamanin nasil bolundugu. Paylar `expense_shares`'te; bu kolon **yontemi**
- *  saklar — sonuc satirlarindan yontem geri okunamaz. */
-export type ExpenseSplitType = 'equal' | 'exact' | 'percentage';
+ *  saklar — sonuc satirlarindan yontem geri okunamaz. Arayuzdeki "Kaca Bol"
+ *  akisi burada `equal` olarak gorunur (docs/decisions/bolusum-basitlestirme.md). */
+export type ExpenseSplitType = 'equal' | 'exact';
 /** Odeme kaydinin durumu. `pending` **bakiyeyi etkilemez**; yalnizca alacaklinin
  *  onayladigi (`confirmed`) kayitlar netlestirmeye girer (bkz. docs/decisions/1.7.md). */
 export type SettlementStatus = 'pending' | 'confirmed' | 'rejected';

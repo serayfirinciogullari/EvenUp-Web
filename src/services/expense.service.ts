@@ -2,7 +2,7 @@ import expenseModel from '../models/expense.model';
 import groupModel from '../models/group.model';
 import messageModel from '../models/message.model';
 import ApiError from '../utils/ApiError';
-import { parseAmountToCents, parsePercentageToBasisPoints } from '../utils/money';
+import { parseAmountToCents } from '../utils/money';
 import {
   buildPagination,
   DEFAULT_PAGE_SIZE,
@@ -161,9 +161,12 @@ const validateParticipant = (
  * `splitDetails` govdesini `split.service`'in bekledigi girdiye cevirir.
  *
  * Beklenen bicimler:
- *   equal      -> { participants: [userId, ...] }   (verilmezse tum uyeler)
- *   exact      -> { shares: [{ userId, amount }] }
- *   percentage -> { shares: [{ userId, percentage }] }
+ *   equal -> { participants: [userId, ...] }   (verilmezse tum uyeler)
+ *   exact -> { shares: [{ userId, amount }] }
+ *
+ * Arayuzdeki "Kaca Bol" akisinin burada karsiligi yok: o da `equal` govdesi
+ * gonderir, yalnizca `participants` listesini farkli bir ekranda toplar
+ * (bkz. docs/decisions/bolusum-basitlestirme.md).
  */
 const buildSplitInput = (
   splitType: SplitType,
@@ -196,41 +199,14 @@ const buildSplitInput = (
     return { type: 'equal', participants };
   }
 
+  // Geriye tek tip kaldi: exact. `shares` govdesi yalnizca onun bicimi.
   const raw = details.shares;
 
   if (!Array.isArray(raw) || raw.length === 0) {
     fail({ splitDetails: 'shares bos olmayan bir dizi olmali' });
   }
 
-  const rows = raw as unknown[];
-
-  if (splitType === 'exact') {
-    const shares: ShareAllocation[] = rows.map((row, index) => {
-      const share = asRecord(row);
-      const userId = validateParticipant(
-        share.userId,
-        memberIds,
-        errors,
-        `splitDetails.shares[${index}].userId`
-      );
-
-      const cents = parseAmountToCents(share.amount);
-      if (cents === null) {
-        errors[`splitDetails.shares[${index}].amount`] =
-          'Pay tutari en fazla iki ondalikli, negatif olmayan bir sayi olmali';
-      }
-
-      return { userId, cents: cents ?? 0 };
-    });
-
-    if (Object.keys(errors).length > 0) {
-      fail(errors);
-    }
-
-    return { type: 'exact', shares };
-  }
-
-  const shares = rows.map((row, index) => {
+  const shares: ShareAllocation[] = (raw as unknown[]).map((row, index) => {
     const share = asRecord(row);
     const userId = validateParticipant(
       share.userId,
@@ -239,20 +215,20 @@ const buildSplitInput = (
       `splitDetails.shares[${index}].userId`
     );
 
-    const basisPoints = parsePercentageToBasisPoints(share.percentage);
-    if (basisPoints === null) {
-      errors[`splitDetails.shares[${index}].percentage`] =
-        'Yuzde 0 ile 100 arasinda, en fazla iki ondalikli olmali';
+    const cents = parseAmountToCents(share.amount);
+    if (cents === null) {
+      errors[`splitDetails.shares[${index}].amount`] =
+        'Pay tutari en fazla iki ondalikli, negatif olmayan bir sayi olmali';
     }
 
-    return { userId, basisPoints: basisPoints ?? 0 };
+    return { userId, cents: cents ?? 0 };
   });
 
   if (Object.keys(errors).length > 0) {
     fail(errors);
   }
 
-  return { type: 'percentage', shares };
+  return { type: 'exact', shares };
 };
 
 /**
