@@ -43,32 +43,59 @@ interface Person extends Point {
   name: string;
 }
 
-/** Ornek grup. Konumlar viewBox (0 0 560 320) icinde elle dengelendi. */
+/**
+ * Besgenin merkezi ve yaricapi. Koordinatlar **elle** dengelendiginde ust dugum
+ * bir turlu yerine oturmuyordu: kenarlar esit degildi, tepedeki kisi asagi
+ * kaymis gorunuyordu. Artik tek dogru kaynagi burasi, koseler hesaplaniyor.
+ */
+const CENTER: Point = { x: 220, y: 178 };
+const RADIUS = 124;
+
+/** Duzgun besgenin kosesi: 0 = tepe, sonrasi saat yonunde 72 derece araliklarla. */
+const cornerOf = (corner: number): Point => {
+  const angle = ((corner * 72 - 90) * Math.PI) / 180;
+  return { x: CENTER.x + RADIUS * Math.cos(angle), y: CENTER.y + RADIUS * Math.sin(angle) };
+};
+
+/**
+ * Ornek grup. Dizi sirasi = besgende saat yonu; boylece asagidaki DEBTS
+ * listesindeki ardisik ciftler ([0,1], [1,2], ...) tam olarak besgenin
+ * kenarlarina denk geliyor.
+ */
 const PEOPLE: readonly Person[] = [
-  { initials: 'D', name: 'Deniz', x: 82, y: 84 },
-  { initials: 'E', name: 'Ece', x: 282, y: 48 },
-  { initials: 'B', name: 'Baris', x: 478, y: 100 },
-  { initials: 'C', name: 'Can', x: 396, y: 252 },
-  { initials: 'M', name: 'Mert', x: 128, y: 240 },
+  { initials: 'D', name: 'Deniz', ...cornerOf(4) },
+  { initials: 'E', name: 'Ece', ...cornerOf(0) },
+  { initials: 'B', name: 'Baris', ...cornerOf(1) },
+  { initials: 'C', name: 'Can', ...cornerOf(2) },
+  { initials: 'M', name: 'Mert', ...cornerOf(3) },
 ];
 
-/** Netlestirmeden **once**: yedi ayri borc. Kim kime, tutar onemli degil. */
+/**
+ * Netlestirmeden **once**: yedi ayri borc. Bes tanesi besgenin kenari ve duz
+ * ciziliyor (egrilik 0) — kenarlarin esitligi ancak duz cizgide gozle
+ * gorulur. Kalan ikisi kosegen; onlar merkeze dogru hafifce buzuluyor ki
+ * birbirlerinin ve dugumlerin uzerinden gecmesinler.
+ */
 const DEBTS: readonly [number, number, number][] = [
   // [kaynak, hedef, egrilik]
-  [0, 1, 26],
-  [1, 2, 22],
-  [2, 3, 18],
-  [3, 4, 26],
-  [4, 0, 22],
-  [0, 2, -34],
-  [1, 3, 30],
+  [0, 1, 0],
+  [1, 2, 0],
+  [2, 3, 0],
+  [3, 4, 0],
+  [4, 0, 0],
+  [0, 2, 30],
+  [1, 3, 28],
 ];
 
-/** Netlestirmeden **sonra**: uc odeme. */
+/**
+ * Netlestirmeden **sonra**: uc odeme. Egrilikler besgenin **disina** dogru:
+ * kalin oklar boylece sonuk agin uzerine binmek yerine disariya aciliyor,
+ * tutar etiketleri de bos alana oturuyor.
+ */
 const TRANSFERS: readonly { from: number; to: number; amount: string; bend: number }[] = [
-  { from: 4, to: 1, amount: '240 ₺', bend: 34 },
-  { from: 3, to: 0, amount: '85 ₺', bend: -30 },
-  { from: 2, to: 1, amount: '60 ₺', bend: 20 },
+  { from: 4, to: 1, amount: '240 ₺', bend: -26 },
+  { from: 3, to: 0, amount: '85 ₺', bend: -26 },
+  { from: 2, to: 1, amount: '60 ₺', bend: 24 },
 ];
 
 const NODE_RADIUS = 24;
@@ -104,6 +131,14 @@ const midpointOf = (a: Point, b: Point, bend: number): Point => {
   return { x: 0.25 * a.x + 0.5 * control.x + 0.25 * b.x, y: 0.25 * a.y + 0.5 * control.y + 0.25 * b.y };
 };
 
+/**
+ * Isim etiketinin dugume gore dikey yeri. Hepsi **altta** oldugunda tepedeki
+ * kisinin adi, ona gelen iki kalin okun tam uzerine dusuyordu; etiket merkezden
+ * disari dogru kacinca hem okla hem kenarla cakisma bitiyor.
+ */
+const labelOffsetOf = (person: Person): number =>
+  person.y > CENTER.y ? NODE_RADIUS + 16 : -(NODE_RADIUS + 10);
+
 const LandingNetting = () => {
   const reducedMotion = usePrefersReducedMotion();
 
@@ -122,7 +157,7 @@ const LandingNetting = () => {
 
   return (
     <svg
-      viewBox="0 0 560 320"
+      viewBox="0 0 440 340"
       className="landing-netting h-auto w-full"
       role="img"
       aria-label="Bes kisi arasindaki yedi ayri borc, netlestirilerek uc odemeye iniyor"
@@ -142,30 +177,46 @@ const LandingNetting = () => {
       </defs>
 
       {/* ---------------------------------------------- once: dagilmis borclar */}
-      <motion.g {...debtGroup} fill="none" stroke="var(--color-ink-muted)" strokeWidth={1.5}>
-        {DEBTS.map(([from, to, bend], index) => (
-          <motion.path
-            key={`${from}-${to}`}
-            d={curveOf(PEOPLE[from], PEOPLE[to], bend)}
-            /*
-              Kesikli cizgi (`strokeDasharray`) YOK: `pathLength` animasyonu
-              zaten `stroke-dasharray`/`dashoffset` uzerinden calisiyor, elle
-              yazilan bir desen onu eziyor ve cizgi hic cizilmiyor.
-            */
-            /*
-              `pathLength` ile ciziliyor: cizgi dugumden dugume **buyuyor**,
-              yani "borc olustu" hareketi yonlu. Opaklikla belirmek ayni seyi
-              anlatmazdi.
-            */
-            initial={reducedMotion ? false : { pathLength: 0, opacity: 0 }}
-            animate={{ pathLength: 1, opacity: 0.75 }}
-            transition={
-              reducedMotion
-                ? { duration: 0 }
-                : { duration: 0.5, delay: 0.25 + index * 0.09, ease: 'easeOut' }
-            }
-          />
-        ))}
+      <motion.g
+        {...debtGroup}
+        fill="none"
+        stroke="var(--color-ink-muted)"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      >
+        {DEBTS.map(([from, to, bend], index) => {
+          /*
+            Cizgi dugum merkezinden degil, **cemberin disindan** basliyor:
+            merkezden cizildiginde uclar dairelerin altinda kayboluyor ve ag
+            dagilmis degil, kirli gorunuyordu.
+          */
+          const start = trim(PEOPLE[from], PEOPLE[to], NODE_RADIUS + 6);
+          const end = trim(PEOPLE[to], PEOPLE[from], NODE_RADIUS + 6);
+
+          return (
+            <motion.path
+              key={`${from}-${to}`}
+              d={curveOf(start, end, bend)}
+              /*
+                Kesikli cizgi (`strokeDasharray`) YOK: `pathLength` animasyonu
+                zaten `stroke-dasharray`/`dashoffset` uzerinden calisiyor, elle
+                yazilan bir desen onu eziyor ve cizgi hic cizilmiyor.
+              */
+              /*
+                `pathLength` ile ciziliyor: cizgi dugumden dugume **buyuyor**,
+                yani "borc olustu" hareketi yonlu. Opaklikla belirmek ayni seyi
+                anlatmazdi.
+              */
+              initial={reducedMotion ? false : { pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 0.75 }}
+              transition={
+                reducedMotion
+                  ? { duration: 0 }
+                  : { duration: 0.5, delay: 0.25 + index * 0.09, ease: 'easeOut' }
+              }
+            />
+          );
+        })}
       </motion.g>
 
       {/* ------------------------------------------------ sonra: uc net odeme */}
@@ -223,7 +274,7 @@ const LandingNetting = () => {
             </text>
             <text
               x={person.x}
-              y={person.y + NODE_RADIUS + 16}
+              y={person.y + labelOffsetOf(person)}
               textAnchor="middle"
               fontSize={12}
               fill="var(--color-ink-muted)"
