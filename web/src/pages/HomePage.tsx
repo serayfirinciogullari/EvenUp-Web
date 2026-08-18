@@ -3,12 +3,15 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
 import HomeFeatureCard from '@/components/HomeFeatureCard';
+import HomeNetStatusCard from '@/components/HomeNetStatusCard';
 import HomeStatCard from '@/components/HomeStatCard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSummaryData } from '../hooks/useAppData';
 import useAuth from '../hooks/useAuth';
-import { RECEIPT_TILE, buildHomeTiles, ctaHintOf } from '../utils/homeCards';
+import { RECEIPT_TILE, buildNetStatus, buildSpendTile, ctaHintOf } from '../utils/homeCards';
+
+import type { HomeNetStatus, HomeStatTile } from '../utils/homeCards';
 
 /**
  * Home — giris sonrasi ilk ekran.
@@ -46,7 +49,8 @@ const HomePage = () => {
   */
   const summary = useSummaryData();
 
-  const tiles = useMemo(() => buildHomeTiles(summary.data), [summary.data]);
+  const netStatus = useMemo(() => buildNetStatus(summary.data), [summary.data]);
+  const spendTile = useMemo(() => buildSpendTile(summary.data), [summary.data]);
 
   const pending = summary.data?.pendingSettlementsCount ?? 0;
 
@@ -96,7 +100,11 @@ const HomePage = () => {
         </div>
       )}
 
-      {summary.loading ? <HomeGridSkeleton /> : <HomeGrid tiles={tiles} />}
+      {summary.loading ? (
+        <HomeGridSkeleton />
+      ) : (
+        <HomeGrid netStatus={netStatus} spendTile={spendTile} />
+      )}
 
       <PrimaryCta hint={ctaHintOf(summary.data)} />
     </section>
@@ -108,10 +116,10 @@ const HomePage = () => {
  *
  * DUZEN
  * -----
- *   ust satir : genis karo (net bakiye) + dar karo (bu ay harcanan)
+ *   ust satir : genis karo (net durum) + dar karo (bu ay harcanan)
  *   alt satir : tam genislikte tanitim karosu
  *
- * Genislik farki `sm:grid-cols-3` + `col-span-2` ile: net bakiye sayfanin
+ * Genislik farki `sm:grid-cols-3` + `col-span-2` ile: net durum sayfanin
  * tasidigi **asil** sayi, dolayisiyla daha genis kutuyu o aliyor. Esit iki
  * kutu olsaydi ikisi de "esit onemde" okunurdu.
  *
@@ -120,17 +128,29 @@ const HomePage = () => {
  * Kisisel karolar yoksa (ozet okunamadi) izgara tek elemanli kaliyor: tanitim
  * karosu tam genislikte, tek basina. Yer tutan bos kutu birakilmiyor.
  */
-const HomeGrid = ({ tiles }: { tiles: ReturnType<typeof buildHomeTiles> }) => (
+const HomeGrid = ({
+  netStatus,
+  spendTile,
+}: {
+  netStatus: HomeNetStatus | null;
+  spendTile: HomeStatTile | null;
+}) => (
   <div
     className="home-grid grid gap-4 sm:grid-cols-3"
     role="region"
     aria-label="Ozetin ve oneriler"
   >
-    {tiles.map((tile) => (
-      <div key={tile.id} className={tile.surface === 'balance' ? 'sm:col-span-2' : ''}>
-        <HomeStatCard tile={tile} />
+    {netStatus && (
+      <div className="sm:col-span-2">
+        <HomeNetStatusCard status={netStatus} />
       </div>
-    ))}
+    )}
+
+    {spendTile && (
+      <div>
+        <HomeStatCard tile={spendTile} />
+      </div>
+    )}
 
     <div className="sm:col-span-3">
       <HomeFeatureCard tile={RECEIPT_TILE} />

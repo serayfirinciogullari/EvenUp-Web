@@ -1,7 +1,7 @@
-import { ReceiptText, ScanLine, Wallet } from 'lucide-react';
+import { ReceiptText, ScanLine } from 'lucide-react';
 
-import { formatCents, parseAmountToCents } from './money';
-import { labelOfTone, toneOfCents } from './balance';
+import { formatCents, formatCentsAbsolute, parseAmountToCents } from './money';
+import { toneOfCents } from './balance';
 
 import type { BalanceTone } from './balance';
 import type { HomeSummary } from '../types/models';
@@ -36,9 +36,28 @@ import type { LucideIcon } from 'lucide-react';
 /** Karo yuzeyi. Uc deger de ayni rose/ink ailesinden; bkz. index.css. */
 export type HomeTileSurface = 'balance' | 'spend';
 
+/**
+ * "Tum gruplarda net durumun" karosunun icerigi.
+ *
+ * Bilerek bir "bakiye" degil bir **durum**: kullaniciya cuzdanindaki para degil,
+ * borclu mu alacakli mi oldugu soyleniyor. Bu yuzden bir ikon/etiket cifti degil,
+ * yonlu bir rozet (`pillLabel`) + duz bir cumle (`sentence`) tasiyor.
+ * Gerekce: HomeNetStatusCard.
+ */
+export interface HomeNetStatus {
+  /** Yon: alacakli / borclu / dengede. Rakamin ve rozetin rengini belirler. */
+  tone: BalanceTone;
+  /** Buyuk, **isaretli** deger: "-220,00 ₺" / "45,00 ₺" / "0,00 ₺". */
+  value: string;
+  /** Yon rozeti metni: "Borcun var" / "Sana borclular" / "Hesabin kapali". */
+  pillLabel: string;
+  /** Altta duz cumle: kac grup, ne kadar, kac islem bekliyor. */
+  sentence: string;
+}
+
 export interface HomeStatTile {
   id: 'net-balance' | 'monthly-spend';
-  /** Karonun ustundeki kucuk etiket: "Toplam net bakiyen". */
+  /** Karonun ustundeki kucuk etiket: "Bu ay harcadigin". */
   label: string;
   /** Buyuk deger — zaten bicimlendirilmis metin. */
   value: string;
@@ -87,56 +106,102 @@ export const RECEIPT_TILE: HomeFeatureTile = {
   icon: ScanLine,
 };
 
+/** Yon rozetinin metni. Kisa ve chip gibi: "Sen borclusun" degil "Borcun var". */
+const PILL_LABEL: Record<BalanceTone, string> = {
+  credit: 'Sana borclular',
+  debt: 'Borcun var',
+  settled: 'Hesabin kapali',
+};
+
 /**
- * Ozet verisinden kisisel karolari uretir.
- *
- * Tutarlar kurusa cevrilip oyle bicimlendiriliyor (`utils/money`): backend
- * metin donuyor ve `Number(...)` cevrimi yalnizca gosterim aninda yapilmali.
- * Ayristirilamayan bir deger `null` doner — sessizce 0 saymak yerine karo
- * "hesaplanamadi" diyor, cunku 0,00 ₺ gecerli ve **cok farkli** bir cevap.
- *
- * `summary` yoksa (yukleniyor / hata) **bos dizi** doner: uydurma bir sifir
- * gostermektense kisisel karolari hic cizmemek dogru. Tanitim karosu ve CTA o
- * durumda da ayakta kaliyor, yani sayfa isini yapmaya devam ediyor.
+ * Karonun altindaki duz cumle: "3 grupta toplam 220,00 ₺ borcun var; 3 islem
+ * seni bekliyor." Yonu (borc/alacak) ve baglami (kac grup, kac bekleyen) tek
+ * cumlede topluyor; renk tek basina birakilmasin diye her zaman yazili.
  */
-export const buildHomeTiles = (summary: HomeSummary | null): HomeStatTile[] => {
-  if (!summary) {
-    return [];
+const netSentence = (
+  tone: BalanceTone,
+  groups: number,
+  absAmount: string,
+  pending: number
+): string => {
+  // Bekleyen odemeler ust bandaki uyaridan farkli bir kelimeyle ("islem"):
+  // ayni sayiyi iki yerde birebir tekrarlamis gibi okunmasin.
+  const pendingClause = pending > 0 ? `; ${pending} islem seni bekliyor.` : '.';
+
+  if (tone === 'settled') {
+    if (groups === 0) {
+      return 'Henuz bir gruba katilmadin.';
+    }
+    return `Butun gruplarda hesabin kapali${pendingClause}`;
   }
 
-  const balanceCents = parseAmountToCents(summary.totalNetBalance);
-  const spendCents = parseAmountToCents(summary.monthlySpend);
+  const direction = tone === 'debt' ? 'borcun var' : 'alacagin var';
+  return `${groups} grupta toplam ${absAmount} ${direction}${pendingClause}`;
+};
+
+/**
+ * "Tum gruplarda net durumun" karosunun icerigi.
+ *
+ * `summary` yoksa (yukleniyor / hata) `null` doner: uydurma bir sifir
+ * gostermektense karoyu hic cizmemek dogru — 0,00 ₺ gecerli ve **cok farkli**
+ * bir cevap. Tutar ayristirilamazsa da (beklenmeyen bicim) karo "hesaplanamadi"
+ * diyor, sessizce 0 saymiyor.
+ */
+export const buildNetStatus = (summary: HomeSummary | null): HomeNetStatus | null => {
+  if (!summary) {
+    return null;
+  }
+
+  const cents = parseAmountToCents(summary.totalNetBalance);
+
+  if (cents === null) {
+    return {
+      tone: 'settled',
+      value: 'Hesaplanamadi',
+      pillLabel: 'Ozet okunamadi',
+      sentence: 'Net durumun su an okunamadi.',
+    };
+  }
 
   // Isaret yonu belirler, renk yalnizca onu tekrarlar (bkz. utils/balance.ts).
-  const tone = balanceCents === null ? 'neutral' : toneOfCents(balanceCents);
+  const tone = toneOfCents(cents);
 
-  return [
-    {
-      id: 'net-balance',
-      label: 'Toplam net bakiyen',
-      value: balanceCents === null ? 'Hesaplanamadi' : formatCents(balanceCents),
-      // Ayni etiketler grup kartlarinda da kullaniliyor; "tum gruplar" eki
-      // burasinin tek bir grup degil toplam oldugunu soyluyor.
-      caption:
-        balanceCents === null
-          ? 'Ozet su an okunamadi'
-          : `${labelOfTone(toneOfCents(balanceCents))} · tum gruplar`,
+  return {
+    tone,
+    value: formatCents(cents),
+    pillLabel: PILL_LABEL[tone],
+    sentence: netSentence(
       tone,
-      surface: 'balance',
-      icon: Wallet,
-    },
-    {
-      id: 'monthly-spend',
-      label: 'Bu ay harcadigin',
-      value: spendCents === null ? 'Hesaplanamadi' : formatCents(spendCents),
-      caption: 'Senin odedigin harcamalar',
-      // Harcama bir borc degil: kirmizi gostermek "kotu bir sey yaptin"
-      // demek olurdu. Notr kaliyor.
-      tone: 'neutral',
-      surface: 'spend',
-      icon: ReceiptText,
-    },
-  ];
+      summary.activeGroupsCount,
+      formatCentsAbsolute(cents),
+      summary.pendingSettlementsCount
+    ),
+  };
+};
+
+/**
+ * "Bu ay harcadigin" karosu.
+ *
+ * Harcama bir borc degil: sinyal rengi tasimiyor (`neutral`), kirmizi gostermek
+ * "kotu bir sey yaptin" demek olurdu. `summary` yoksa `null` — net durum
+ * karosuyla ayni gerekce, uydurma sifir gostermiyoruz.
+ */
+export const buildSpendTile = (summary: HomeSummary | null): HomeStatTile | null => {
+  if (!summary) {
+    return null;
+  }
+
+  const spendCents = parseAmountToCents(summary.monthlySpend);
+
+  return {
+    id: 'monthly-spend',
+    label: 'Bu ay harcadigin',
+    value: spendCents === null ? 'Hesaplanamadi' : formatCents(spendCents),
+    caption: 'Senin odedigin harcamalar',
+    tone: 'neutral',
+    surface: 'spend',
+    icon: ReceiptText,
+  };
 };
 
 /**

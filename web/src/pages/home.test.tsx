@@ -141,7 +141,7 @@ describe('Home — izgara karolari', () => {
 
     const tiles = within(grid());
 
-    expect(tiles.getByText('Toplam net bakiyen')).toBeInTheDocument();
+    expect(tiles.getByText('Tum gruplarda net durumun')).toBeInTheDocument();
     expect(tiles.getByText('Bu ay harcadigin')).toBeInTheDocument();
     expect(tiles.getByText('Fisi cek, AI duzenlesin')).toBeInTheDocument();
 
@@ -149,7 +149,7 @@ describe('Home — izgara karolari', () => {
     expect(tiles.getAllByRole('article')).toHaveLength(2);
   });
 
-  it('negatif bakiye eksi isaretiyle ve borclu etiketiyle gosterilir', async () => {
+  it('negatif bakiye eksi isaretiyle, yon rozetiyle ve cumleyle gosterilir', async () => {
     mockedSummary.getHomeSummary.mockResolvedValue(summaryOf({ totalNetBalance: '-120.50' }));
 
     renderHome();
@@ -157,9 +157,35 @@ describe('Home — izgara karolari', () => {
 
     const tiles = within(grid());
 
+    // Buyuk sayi isaretli; cumle borcu absolute tutarla, duz dille anlatiyor.
     expect(tiles.getByText('-120,50 ₺')).toBeInTheDocument();
-    // Renk bilgiyi tasimiyor: yon her zaman yazili (bkz. utils/balance.ts).
-    expect(tiles.getByText(/Sen borclusun/)).toBeInTheDocument();
+    // Renk bilgiyi tasimiyor: yon hem rozette hem cumlede YAZILI.
+    expect(tiles.getByText('Borcun var')).toBeInTheDocument();
+    expect(tiles.getByText('3 grupta toplam 120,50 ₺ borcun var.')).toBeInTheDocument();
+  });
+
+  it('pozitif bakiyede alacak rozeti ve cumlesi cikar', async () => {
+    // Varsayilan ozet: 230,00 ₺ alacak, 3 grup, bekleyen yok.
+    renderHome();
+    await waitForPage();
+
+    const tiles = within(grid());
+
+    expect(tiles.getByText('Sana borclular')).toBeInTheDocument();
+    expect(tiles.getByText('3 grupta toplam 230,00 ₺ alacagin var.')).toBeInTheDocument();
+  });
+
+  it('bekleyen odeme net durum cumlesine de yansir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue(
+      summaryOf({ totalNetBalance: '-120.50', pendingSettlementsCount: 2 })
+    );
+
+    renderHome();
+    await waitForPage();
+
+    expect(
+      within(grid()).getByText('3 grupta toplam 120,50 ₺ borcun var; 2 islem seni bekliyor.')
+    ).toBeInTheDocument();
   });
 
   it('henuz yazilmamis ozellik Yakinda rozeti tasir ve bildirim gosterir', async () => {
@@ -300,7 +326,7 @@ describe('Home — ozet okunamadiginda', () => {
     await waitForPage();
     await screen.findByRole('alert');
 
-    expect(within(grid()).queryByText('Toplam net bakiyen')).not.toBeInTheDocument();
+    expect(within(grid()).queryByText('Tum gruplarda net durumun')).not.toBeInTheDocument();
     expect(within(grid()).queryAllByRole('article')).toHaveLength(0);
   });
 

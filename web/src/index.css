@@ -634,6 +634,39 @@
 }
 
 /*
+  NET DURUM ROZETI — borc/alacak YONU
+  -----------------------------------
+  "Toplam net bakiyen" karosu bir cuzdan bakiyesi gibi okunuyordu; artik yonlu
+  bir durum: rakamin yaninda "Borcun var" / "Sana borclular" rozeti. Rozet
+  metni yonu zaten YAZIYOR — renk yalnizca hizlandiriyor (renk korlugunde de
+  anlamli, bkz. utils/balance.ts).
+
+  RENK MARKA PALETINDEN AYRI (1.6/2.3)
+  Rozet zemini sinyal ailesinden (rose degil): borc/alacak ayrimi markayla
+  karismamali. Karo zemini koyu oldugu icin rozet **acik** sinyal tonuyla
+  dolduruluyor, uzerine koyu ink metin.
+
+  KONTRAST (WCAG 2.1 AA — olculdu)
+    ink #2A1418 / pozitif #7EDCB4 ........ 11.9:1 ✓
+    ink #2A1418 / negatif #E4847A ......... 7.8:1 ✓
+*/
+.home-net__pill--credit {
+  background: var(--home-tile-positive);
+  color: #2a1418;
+}
+
+.home-net__pill--debt {
+  background: var(--home-tile-negative);
+  color: #2a1418;
+}
+
+/* Dengede: notr, sinyal rengi yok — "iyi/kotu" imasi olmasin. */
+.home-net__pill--settled {
+  background: rgb(255 255 255 / 0.12);
+  color: var(--home-tile-ink);
+}
+
+/*
   Birincil CTA. Ayni aile, tek aydinlik yuzey — sayfadaki en parlak sey eylem
   olsun diye.
 
