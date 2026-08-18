@@ -3,7 +3,7 @@
  *
  * NEDEN GEREKLI
  * -------------
- * "Bakiyeler" sekmesinin isi, netlestirme ciktisini (`from_user`, `to_user`,
+ * "Odemeler" sekmesinin isi, netlestirme ciktisini (`from_user`, `to_user`,
  * `amount`) **cumleye** cevirmek. Sablon tek: "Sen X'e N ₺ borclusun". Ekin
  * elle "'e" yazilmasi Turkce'de yanlis sonuc verir:
  *

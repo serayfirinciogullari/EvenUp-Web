@@ -33,7 +33,7 @@ import type { BalanceResult, GroupDetail, SettlementListResult } from '../types/
  * ------------------------------------
  * Dort istek de (grup, harcamalar, bakiye, odemeler) bu bilesende. Sekmeler
  * yalnizca gorunum. Gerekce: **harcama eklemek bakiyeyi degistirir.** Veriyi
- * sekmeler tutsaydi, "Harcamalar" sekmesindeki bir ekleme "Bakiyeler"
+ * sekmeler tutsaydi, "Harcamalar" sekmesindeki bir ekleme "Odemeler"
  * sekmesindeki veriyi bayat birakirdi — ustelik o sekme o an ekranda olmadigi
  * icin fark edilmeden. Sekme icerigi zaten aciklip kapandiginda unmount olur;
  * o durumda veri de silinir ve her gecis yeniden istek demek olurdu.
@@ -180,7 +180,7 @@ const GroupDetailPage = () => {
         <TabsList>
           <TabsTrigger value="expenses">Harcamalar</TabsTrigger>
           <TabsTrigger value="balances">
-            Bakiyeler
+            Odemeler
             {/* Aksiyon bekleyen kayit varsa sekmeye sayi dusuyor: kullanici
                 sekmeyi acmadan da onay bekledigini gorsun. */}
             {pendingForMe(settlements.data, currentUserId) > 0 && (

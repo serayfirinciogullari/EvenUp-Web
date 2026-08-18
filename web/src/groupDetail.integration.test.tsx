@@ -268,7 +268,7 @@ describe('KRITIK akis: harcama -> bakiye -> odeme -> onay -> sifir', () => {
     });
 
     // Ekranda da guncel: Deniz artik Ece'ye borclu.
-    selectTab(/Bakiyeler/);
+    selectTab(/Odemeler/);
     expect(await screen.findByText("Sen Ece Demir'e 60,00 ₺ borclusun")).toBeInTheDocument();
 
     /* ------------------------------------------------ 4. arayuzden "Odedim" */

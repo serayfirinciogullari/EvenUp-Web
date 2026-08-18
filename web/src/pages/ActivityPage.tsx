@@ -77,7 +77,7 @@ const ActivityPage = () => {
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
               {pending > 0
-                ? 'Onay bekleyen odemeler ilgili grubun Bakiyeler sekmesinde duruyor.'
+                ? 'Onay bekleyen odemeler ilgili grubun Odemeler sekmesinde duruyor.'
                 : 'Onayini bekleyen bir odeme yok. Yeni bir hesap acildiginda burada gorunur.'}
             </p>
           </div>

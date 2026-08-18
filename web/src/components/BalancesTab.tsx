@@ -16,7 +16,7 @@ import type { BalanceResult, SettlementListResult, SettlementView } from '../typ
 import type { SettleTarget } from './SettleUpModal';
 
 /**
- * "Bakiyeler" sekmesi — **glass** yuzey (ozet/durum).
+ * "Odemeler" sekmesi — **glass** yuzey (ozet/durum).
  *
  * Ekranin isi netlestirme ciktisini **cumleye** cevirmek. `from_user`,
  * `to_user`, `amount` ucluleri dogru ama okunmaz; kullanicinin sordugu soru
@@ -347,7 +347,7 @@ const MemberBalances = ({
 );
 
 const BalancesSkeleton = () => (
-  <div className="flex flex-col gap-3" aria-busy="true" aria-label="Bakiyeler yukleniyor">
+  <div className="flex flex-col gap-3" aria-busy="true" aria-label="Odemeler yukleniyor">
     <div className="card-glass flex flex-col gap-2 p-5">
       <Skeleton className="skeleton-line h-5 w-40" />
       <Skeleton className="skeleton-line h-10 w-full" />

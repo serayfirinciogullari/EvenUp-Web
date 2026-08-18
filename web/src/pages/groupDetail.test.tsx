@@ -276,7 +276,7 @@ const selectTab = (name: RegExp | string) => {
 
 const openBalances = async () => {
   await waitForPage();
-  selectTab(/Bakiyeler/);
+  selectTab(/Odemeler/);
   return screen.findByText('Kim kime odeyecek');
 };
 
@@ -318,16 +318,16 @@ describe('sekmeli gorunum', () => {
     await waitForPage();
 
     expect(screen.getByRole('tab', { name: 'Harcamalar' })).toHaveAttribute('data-state', 'active');
-    expect(screen.getByRole('tab', { name: /Bakiyeler/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Odemeler/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Kisiler' })).toBeInTheDocument();
     expect(screen.getByText('Market alisverisi')).toBeInTheDocument();
   });
 
-  it('Bakiyeler sekmesine gecilebilir', async () => {
+  it('Odemeler sekmesine gecilebilir', async () => {
     renderDetail();
     await openBalances();
 
-    expect(screen.getByRole('tab', { name: /Bakiyeler/ })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByRole('tab', { name: /Odemeler/ })).toHaveAttribute('data-state', 'active');
   });
 
   it('onay bekleyen kayit sayisi sekmede rozet olarak gorunur', async () => {
@@ -337,7 +337,7 @@ describe('sekmeli gorunum', () => {
     await waitForPage();
 
     // Ali -> Deniz bekleyen odeme: onaylamasi gereken kisi Deniz.
-    const tab = await screen.findByRole('tab', { name: /Bakiyeler/ });
+    const tab = await screen.findByRole('tab', { name: /Odemeler/ });
     await waitFor(() => expect(within(tab).getByText('1')).toBeInTheDocument());
   });
 
@@ -1039,7 +1039,7 @@ describe('bakiyeler sekmesi', () => {
 
     renderDetail();
     await waitForPage();
-    selectTab(/Bakiyeler/);
+    selectTab(/Odemeler/);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Bakiye hesaplanamadi');
   });
@@ -1216,7 +1216,7 @@ describe('KRITIK akis: harcama -> bakiye -> odeme -> onay', () => {
     await waitFor(() => expect(mockedGroups.getGroupBalances).toHaveBeenCalledTimes(2));
 
     // Bakiye ekranda da guncellendi.
-    selectTab(/Bakiyeler/);
+    selectTab(/Odemeler/);
     expect(await screen.findByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
   });
 

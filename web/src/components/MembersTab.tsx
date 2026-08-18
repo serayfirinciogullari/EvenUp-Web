@@ -22,7 +22,7 @@ import type { GroupMember } from '../types/models';
  * Satirda **ikisi birden** var: buyuk olan gorunen ad (takma isim varsa o),
  * altinda gercek ad. Yalnizca takma ismi gostermek, kullanicinin bir sure
  * sonra "Kirali kimdi?" diye sormasina yol acardi — ozellikle grup buyudukce.
- * Bakiyeler ve ozet ekranlarinda yer dar oldugu icin orada yalnizca gorunen ad
+ * Odemeler ve ozet ekranlarinda yer dar oldugu icin orada yalnizca gorunen ad
  * var; burasi ikisinin birlikte durdugu tek yer, yani sozlugun kendisi.
  *
  * NEDEN SATIR ICI DUZENLEME, MODAL DEGIL
