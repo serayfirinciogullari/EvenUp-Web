@@ -22,6 +22,7 @@ router.post('/', asyncHandler(groupController.create));
 router.get('/', asyncHandler(groupController.list));
 
 router.get('/:id', asyncHandler(groupController.detail));
+router.put('/:id', asyncHandler(groupController.update));
 router.delete('/:id', asyncHandler(groupController.remove));
 
 router.post('/:id/invite', asyncHandler(groupController.invite));

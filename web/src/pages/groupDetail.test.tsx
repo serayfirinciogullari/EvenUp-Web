@@ -42,8 +42,12 @@ vi.mock('../api/groups', () => ({
     createGroup: vi.fn(),
     getGroup: vi.fn(),
     createInvite: vi.fn(),
+    joinGroup: vi.fn(),
     getGroupBalances: vi.fn(),
     setMemberNickname: vi.fn(),
+    updateGroup: vi.fn(),
+    deleteGroup: vi.fn(),
+    removeMember: vi.fn(),
   },
 }));
 
@@ -356,7 +360,8 @@ describe('kisiler sekmesi — takma isimler', () => {
   const openMembers = async () => {
     await waitForPage();
     selectTab('Kisiler');
-    return screen.findByText('ece@evenup.dev');
+    // E-posta yerine turetilmis @handle gosteriliyor (bkz. MembersTab.handleOf).
+    return screen.findByText('@ece');
   };
 
   /*
@@ -369,7 +374,20 @@ describe('kisiler sekmesi — takma isimler', () => {
   const rowOf = (name: string) =>
     within(panel()).getByText(name).closest('li') as HTMLElement;
 
-  it('uyeler adi, e-postasi ve rolu ile listelenir', async () => {
+  /**
+   * Satirdaki "..." menusunu acar. Radix menusu `pointerdown` ile aciliyor,
+   * `click` tek basina yetmiyor (bkz. Sidebar — hesap menusu testleri).
+   * Menu icerigi bir Portal'da rendered olur, satirin **disinda**; bu yuzden
+   * acildiktan sonraki sorgular `within(rowOf(...))` degil `screen` uzerinden.
+   */
+  const openRowMenu = (displayName: string) => {
+    fireEvent.pointerDown(
+      within(rowOf(displayName)).getByRole('button', { name: `${displayName} icin islemler` }),
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false })
+    );
+  };
+
+  it('uyeler adi, handle i ve rolu ile listelenir', async () => {
     renderDetail();
     await openMembers();
 
@@ -378,6 +396,8 @@ describe('kisiler sekmesi — takma isimler', () => {
     expect(list.getByText('Deniz')).toBeInTheDocument();
     expect(list.getByText('Ece')).toBeInTheDocument();
     expect(list.getByText('Ali')).toBeInTheDocument();
+    expect(list.getByText('@deniz')).toBeInTheDocument();
+    expect(list.getByText('@ali')).toBeInTheDocument();
     expect(within(rowOf('Deniz')).getByText('Sahip')).toBeInTheDocument();
   });
 
@@ -388,12 +408,14 @@ describe('kisiler sekmesi — takma isimler', () => {
     expect(within(rowOf('Deniz')).getByText('Sen')).toBeInTheDocument();
   });
 
-  it('takma ismi olmayan uyede "Takma isim ver" yazar', async () => {
+  it('takma ismi olmayan uyede menude "Takma isim ver" yazar', async () => {
     renderDetail();
     await openMembers();
 
+    openRowMenu('Ece');
+
     expect(
-      within(rowOf('Ece')).getByRole('button', { name: 'Takma isim ver' })
+      await screen.findByRole('menuitem', { name: 'Takma isim ver' })
     ).toBeInTheDocument();
   });
 
@@ -406,7 +428,8 @@ describe('kisiler sekmesi — takma isimler', () => {
     renderDetail();
     await openMembers();
 
-    fireEvent.click(within(rowOf('Ece')).getByRole('button', { name: 'Takma isim ver' }));
+    openRowMenu('Ece');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Takma isim ver' }));
 
     fireEvent.change(screen.getByLabelText('Ece icin takma isim'), {
       target: { value: 'Ev Arkadasi' },
@@ -431,7 +454,8 @@ describe('kisiler sekmesi — takma isimler', () => {
     const detailCallsBefore = mockedGroups.getGroup.mock.calls.length;
     const balanceCallsBefore = mockedGroups.getGroupBalances.mock.calls.length;
 
-    fireEvent.click(within(rowOf('Ece')).getByRole('button', { name: 'Takma isim ver' }));
+    openRowMenu('Ece');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Takma isim ver' }));
     fireEvent.change(screen.getByLabelText('Ece icin takma isim'), {
       target: { value: 'Ev Arkadasi' },
     });
@@ -460,10 +484,12 @@ describe('kisiler sekmesi — takma isimler', () => {
 
     const row = (await screen.findByText('Ev Arkadasi')).closest('li') as HTMLElement;
 
-    // Gorunen ad takma isim, ama gercek ad ve e-posta yaninda.
-    expect(within(row).getByText(/Ece · ece@evenup\.dev/)).toBeInTheDocument();
+    // Gorunen ad takma isim, ama gercek ad ve @handle yaninda.
+    expect(within(row).getByText(/Ece · @ece/)).toBeInTheDocument();
+
+    openRowMenu('Ev Arkadasi');
     expect(
-      within(row).getByRole('button', { name: 'Takma ismi degistir' })
+      await screen.findByRole('menuitem', { name: 'Takma adi degistir' })
     ).toBeInTheDocument();
   });
 
@@ -481,7 +507,8 @@ describe('kisiler sekmesi — takma isimler', () => {
     selectTab('Kisiler');
     await screen.findByText('Ev Arkadasi');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Takma ismi degistir' }));
+    openRowMenu('Ev Arkadasi');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Takma adi degistir' }));
     fireEvent.change(screen.getByLabelText('Ece icin takma isim'), { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Takma ismi kaydet' }));
 
@@ -494,7 +521,8 @@ describe('kisiler sekmesi — takma isimler', () => {
     renderDetail();
     await openMembers();
 
-    fireEvent.click(within(rowOf('Ece')).getByRole('button', { name: 'Takma isim ver' }));
+    openRowMenu('Ece');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Takma isim ver' }));
     fireEvent.change(screen.getByLabelText('Ece icin takma isim'), {
       target: { value: 'Yazildi ama vazgecildi' },
     });
@@ -502,6 +530,52 @@ describe('kisiler sekmesi — takma isimler', () => {
 
     expect(mockedGroups.setMemberNickname).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Ece icin takma isim')).not.toBeInTheDocument();
+  });
+
+  /* ---------------------------------------------------- uyeyi gruptan cikar */
+
+  it('owner olmayan hedefte "Gruptan cikar" menude YOK (kendi satirinda)', async () => {
+    renderDetail();
+    await openMembers();
+
+    // Deniz (owner) kendi satirinda kendini cikaramaz — backend zaten
+    // reddeder (group.service.removeMember), buton hic gosterilmiyor.
+    openRowMenu('Deniz');
+
+    expect(
+      await screen.findByRole('menuitem', { name: 'Takma isim ver' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Gruptan cikar' })).not.toBeInTheDocument();
+  });
+
+  it('owner baska bir uyeyi gruptan cikarabilir', async () => {
+    mockedGroups.removeMember.mockResolvedValue({ removed_user_id: ECE_ID });
+
+    renderDetail();
+    await openMembers();
+
+    openRowMenu('Ece');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Gruptan cikar' }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cikar' }));
+
+    await waitFor(() =>
+      expect(mockedGroups.removeMember).toHaveBeenCalledWith(GROUP_ID, ECE_ID)
+    );
+  });
+
+  it('cikarma onaylanmadan istek atilmaz', async () => {
+    renderDetail();
+    await openMembers();
+
+    openRowMenu('Ece');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Gruptan cikar' }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Vazgec' }));
+
+    expect(mockedGroups.removeMember).not.toHaveBeenCalled();
   });
 
   it('takma isim bakiye satirlarinda da gorunur', async () => {

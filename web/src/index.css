@@ -525,6 +525,23 @@
 }
 
 /*
+  UYE SATIRI BAKIYE RENGI — metin, zemin degil.
+  --------------------------------------------
+  "Kisiler" sekmesindeki her satirda kucuk bir bakiye etiketi var. `.balance--*`
+  ailesi (yukarida) zemin + sol serit boyuyor — bir satirin tamamini renklendirmek
+  burada asiri olurdu, satirin asil bilgisi kisi, bakiye degil. Bu yuzden ayri
+  ve dar bir aile: yalnizca **rakamin metin rengini** degistiriyor, geri kalani
+  `.balance--*` ile ayni sinyal degerlerinden besleniyor.
+*/
+.balance-text--credit {
+  color: var(--color-signal-positive);
+}
+
+.balance-text--debt {
+  color: var(--color-signal-negative);
+}
+
+/*
   ============================================================================
   HOME IZGARASI — TEK RENK AILESI
   ============================================================================

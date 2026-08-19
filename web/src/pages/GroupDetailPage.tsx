@@ -1,11 +1,12 @@
-import { ArrowLeft, Plus, Users } from 'lucide-react';
+import { ArrowLeft, Plus, Settings, Users } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import AddExpenseModal from '@/components/AddExpenseModal';
 import BalancesTab from '@/components/BalancesTab';
 import ExpensesTab from '@/components/ExpensesTab';
 import GlassCard from '@/components/GlassCard';
+import GroupSettingsModal from '@/components/GroupSettingsModal';
 import MembersTab from '@/components/MembersTab';
 import SettleUpModal from '@/components/SettleUpModal';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import groupsApi from '../api/groups';
 import settlementsApi from '../api/settlements';
+import { useGroupsData } from '../hooks/useAppData';
 import useAsync from '../hooks/useAsync';
 import useAuth from '../hooks/useAuth';
 import useExpenseFeed from '../hooks/useExpenseFeed';
@@ -45,8 +47,16 @@ import type { BalanceResult, GroupDetail, SettlementListResult } from '../types/
  */
 const GroupDetailPage = () => {
   const { id = '' } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const currentUserId = user?.id ?? '';
+
+  /*
+    Grup listesi paylasilan durumda (`AppDataProvider`): sidebar'daki grup
+    kisayollari da onu okuyor. Grup silinince/yeniden adlandirilinca tek bir
+    `reload` ikisini de tazeler — ikinci bir istek ya da olay gerekmez.
+  */
+  const groups = useGroupsData();
 
   const fetchDetail = useCallback(() => groupsApi.getGroup(id), [id]);
   const detail = useAsync<GroupDetail>(fetchDetail, 'Grup bilgileri yuklenemedi');
@@ -72,6 +82,7 @@ const GroupDetailPage = () => {
 
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [settleTarget, setSettleTarget] = useState<SettleTarget | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const members = useMemo(() => detail.data?.members ?? [], [detail.data]);
 
@@ -137,7 +148,7 @@ const GroupDetailPage = () => {
     );
   }
 
-  const { group } = detail.data;
+  const { group, role } = detail.data;
   const myBalance = balances.data ? viewForUser(balances.data.balances, currentUserId) : null;
 
   return (
@@ -168,7 +179,20 @@ const GroupDetailPage = () => {
           </p>
         )}
 
-        <div className="flex items-start">
+        <div className="flex items-start gap-2">
+          {/* Ayarlar yalnizca owner'a gorunur — uye acsa backend zaten 403
+              dondurur, butonu gizlemek calismayacak bir aksiyonu gostermemek. */}
+          {role === 'owner' && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Grup ayarlari"
+            >
+              <Settings className="size-4" aria-hidden />
+            </Button>
+          )}
           <Button onClick={() => setExpenseModalOpen(true)}>
             <Plus className="size-4" aria-hidden />
             Harcama Ekle
@@ -217,8 +241,11 @@ const GroupDetailPage = () => {
         <TabsContent value="members">
           <MembersTab
             groupId={id}
+            groupName={group.name}
             members={members}
             currentUserId={currentUserId}
+            viewerRole={role}
+            balances={balances.data?.balances ?? []}
             /*
               Takma isim degisince **grup detayi** tazeleniyor (`refreshAll`
               degil): uye listesi orada. Bakiye de tazeleniyor cunku backend
@@ -226,6 +253,15 @@ const GroupDetailPage = () => {
               ayri istek, ikisi de eskiyor.
             */
             onNicknameChanged={() => {
+              detail.reload();
+              balances.reload();
+            }}
+            /*
+              Uye cikarilinca hem uye listesi (grup detayi) hem bakiye
+              degisiyor: cikan kisinin gecmis harcamalari duruyor ama artik
+              net hesaba yeni bir sekilde katkida bulunmuyor olabilir.
+            */
+            onMemberRemoved={() => {
               detail.reload();
               balances.reload();
             }}
@@ -253,6 +289,22 @@ const GroupDetailPage = () => {
         target={settleTarget}
         onCreated={refreshAll}
       />
+
+      {role === 'owner' && (
+        <GroupSettingsModal
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          group={group}
+          onUpdated={() => {
+            detail.reload();
+            groups.reload();
+          }}
+          onDeleted={() => {
+            groups.reload();
+            navigate('/groups');
+          }}
+        />
+      )}
     </section>
   );
 };

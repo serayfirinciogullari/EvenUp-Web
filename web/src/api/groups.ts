@@ -20,6 +20,13 @@ export interface CreateGroupInput {
   description?: string;
 }
 
+/** `PUT /groups/:id` govdesi — kismi: yalnizca gonderilen alan degisir
+ *  (bkz. src/services/group.service.ts -> updateGroup). */
+export interface UpdateGroupInput {
+  name?: string;
+  description?: string;
+}
+
 /** `GET /groups` — yalnizca kullanicinin uyesi oldugu gruplar; filtre sorguda. */
 export const listGroups = async (): Promise<GroupSummary[]> => {
   const { data } = await api.get<{ groups: GroupSummary[] }>('/groups');
@@ -103,6 +110,41 @@ export const setMemberNickname = async (
   return data;
 };
 
+/**
+ * `PUT /groups/:id` — grup adini/aciklamasini gunceller. Yalnizca owner
+ * cagirabilir (uye 403 alir). Kismi: yalnizca gonderilen alan degisir.
+ */
+export const updateGroup = async (
+  groupId: string,
+  input: UpdateGroupInput
+): Promise<Group> => {
+  const { data } = await api.put<{ group: Group }>(`/groups/${groupId}`, input);
+  return data.group;
+};
+
+/**
+ * `DELETE /groups/:id` — grubu siler (soft delete). Yalnizca owner cagirabilir.
+ * Gerceklestiren tarafta geri donus yolu yok: onay diyalogu cagiran ekranin isi.
+ */
+export const deleteGroup = async (groupId: string): Promise<Group> => {
+  const { data } = await api.delete<{ group: Group }>(`/groups/${groupId}`);
+  return data.group;
+};
+
+/**
+ * `DELETE /groups/:id/members/:userId` — uyeyi gruptan cikarir. Yalnizca owner
+ * cagirabilir; owner kendini cikaramaz (backend 400 doner, bkz. group.service).
+ */
+export const removeMember = async (
+  groupId: string,
+  userId: string
+): Promise<{ removed_user_id: string }> => {
+  const { data } = await api.delete<{ removed_user_id: string }>(
+    `/groups/${groupId}/members/${userId}`
+  );
+  return data;
+};
+
 export default {
   listGroups,
   createGroup,
@@ -111,4 +153,7 @@ export default {
   joinGroup,
   getGroupBalances,
   setMemberNickname,
+  updateGroup,
+  deleteGroup,
+  removeMember,
 };

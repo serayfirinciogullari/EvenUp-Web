@@ -172,6 +172,24 @@ const createWithOwner = async (input: CreateGroupInput): Promise<GroupRow> =>
     return group;
   });
 
+/**
+ * Grubun adini/aciklamasini gunceller. Yalnizca **yasayan** grubu (deleted_at
+ * NULL) hedefler; silinmis bir grup icin `undefined` doner (cagiran taraf onu
+ * ayni "erisim yok" cevabina cevirir). Yalnizca gonderilen alanlar degisir.
+ */
+const updateDetails = async (
+  groupId: string,
+  patch: { name?: string; description?: string | null }
+): Promise<GroupRow | undefined> => {
+  const [updated] = await db('groups')
+    .where({ id: groupId })
+    .whereNull('deleted_at')
+    .update(patch)
+    .returning('*');
+
+  return updated;
+};
+
 /** Uyelik satirini siler. Donen sayi 0 ise kullanici zaten uye degildi. */
 const removeMember = async (groupId: string, userId: string): Promise<number> =>
   db('group_members').where({ group_id: groupId, user_id: userId }).del();
@@ -351,6 +369,7 @@ export default {
   listMembers,
   listMemberIds,
   createWithOwner,
+  updateDetails,
   removeMember,
   softDelete,
   upsertNickname,

@@ -44,6 +44,19 @@ const LABELS: Record<BalanceTone, string> = {
   settled: 'Hesap kapali',
 };
 
+/**
+ * Ucuncu sahis, tek kelimelik karsiligi: "Kisiler" sekmesindeki satirlar
+ * **herhangi bir uyenin** durumunu gosteriyor, "sen" ozne olamaz. Ayni renk/
+ * yon kurali gecerli — kelime yalnizca ozneyi degistiriyor.
+ */
+const SHORT_LABELS: Record<BalanceTone, string> = {
+  credit: 'alacakli',
+  debt: 'borclu',
+  settled: 'kapali',
+};
+
+export const shortLabelOfTone = (tone: BalanceTone): string => SHORT_LABELS[tone];
+
 export const toneOfCents = (cents: number): BalanceTone => {
   if (cents > 0) {
     return 'credit';

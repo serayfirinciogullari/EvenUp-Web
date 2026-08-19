@@ -86,10 +86,29 @@ const setMemberNickname = async (req: Request, res: Response): Promise<void> => 
   res.status(200).json(result);
 };
 
+/**
+ * PUT /groups/:id -> 200 { group } (sadece owner)
+ * Kismi guncelleme: yalnizca gonderilen alanlar degisir (bkz. group.service.updateGroup).
+ */
+const update = async (req: Request, res: Response): Promise<void> => {
+  const group = await groupService.updateGroup(req.params.id, currentUserId(req), req.body ?? {});
+  res.status(200).json({ group });
+};
+
 /** DELETE /groups/:id -> 200 { group } (sadece owner, soft delete) */
 const remove = async (req: Request, res: Response): Promise<void> => {
   const group = await groupService.deleteGroup(req.params.id, currentUserId(req));
   res.status(200).json({ group });
 };
 
-export default { create, list, detail, invite, join, removeMember, setMemberNickname, remove };
+export default {
+  create,
+  list,
+  detail,
+  invite,
+  join,
+  removeMember,
+  setMemberNickname,
+  update,
+  remove,
+};

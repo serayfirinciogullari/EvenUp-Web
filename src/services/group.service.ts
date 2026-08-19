@@ -144,6 +144,48 @@ const validateCreateInput = (
   return { name, description: rawDescription || null };
 };
 
+/**
+ * Guncelleme govdesi dogrulamasi. `createGroup` ile ayni kurallar (uzunluk,
+ * ad zorunlu) ama **kismi**: yalnizca gonderilen alanlar kontrol edilir, alan
+ * gonderilmediyse dokunulmaz. `updateGroup` bunu ayirt etmek icin `undefined`
+ * ile "gonderilmedi", `null`/bos metin ile "aciklamayi kaldir" arasinda fark
+ * gozetiyor — nickname'deki bos-metin-kaldirir kuraliyla ayni ruh.
+ */
+const validateUpdateInput = (
+  input: Partial<CreateGroupInput>
+): { name?: string; description?: string | null } => {
+  const errors: Record<string, string> = {};
+  const patch: { name?: string; description?: string | null } = {};
+
+  if (input.name !== undefined) {
+    const name = asString(input.name).trim();
+
+    if (!name) {
+      errors.name = 'Grup adi zorunlu';
+    } else if (name.length > MAX_NAME_LENGTH) {
+      errors.name = `Grup adi en fazla ${MAX_NAME_LENGTH} karakter olabilir`;
+    } else {
+      patch.name = name;
+    }
+  }
+
+  if (input.description !== undefined) {
+    const description = asString(input.description).trim();
+
+    if (description.length > MAX_DESCRIPTION_LENGTH) {
+      errors.description = `Aciklama en fazla ${MAX_DESCRIPTION_LENGTH} karakter olabilir`;
+    } else {
+      patch.description = description || null;
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    throw ApiError.badRequest('Gecersiz grup bilgileri', errors);
+  }
+
+  return patch;
+};
+
 const validateInviteInput = (
   input: Partial<CreateInviteInput>
 ): { rotate: boolean; expiresAt: Date; maxUses: number | null } => {
@@ -459,6 +501,38 @@ const removeMember = async (
 };
 
 /**
+ * Grubun adini/aciklamasini gunceller. Yalnizca owner yapabilir — grup detayi
+ * herkesin gordugu ortak bir baslik, uyelik yeterli olsaydi herhangi bir uye
+ * grubu baskasi adina yeniden adlandirabilirdi.
+ *
+ * Kismi guncelleme: yalnizca gonderilen alanlar degisir (bkz. validateUpdateInput).
+ */
+const updateGroup = async (
+  groupId: string,
+  userId: string,
+  input: Partial<CreateGroupInput>
+): Promise<PublicGroup> => {
+  await requireOwnership(groupId, userId);
+
+  const patch = validateUpdateInput(input);
+
+  if (Object.keys(patch).length === 0) {
+    throw ApiError.badRequest('Guncellenecek alan gonderilmedi');
+  }
+
+  const updated = await groupModel.updateDetails(groupId, patch);
+
+  // requireOwnership grubun canli oldugunu dogruladi; buraya duserse araya
+  // baska bir istek girmis demektir (yaris, ör. es zamanli silme). Sonuc yine
+  // "grup yok" — group.controller ile ayni desende (bkz. deleteGroup).
+  if (!updated) {
+    throw ApiError.forbidden(ACCESS_DENIED);
+  }
+
+  return toPublicGroup(updated);
+};
+
+/**
  * Grubu siler (soft delete). Sadece owner yapabilir.
  * Bagli expenses/expense_shares/settlements satirlarina dokunulmaz — hard
  * DELETE olsaydi CASCADE zinciri tum finansal gecmisi goturur ve geri
@@ -489,6 +563,7 @@ export default {
   joinByCode,
   removeMember,
   setMemberNickname,
+  updateGroup,
   deleteGroup,
   requireMembership,
   requireOwnership,

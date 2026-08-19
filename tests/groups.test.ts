@@ -35,6 +35,7 @@ jest.mock('../src/models/group.model', () => ({
     upsertNickname: jest.fn(),
     removeNickname: jest.fn(),
     createWithOwner: jest.fn(),
+    updateDetails: jest.fn(),
     removeMember: jest.fn(),
     softDelete: jest.fn(),
     findActiveInvite: jest.fn(),
@@ -204,6 +205,16 @@ const installInMemoryModel = (): void => {
       return before - nicknames.length;
     }
   );
+
+  mockedGroupModel.updateDetails.mockImplementation(async (groupId: string, patch) => {
+    const group = groups.find((row) => row.id === groupId && row.deleted_at === null);
+    if (!group) {
+      return undefined;
+    }
+
+    Object.assign(group, patch);
+    return group;
+  });
 
   mockedGroupModel.removeMember.mockImplementation(async (groupId: string, userId: string) => {
     const before = members.length;
@@ -1051,6 +1062,116 @@ describe('DELETE /groups/:id/members/:userId', () => {
       .set(...auth(owner));
 
     expect(response.status).toBe(404);
+  });
+});
+
+/* ============================================================ PUT /groups/:id */
+
+describe('PUT /groups/:id', () => {
+  it('owner grup adini ve aciklamasini gunceller', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz, { name: 'Eski Ad', description: 'eski' });
+
+    const response = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(deniz))
+      .send({ name: 'Yeni Ad', description: 'yeni' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.group).toMatchObject({ name: 'Yeni Ad', description: 'yeni' });
+  });
+
+  it('yalnizca gonderilen alan degisir', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz, { name: 'Ev Arkadaslari', description: 'orijinal' });
+
+    const response = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(deniz))
+      .send({ name: 'Yeni Isim' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.group).toMatchObject({ name: 'Yeni Isim', description: 'orijinal' });
+  });
+
+  it('bos aciklama aciklamayi kaldirir', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz, { name: 'Ev Arkadaslari', description: 'var' });
+
+    const response = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(deniz))
+      .send({ description: '   ' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.group.description).toBeNull();
+  });
+
+  it('bos ad reddedilir', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz);
+
+    const response = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(deniz))
+      .send({ name: '   ' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details).toHaveProperty('name');
+    expect(mockedGroupModel.updateDetails).not.toHaveBeenCalled();
+  });
+
+  it('hicbir alan gonderilmezse 400 doner', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz);
+
+    const response = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(deniz))
+      .send({});
+
+    expect(response.status).toBe(400);
+  });
+
+  it('owner olmayan uye grubu guncelleyemez', async () => {
+    const deniz = makeUser('Deniz');
+    const kerem = makeUser('Kerem');
+    const group = await createGroupFor(deniz);
+    const kod = await inviteCodeFor(deniz, group.id);
+
+    await request(app)
+      .post(`/groups/join/${kod}`)
+      .set(...auth(kerem));
+
+    const response = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(kerem))
+      .send({ name: 'Baskasinin adi' });
+
+    expect(response.status).toBe(403);
+    expect(mockedGroupModel.updateDetails).not.toHaveBeenCalled();
+  });
+
+  it('uye olmayan kullanici 403 alir', async () => {
+    const deniz = makeUser('Deniz');
+    const yabanci = makeUser('Yabanci');
+    const group = await createGroupFor(deniz);
+
+    const response = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(yabanci))
+      .send({ name: 'Deneme' });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('token olmadan 401 doner', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz);
+
+    const response = await request(app).put(`/groups/${group.id}`).send({ name: 'Deneme' });
+
+    expect(response.status).toBe(401);
   });
 });
 
