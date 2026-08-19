@@ -91,6 +91,74 @@ export const formatDate = (value: string): string => {
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 };
 
+/**
+ * Yalnizca saat: "08:40".
+ *
+ * Aktivite akisinda tarih zaten grup basliginda yaziyor ("BUGUN", "17 AGUSTOS");
+ * satirin tekrar etmesi gereken tek sey gun **icindeki** sira. `formatExpenseDate`
+ * bu ekranda her satira "Bugun" yazdirirdi.
+ */
+export const formatTime = (value: string): string => {
+  const date = parseIso(value);
+
+  if (!date) {
+    return '--:--';
+  }
+
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+/**
+ * Aktivite akisinda ayni gunun olaylarini toplayan **anahtar**: "2026-08-17".
+ *
+ * Gruplama ISO metninin ilk 10 karakteriyle yapilamaz: o deger UTC'ye gore ve
+ * kullanicinin saat diliminde gece yarisina yakin bir olay bir onceki/sonraki
+ * gune duserdi. Anahtar bu yuzden **yerel** takvim gununden uretiliyor — basligi
+ * ureten `formatDayGroup` de ayni yerel gune bakiyor, yani baslik ile grup her
+ * zaman ayni gunu gosteriyor.
+ */
+export const dayKeyOf = (value: string): string => {
+  const date = parseIso(value);
+
+  if (!date) {
+    return 'gecersiz';
+  }
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+/**
+ * Aktivite akisindaki gun basligi: "BUGUN", "DUN", "17 AGUSTOS".
+ *
+ * Buyuk harf gosterimi CSS'e (`text-transform`) birakilmadi: baslik metni
+ * testlerde ve ekran okuyucuda da bu haliyle okunuyor, yani gorunum degil
+ * icerik. Ay adlari `MONTHS` uzerinden geldigi icin ASCII kaliyor ve Turkce'ye
+ * ozgu buyutme (i -> İ) sorunu hic dogmuyor.
+ */
+export const formatDayGroup = (value: string, now: Date = new Date()): string => {
+  const date = parseIso(value);
+
+  if (!date) {
+    return 'TARIH BILINMIYOR';
+  }
+
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / DAY_MS);
+
+  if (dayDiff === 0) {
+    return 'BUGUN';
+  }
+
+  if (dayDiff === 1) {
+    return 'DUN';
+  }
+
+  // Yil yalnizca farkliysa yaziliyor: "17 AGUSTOS" bu yil icin yeterince acik,
+  // gecen yilin ayni gunu ise yilsiz gosterilseydi bugunle karisirdi.
+  const year = date.getFullYear() === now.getFullYear() ? '' : ` ${date.getFullYear()}`;
+
+  return `${date.getDate()} ${MONTHS[date.getMonth()].toUpperCase()}${year}`;
+};
+
 /** Tam tarih — `<time title=...>` icin; kisaltilmis metnin arkasindaki gercek deger. */
 export const formatFullDate = (value: string): string => {
   const date = parseIso(value);
@@ -104,4 +172,12 @@ export const formatFullDate = (value: string): string => {
   )}:${pad(date.getMinutes())}`;
 };
 
-export default { parseIso, formatExpenseDate, formatDate, formatFullDate };
+export default {
+  parseIso,
+  formatExpenseDate,
+  formatDate,
+  formatTime,
+  dayKeyOf,
+  formatDayGroup,
+  formatFullDate,
+};

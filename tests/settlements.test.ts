@@ -69,6 +69,7 @@ jest.mock('../src/models/settlement.model', () => ({
     listByGroup: jest.fn(),
     listConfirmed: jest.fn(),
     countByStatus: jest.fn(),
+    listPendingForCreditor: jest.fn(),
     create: jest.fn(),
     resolve: jest.fn(),
   },
@@ -305,6 +306,28 @@ const installInMemoryModel = (): void => {
 
     return counts;
   });
+
+  // Gercek sorgudaki filtre: yalnizca `to_user = <istekte bulunan>` VE
+  // `status = 'pending'`; siralama en eski once (bkz. settlement.model).
+  mockedSettlementModel.listPendingForCreditor.mockImplementation(
+    async (userId: string, limit: number) =>
+      aliveSettlements()
+        .filter((settlement) => settlement.to_user === userId && settlement.status === 'pending')
+        .sort(
+          (a, b) =>
+            a.created_at.getTime() - b.created_at.getTime() || (a.id < b.id ? -1 : 1)
+        )
+        .slice(0, limit)
+        .map((settlement) => ({
+          id: settlement.id,
+          group_id: settlement.group_id,
+          group_name: (groups.find((row) => row.id === settlement.group_id) as GroupRow).name,
+          from_user: settlement.from_user,
+          from_name: (users.get(settlement.from_user) as TestUser).name,
+          amount: settlement.amount,
+          created_at: settlement.created_at,
+        }))
+  );
 
   mockedSettlementModel.create.mockImplementation(async (input) => {
     const settlement: SettlementRow = {
@@ -967,5 +990,91 @@ describe('onaylanmis odemeler netlestirmeye dogru yansir', () => {
     );
 
     expect(total).toBe(0);
+  });
+});
+
+/* ==================================================== GET /settlements/pending */
+
+describe('GET /settlements/pending', () => {
+  const listPending = async (user: TestUser) => {
+    const response = await request(app)
+      .get('/settlements/pending')
+      .set(...auth(user));
+
+    expect(response.status).toBe(200);
+    return response.body.settlements as {
+      id: string;
+      group_id: string;
+      group_name: string;
+      from_user: string;
+      from_name: string;
+      amount: string;
+    }[];
+  };
+
+  it('alacakli kendisine bekleyen odemeyi grup adiyla gorur', async () => {
+    const settlement = await createSettlement(burak, group.id, { toUserId: ali.id, amount: '50.00' });
+
+    const pending = await listPending(ali);
+
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      id: settlement.id,
+      group_id: group.id,
+      group_name: group.name,
+      from_user: burak.id,
+      from_name: 'Burak',
+      amount: '50.00',
+    });
+  });
+
+  it('borclu tarafta kendi bildirdigi kayit bu listede gorunmez', async () => {
+    // Burak kaydi acti (Ali'ye borcu var); liste yalnizca ALACAKLIYA gore
+    // filtreler, o yuzden Burak'in kendi ekraninda bu kayit cikmamali.
+    await createSettlement(burak, group.id, { toUserId: ali.id, amount: '50.00' });
+
+    const pending = await listPending(burak);
+
+    expect(pending).toEqual([]);
+  });
+
+  it('onaylanmis ya da reddedilmis kayitlar listede gorunmez', async () => {
+    const confirmed = await createSettlement(burak, group.id, {
+      toUserId: ali.id,
+      amount: '10.00',
+    });
+    const rejected = await createSettlement(cem, group.id, { toUserId: ali.id, amount: '20.00' });
+
+    await request(app)
+      .put(`/settlements/${confirmed.id}/confirm`)
+      .set(...auth(ali));
+    await request(app)
+      .put(`/settlements/${rejected.id}/reject`)
+      .set(...auth(ali));
+
+    const pending = await listPending(ali);
+
+    expect(pending).toEqual([]);
+  });
+
+  it('birden fazla bekleyen kayit en eskiden yeniye siralanir', async () => {
+    const first = await createSettlement(burak, group.id, { toUserId: ali.id, amount: '10.00' });
+    const second = await createSettlement(cem, group.id, { toUserId: ali.id, amount: '20.00' });
+
+    const pending = await listPending(ali);
+
+    expect(pending.map((row) => row.id)).toEqual([first.id, second.id]);
+  });
+
+  it('bekleyen kayit yoksa bos liste doner', async () => {
+    const pending = await listPending(ali);
+
+    expect(pending).toEqual([]);
+  });
+
+  it('token olmadan 401 doner', async () => {
+    const response = await request(app).get('/settlements/pending');
+
+    expect(response.status).toBe(401);
   });
 });

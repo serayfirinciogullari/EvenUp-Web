@@ -239,6 +239,73 @@ export interface HomeSummary {
   pendingSettlementsCount: number;
 }
 
+/* --------------------------------------------------------------- aktivite */
+
+/**
+ * Akistaki olay turu. Arayuzdeki uc harfli rozet buna eslenir
+ * (bkz. utils/activity.ts).
+ */
+export type ActivityKind =
+  | 'expense_created'
+  | 'expense_edited'
+  | 'settlement_created'
+  | 'settlement_confirmed'
+  | 'settlement_rejected';
+
+/**
+ * `GET /activity` satiri.
+ *
+ * Backend **cumleyi kurmuyor**, malzemeyi gonderiyor: kim, kime, ne kadar,
+ * neyin oncesi/sonrasi. Turkce cumle istemcide uretiliyor cunku ek kurallari
+ * (`utils/turkish.ts`) ve "Sen" ayrimi zaten burada; ikinci bir kopya iki
+ * tarafin zamanla ayrismasi demekti (gerekce: docs/decisions/aktivite-akisi.md).
+ */
+export interface ActivityEvent {
+  /** `kind:kaynak_satir_id`. Ayni odeme kaydi iki olay uretebildigi icin
+   *  yalnizca satir ID'si tekil bir React anahtari vermezdi. */
+  id: string;
+  kind: ActivityKind;
+  occurred_at: string;
+  group_id: string;
+  group_name: string;
+  actor_id: string;
+  actor_name: string;
+  /** Odeme olaylarinda karsi taraf; harcama olaylarinda `null`. */
+  counterparty_id: string | null;
+  counterparty_name: string | null;
+  /** Duzenlemede **yeni** tutar. NUMERIC metni. */
+  amount: string;
+  /**
+   * Duzenlemeden onceki tutar; yalnizca `expense_edited` icin dolu.
+   * Tutar degismediyse `amount` ile esit gelir — "degisti mi" karari burada,
+   * gosterim tarafinda veriliyor.
+   */
+  previous_amount: string | null;
+  description: string | null;
+  previous_description: string | null;
+}
+
+export interface ActivityListResult {
+  events: ActivityEvent[];
+  pagination: Pagination;
+}
+
+/**
+ * `GET /settlements/pending` satiri — kullanicinin **onayini bekleyen** odeme.
+ *
+ * `SettlementView`ten dar ve alacakli tarafi hic tasimiyor: o taraf her zaman
+ * istegi yapan kisi. Grup adi ise var, cunku liste gruplar arasi.
+ */
+export interface PendingApproval {
+  id: string;
+  group_id: string;
+  group_name: string;
+  from_user: string;
+  from_name: string;
+  amount: string;
+  created_at: string;
+}
+
 /* ------------------------------------------------------------------ admin */
 
 /**

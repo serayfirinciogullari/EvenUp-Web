@@ -190,6 +190,41 @@ export interface ExpenseShareInsert {
 
 export type ExpenseShareUpdate = Partial<Omit<ExpenseShareInsert, 'id'>>;
 
+/* ----------------------------------------------------------- expense_edits */
+
+/**
+ * Bir harcama duzenlemesinin gecmis kaydi (bkz. migration 15).
+ *
+ * Her basarili UPDATE icin bir satir. `previous_*` alanlari UPDATE'ten **once**
+ * okunan degerler; `expenses.updated_at` yalnizca "degisti" derken bu tablo
+ * "neyden neye" sorusunu cevapliyor. Aktivite akisindaki DUZ olayinin kaynagi.
+ */
+export interface ExpenseEditRow {
+  id: string;
+  expense_id: string;
+  /** Duzenlemeyi yapan. Harcamayi **giren** kisi (`created_by`) ile ayni olmak
+   *  zorunda degil: grup sahibi de duzenleyebilir. */
+  edited_by: string;
+  previous_amount: Decimal;
+  new_amount: Decimal;
+  previous_description: string;
+  new_description: string;
+  created_at: Date;
+}
+
+export interface ExpenseEditInsert {
+  id?: string;
+  expense_id: string;
+  edited_by: string;
+  previous_amount: MoneyInput;
+  new_amount: MoneyInput;
+  previous_description: string;
+  new_description: string;
+  created_at?: Date;
+}
+
+export type ExpenseEditUpdate = Partial<Omit<ExpenseEditInsert, 'id'>>;
+
 /* ------------------------------------------------------------ settlements */
 
 export interface SettlementRow {
@@ -307,6 +342,7 @@ declare module 'knex/types/tables' {
       ExpenseShareInsert,
       ExpenseShareUpdate
     >;
+    expense_edits: Knex.CompositeTableType<ExpenseEditRow, ExpenseEditInsert, ExpenseEditUpdate>;
     settlements: Knex.CompositeTableType<SettlementRow, SettlementInsert, SettlementUpdate>;
     member_nicknames: Knex.CompositeTableType<
       MemberNicknameRow,

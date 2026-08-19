@@ -6,7 +6,7 @@ import { buildPagination, parsePagination } from '../utils/pagination';
 import { isUuid } from '../utils/uuid';
 import { ACCESS_DENIED, requireMembership } from './group.service';
 
-import type { SettlementView } from '../models/settlement.model';
+import type { PendingApprovalView, SettlementView } from '../models/settlement.model';
 import type { SettlementRow, SettlementStatus } from '../types/models';
 import type { PageQuery, Pagination } from '../utils/pagination';
 
@@ -44,6 +44,16 @@ const STATUS_LABELS: Record<SettlementStatus, string> = {
 };
 
 const SETTLEMENT_STATUSES = Object.keys(STATUS_LABELS) as SettlementStatus[];
+
+/**
+ * Banner'a cikan bekleyen onay sayisinin ust siniri.
+ *
+ * Liste sayfalanmiyor cunku pratikte cok kisa: ayni cift arasinda ayni anda tek
+ * bir bekleyen kayit olabiliyor (kismi unique index). Yine de sinirsiz
+ * birakilmiyor — "kisa olmali" bir varsayim, sinir ise garanti; onlarca gruba
+ * uye bir kullanicida banner butun ekrani kaplayabilirdi.
+ */
+const MAX_PENDING_APPROVALS = 20;
 
 /* ---------------------------------------------------------------- tipler */
 
@@ -182,6 +192,28 @@ const listSettlements = async (
 };
 
 /**
+ * GET /settlements/pending
+ *
+ * Kullanicinin **onayini bekleyen** odemeler, tum gruplarda. Aktivite
+ * ekranindaki ust banner'in tek veri kaynagi.
+ *
+ * NEDEN AKISIN ICINDE DEGIL, AYRI BIR UC
+ * --------------------------------------
+ * Banner ile akis farkli iki soru soruyor: "simdi ne yapmam gerekiyor?" ve "ne
+ * oldu?". Ikisini `GET /activity` cevabinda birlestirmek, akisin ikinci ve
+ * ucuncu sayfasinda da bekleyen listesini tekrar tekrar gondermek demekti —
+ * "daha fazla yukle" her tiklamada degismeyecek bir veriyi yeniden tasirdi.
+ * Ayri uc ayrica onaydan sonra **yalnizca banner'i** tazelemeyi mumkun kiliyor.
+ *
+ * Uyelik kontrolu yok ve gerekmiyor: filtre `to_user = <istek sahibi>`. Uyesi
+ * olunmayan bir grupta kullaniciya odeme kaydi acilamaz (`createSettlement`
+ * karsi tarafin uye olmasini sart kosuyor), dolayisiyla sonuca yabanci bir
+ * grubun kaydi giremez.
+ */
+const listPendingApprovals = async (userId: string): Promise<PendingApprovalView[]> =>
+  settlementModel.listPendingForCreditor(userId, MAX_PENDING_APPROVALS);
+
+/**
  * Onay ve red ayni kapidan gecer; tek fark yazilan durum.
  *
  * Sirali kontrol (gruplardaki IDOR mantiginin aynisi):
@@ -240,6 +272,7 @@ const rejectSettlement = async (settlementId: string, userId: string): Promise<S
 export default {
   createSettlement,
   listSettlements,
+  listPendingApprovals,
   confirmSettlement,
   rejectSettlement,
 };
@@ -247,8 +280,10 @@ export default {
 export {
   createSettlement,
   listSettlements,
+  listPendingApprovals,
   confirmSettlement,
   rejectSettlement,
+  MAX_PENDING_APPROVALS,
   ONLY_DEBTOR,
   ONLY_CREDITOR,
 };

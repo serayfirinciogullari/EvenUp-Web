@@ -416,18 +416,29 @@ const updateExpense = async (
   );
 
   const errors: Record<string, string> = {};
-  const patch: Parameters<typeof expenseModel.update>[1] = {};
+
+  /*
+    `edited_by` bir **guncellenen alan degil**: harcama satirina yazilmiyor,
+    yalnizca `expense_edits` gecmis kaydinin sahibi oluyor (bkz. expense.model).
+    Bu yuzden "gonderilen alan var mi" kontrolu asagida `patch` uzerinden degil
+    ayri bir bayrakla yapiliyor; `patch` her zaman en az bir anahtar tasiyor.
+  */
+  const patch: Parameters<typeof expenseModel.update>[1] = { edited_by: userId };
+  let touchedFields = 0;
 
   if (body.description !== undefined) {
     patch.description = validateDescription(body.description, errors);
+    touchedFields += 1;
   }
 
   if (body.category !== undefined) {
     patch.category = validateCategory(body.category, errors);
+    touchedFields += 1;
   }
 
   if (body.paidBy !== undefined) {
     patch.paid_by = validateParticipant(body.paidBy, memberIds, errors, 'paidBy');
+    touchedFields += 1;
   }
 
   if (touchesMoney) {
@@ -441,6 +452,7 @@ const updateExpense = async (
 
     patch.amount_cents = validateAmount(body.amount, errors);
     patch.split_type = validateSplitType(body.splitType, errors);
+    touchedFields += 1;
   }
 
   if (Object.keys(errors).length > 0) {
@@ -454,7 +466,7 @@ const updateExpense = async (
     );
   }
 
-  if (Object.keys(patch).length === 0) {
+  if (touchedFields === 0) {
     throw ApiError.badRequest('Guncellenecek alan gonderilmedi');
   }
 

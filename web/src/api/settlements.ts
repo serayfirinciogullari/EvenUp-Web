@@ -1,6 +1,11 @@
 import api from './client';
 
-import type { Settlement, SettlementListResult, SettlementStatus } from '../types/models';
+import type {
+  PendingApproval,
+  Settlement,
+  SettlementListResult,
+  SettlementStatus,
+} from '../types/models';
 
 /**
  * Odeme (settlement) uc noktalari.
@@ -58,6 +63,19 @@ export const createSettlement = async (
   return data.settlement;
 };
 
+/**
+ * `GET /settlements/pending` — **onayimi bekleyen** odemeler, tum gruplarda.
+ *
+ * `listSettlements`ten iki farki var: grup bazli degil kullanici bazli ve
+ * yalnizca istegi yapanin **alacakli** oldugu kayitlari doner. Aktivite
+ * ekranindaki ust banner'in kaynagi; oradaki "Onayla / Itiraz et" butonlari
+ * backend'de zaten yalnizca alacakliya acik (`ONLY_CREDITOR`).
+ */
+export const listPendingApprovals = async (): Promise<PendingApproval[]> => {
+  const { data } = await api.get<{ settlements: PendingApproval[] }>('/settlements/pending');
+  return data.settlements;
+};
+
 /** `PUT /settlements/:id/confirm` — yalnizca alacakli cagirabilir (aksi 403). */
 export const confirmSettlement = async (settlementId: string): Promise<Settlement> => {
   const { data } = await api.put<{ settlement: Settlement }>(
@@ -72,4 +90,10 @@ export const rejectSettlement = async (settlementId: string): Promise<Settlement
   return data.settlement;
 };
 
-export default { listSettlements, createSettlement, confirmSettlement, rejectSettlement };
+export default {
+  listSettlements,
+  listPendingApprovals,
+  createSettlement,
+  confirmSettlement,
+  rejectSettlement,
+};

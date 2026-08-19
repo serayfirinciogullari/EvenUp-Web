@@ -20,6 +20,14 @@ const router = Router();
 // eklendiginde onu unutmak mumkun olmasin.
 router.use(requireAuth);
 
+/*
+  Sabit yol, parametreli yollardan **once** tanimli. Bugun bir catisma yok
+  (parametreli olanlar PUT ve alt segmentli), ama ileride bir `GET /:id`
+  eklendiginde `/pending` onun eline duser ve "pending" bir ID gibi okunurdu.
+  Siranin burada olmasi o hatayi bastan imkansiz kiliyor.
+*/
+router.get('/pending', asyncHandler(settlementController.listPending));
+
 router.put('/:id/confirm', asyncHandler(settlementController.confirm));
 router.put('/:id/reject', asyncHandler(settlementController.reject));
 

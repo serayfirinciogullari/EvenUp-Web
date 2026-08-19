@@ -48,6 +48,9 @@ export interface CreateExpenseInput {
 }
 
 export interface UpdateExpenseInput {
+  /** Duzenlemeyi yapan kullanici. Harcama satirina yazilmaz — yalnizca
+   *  `expense_edits` gecmis kaydinin sahibi (bkz. `update`). */
+  edited_by: string;
   paid_by?: string;
   amount_cents?: number;
   description?: string;
@@ -329,12 +332,36 @@ const create = async (input: CreateExpenseInput): Promise<ExpenseWithShares> => 
  * degisebiliyor (biri cikar, biri girer) ve "eskiyi guncelle + yeniyi ekle +
  * ayrilani sil" uc adiminin yarisi calisirsa toplam tutmaz. Silme+ekleme tek
  * adimda ayni sonucu verir.
+ *
+ * GECMIS KAYDI AYNI TRANSACTION'DA
+ * --------------------------------
+ * Her basarili guncelleme `expense_edits`e bir satir yazar (migration 15).
+ * Ayni transaction'da olmasi sart: ayri yazilsaydi ya guncellenip gecmisi
+ * yazilmamis bir harcama (akista gorunmeyen bir duzenleme) ya da gerceklesmemis
+ * bir degisikligi anlatan bir gecmis satiri kalabilirdi. Harcama+paylarin tek
+ * transaction'da yazilmasiyla ayni gerekce.
+ *
+ * `forUpdate()`: eski degerler UPDATE'ten once okunuyor ve iki es zamanli
+ * duzenleme ayni "onceki" degeri kaydedebilirdi. Satir kilidi ikinciyi
+ * bekletiyor, kilit birakildiginda birincinin yazdigi deger okunuyor; boylece
+ * gecmis zinciri (her satirin `new_amount`i bir sonrakinin `previous_amount`i)
+ * kopmuyor.
  */
 const update = async (
   expenseId: string,
   input: UpdateExpenseInput
 ): Promise<ExpenseWithShares | undefined> => {
   const updated = await db.transaction(async (trx) => {
+    const before = await trx('expenses')
+      .where({ id: expenseId })
+      .whereNull('deleted_at')
+      .forUpdate()
+      .first();
+
+    if (!before) {
+      return undefined;
+    }
+
     const patch: Record<string, unknown> = { updated_at: new Date() };
 
     if (input.paid_by !== undefined) patch.paid_by = input.paid_by;
@@ -357,6 +384,19 @@ const update = async (
       await trx('expense_shares').where({ expense_id: expenseId }).del();
       await trx('expense_shares').insert(toShareRows(expenseId, input.shares));
     }
+
+    // Tutar ve aciklama degismemis olabilir (yalnizca kategori ya da odeyen
+    // degistiginde). Satir yine de yaziliyor: olan sey bir duzenleme ve akista
+    // gorunmesi gerekiyor; "once" ile "sonra" esit oldugunda cumleyi kuran
+    // taraf (activity.service) bunu zaten ayirt ediyor.
+    await trx('expense_edits').insert({
+      expense_id: expenseId,
+      edited_by: input.edited_by,
+      previous_amount: before.amount,
+      new_amount: expense.amount,
+      previous_description: before.description,
+      new_description: expense.description,
+    });
 
     return expense;
   });

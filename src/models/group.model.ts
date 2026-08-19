@@ -219,6 +219,24 @@ const softDelete = async (groupId: string): Promise<GroupRow | undefined> =>
   });
 
 /**
+ * Kullanicinin uyesi oldugu gruplarin **yalnizca id + adi**, tek sorguda.
+ *
+ * `listForUser`ten ayri duruyor cunku farkli bir soru soruyor. O fonksiyon grup
+ * listesi ekranini besliyor ve satir basina `role`, `joined_at` ve iliskili bir
+ * alt sorgudan gelen `member_count` tasiyor. Aktivite akisinin bunlarin hicbirine
+ * ihtiyaci yok; tek istedigi "hangi gruplari okuyabilirim" filtresi ve satirlarda
+ * gosterilecek grup adi. `listForUser` cagrilsaydi her akis acilisinda grup basina
+ * bir COUNT alt sorgusu bosuna kosardi.
+ */
+const listMembershipNames = async (userId: string): Promise<{ id: string; name: string }[]> =>
+  db('groups as g')
+    .join('group_members as gm', 'gm.group_id', 'g.id')
+    .where('gm.user_id', userId)
+    .whereNull('g.deleted_at')
+    .orderBy('g.created_at', 'desc')
+    .select('g.id', 'g.name');
+
+/**
  * Yalnizca uye ID'leri.
  *
  * `listMembers`ten ayri duruyor cunku **farkli bir soru**: "kim bu grupta?"
@@ -366,6 +384,7 @@ export default {
   findById,
   findMembership,
   listForUser,
+  listMembershipNames,
   listMembers,
   listMemberIds,
   createWithOwner,

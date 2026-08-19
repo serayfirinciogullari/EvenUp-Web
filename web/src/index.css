@@ -72,6 +72,23 @@
   --color-signal-positive: #1e7a5c;
   --color-signal-negative: #b3261e;
 
+  /*
+    Yalnizca "senden bir sey bekleniyor" uyarisi icin — su an tek kullanici
+    aktivite sayfasinin ust banner'i.
+
+    NEDEN PALETIN DISINDA BIR RENK
+    ------------------------------
+    Marka ailesi (rose/blush/lilac) sayfanin **her yerinde** kullaniliyor; o
+    aileden bir uyari kutusu, arkasindaki sayfadan yalnizca tonuyla ayrisirdi ve
+    "bu satir bekliyor" mesaji gorulmezdi. `signal-negative` de dogru degil:
+    bekleyen bir onay hata degil, yapilacak is. Amber ikisinin arasindaki bosluga
+    oturuyor ve `signal-*` gibi anlamsal, dekoratif olmayan bir token.
+
+    Kontrast: metin `ink` (#2A1418) / zemin #FDF3E0 -> 14.7:1 ✓
+  */
+  --color-amber: #b5761a;
+  --color-amber-surface: #fdf3e0;
+
   /* ------------------------------------------------------------ tipografi */
   --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
 }
@@ -219,6 +236,12 @@
 
   --color-signal-positive: #56c79b;
   --color-signal-negative: #ff8f85;
+
+  /* Koyu temada zemin koyulasip cerceve/metin acilıyor; acik temadaki
+     #FDF3E0 koyu sayfada bir el feneri gibi parlardi.
+     Kontrast: metin `ink` (#F6EBEC) / zemin #2E2216 -> 13.1:1 ✓ */
+  --color-amber: #e8b463;
+  --color-amber-surface: #2e2216;
 
   /* ------------------------------------------- shadcn anlamsal degiskenler */
   --background: #1a1114;

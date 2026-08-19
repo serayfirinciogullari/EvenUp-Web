@@ -40,6 +40,17 @@ const list = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json(result);
 };
 
+/**
+ * GET /settlements/pending -> 200 { settlements }
+ *
+ * Hedef kullanici token'dan; adreste ID yok. Sayfalama da yok — liste tanimi
+ * geregi kisa ve tamami banner'da gosteriliyor (bkz. servis).
+ */
+const listPending = async (req: Request, res: Response): Promise<void> => {
+  const settlements = await settlementService.listPendingApprovals(currentUserId(req));
+  res.status(200).json({ settlements });
+};
+
 /** PUT /settlements/:id/confirm -> 200 { settlement } */
 const confirm = async (req: Request, res: Response): Promise<void> => {
   const settlement = await settlementService.confirmSettlement(req.params.id, currentUserId(req));
@@ -58,4 +69,4 @@ const balances = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json(result);
 };
 
-export default { create, list, confirm, reject, balances };
+export default { create, list, listPending, confirm, reject, balances };

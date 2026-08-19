@@ -65,6 +65,24 @@ export interface SettlementPage {
   total: number;
 }
 
+/**
+ * Onay bekleyen bir odemenin banner'da gosterilecek hali.
+ *
+ * `SettlementView`ten dar: `to_*` alanlari yok cunku alacakli her zaman istegi
+ * yapan kisi, `status` yok cunku tanimi geregi `pending`, `confirmed_at` ve
+ * `rejected_at` yok cunku ikisi de NULL. Grup adi ise **var** — bu liste
+ * gruplar arasi ve kullanicinin "hangi grupta?" sorusunu yanitlamasi gerekiyor.
+ */
+export interface PendingApprovalView {
+  id: string;
+  group_id: string;
+  group_name: string;
+  from_user: string;
+  from_name: string;
+  amount: string;
+  created_at: Date;
+}
+
 export interface SettlementFilter {
   /** Verilmezse butun durumlar doner. */
   status?: SettlementStatus;
@@ -233,6 +251,46 @@ const countPendingForUser = async (userId: string): Promise<number> => {
   return Number(count);
 };
 
+/**
+ * Kullanicinin **onayini bekleyen** odemeler — tum gruplarda, tek sorguda.
+ *
+ * `countPendingForUser` ile karistirilmamali: o, kullaniciyi *ilgilendiren*
+ * bekleyen kayitlari sayar ve iki yonu de (`from_user` ya da `to_user`) icerir,
+ * cunku sidebar rozeti "senin dosyanda bekleyen bir sey var" demek istiyor.
+ * Burasi tek yon: **yalnizca `to_user`**. Sebep davranissal — bu listeyle bir
+ * "Onayla / Itiraz et" kutusu ciziliyor ve o iki aksiyon backend'de yalnizca
+ * alacakliya ait (`ONLY_CREDITOR`). Borclunun kendi bildirdigi odeme de listeye
+ * girseydi, kullaniciya kendi tiklayamayacagi bir buton gosterilirdi.
+ *
+ * Sayfalama yok: bu liste tanimi geregi kisa (bir cift arasinda ayni anda tek
+ * bir bekleyen kayit olabilir — kismi unique index) ve tamami ekranin en ustunde
+ * gosteriliyor. Ust sinir yine de var (`limit`), cunku "kisa olmali" bir varsayim;
+ * cok gruplu bir kullanicida listenin sinirsiz buyumesi ekrani ele gecirirdi.
+ */
+const listPendingForCreditor = async (
+  userId: string,
+  limit: number
+): Promise<PendingApprovalView[]> =>
+  aliveSettlements()
+    .join('users as sender', 'sender.id', 'settlements.from_user')
+    .where('settlements.status', 'pending')
+    .where('settlements.to_user', userId)
+    // En eski once: bekleyen bir onay ne kadar uzun beklediyse o kadar acil.
+    .orderBy([
+      { column: 'settlements.created_at', order: 'asc' },
+      { column: 'settlements.id', order: 'asc' },
+    ])
+    .limit(limit)
+    .select(
+      'settlements.id',
+      'settlements.group_id',
+      'groups.name as group_name',
+      'settlements.from_user',
+      'sender.name as from_name',
+      'settlements.amount',
+      'settlements.created_at'
+    ) as unknown as Promise<PendingApprovalView[]>;
+
 /* ------------------------------------------------------------------ yazma */
 
 /**
@@ -289,6 +347,7 @@ export default {
   listConfirmedByGroups,
   countByStatus,
   countPendingForUser,
+  listPendingForCreditor,
   create,
   resolve,
 };
