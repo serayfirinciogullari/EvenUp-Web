@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import AuthProvider from '../context/AuthProvider';
 
-import type { HomeSummary, User } from '../types/models';
+import type { GroupSummary, HomeSummary, User } from '../types/models';
 
 /**
  * Home ekrani testleri.
@@ -28,6 +28,16 @@ import type { HomeSummary, User } from '../types/models';
  * artik burada da mock'lanir — ONY satirlarinin Onayla/Itiraz Et'i ve BRC
  * satirlarinin "Hesabi kapat"i (Kisiler sayfasindaki ayni `CloseAccountDialog`)
  * gercek istek atmadan test edilebilsin diye.
+ *
+ * "GRUPLAR" BOLUMU — GROUPCARD'IN KENDI TESTLERINI TEKRARLAMAZ
+ * -----------------------------------------------------------------
+ * Bu sayfadaki "Gruplar" bolumu Gruplarim'daki **ayni** `GroupCard`i kullaniyor
+ * (bkz. docs/decisions/3.14-home-gruplar-bolumu.md). Asagidaki testler bu
+ * yuzden yalnizca Home'un kendi entegrasyon yuzeyini sinar (bolumun
+ * gorunmesi/gizlenmesi, dogru gruplarin listelenmesi, karta tiklayinca
+ * detaya gitmesi) — davet linki, "Harcama ekle" akisi gibi `GroupCard`in
+ * KENDI davranislari zaten `groups.test.tsx`te test ediliyor, burada
+ * tekrarlanmiyor.
  */
 
 vi.mock('../api/auth', () => ({
@@ -61,10 +71,12 @@ vi.mock('../api/groups', () => ({
 }));
 
 import authApi from '../api/auth';
+import groupsApi from '../api/groups';
 import settlementsApi from '../api/settlements';
 import summaryApi from '../api/summary';
 
 const mockedAuth = vi.mocked(authApi);
+const mockedGroups = vi.mocked(groupsApi);
 const mockedSettlements = vi.mocked(settlementsApi);
 const mockedSummary = vi.mocked(summaryApi);
 
@@ -90,6 +102,23 @@ const summaryOf = (over: Partial<HomeSummary> = {}): HomeSummary => ({
   unseenActivityCount: 0,
   pendingApprovals: [],
   pendingDebts: [],
+  ...over,
+});
+
+/** `groups.test.tsx`teki fixture ile ayni sekil. */
+const group = (over: Partial<GroupSummary> = {}): GroupSummary => ({
+  id: 'aaaaaaaa-0000-4000-8000-000000000001',
+  name: 'Ev Arkadaslari',
+  slug: 'ev-arkadaslari',
+  description: null,
+  created_by: deniz.id,
+  created_at: '2026-08-01T10:00:00.000Z',
+  role: 'owner',
+  joined_at: '2026-08-01T10:00:00.000Z',
+  member_count: 3,
+  member_preview: [{ user_id: deniz.id, name: 'Deniz' }],
+  has_pending_incoming: false,
+  last_activity: null,
   ...over,
 });
 
@@ -484,5 +513,104 @@ describe('Home — Seni bekleyenler', () => {
       .map((node) => node.textContent);
 
     expect(badges).toEqual(['ONY', 'BRC']);
+  });
+});
+
+/* ------------------------------------------------------------------ gruplar */
+
+describe('Home — Gruplar', () => {
+  const balancesFor = (netBalance: string) => ({
+    balances: [{ user_id: deniz.id, name: 'Deniz', net_balance: netBalance }],
+    transfers: [],
+    meta: {
+      expense_count: 1,
+      confirmed_settlement_count: 0,
+      pending_settlement_count: 0,
+      rejected_settlement_count: 0,
+      algorithm: 'optimal' as const,
+    },
+  });
+
+  it('hicbir grup yokken bolum hic gorunmez', async () => {
+    renderHome();
+    await waitForPage();
+
+    expect(screen.queryByRole('heading', { name: 'Gruplar' })).not.toBeInTheDocument();
+  });
+
+  it('gruplar varken basliktaki sayi rozeti ve grup adlari dogru', async () => {
+    mockedGroups.listGroups.mockResolvedValue([
+      group({ id: 'g1', name: 'Ev Arkadaslari', slug: 'ev-arkadaslari' }),
+      group({ id: 'g2', name: 'Tatil', slug: 'tatil' }),
+    ]);
+    mockedGroups.getGroupBalances.mockResolvedValue(balancesFor('0.00'));
+
+    renderHome();
+    await waitForPage();
+
+    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(screen.getByText('2 grup')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ev Arkadaslari' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tatil' })).toBeInTheDocument();
+  });
+
+  /*
+    `GroupCard`in kendi davranislari (davet linki, "Harcama ekle" akisi, kartin
+    tamaminin tiklanabilir olmasi) burada tekrar sinanmiyor — o bilesenin kendi
+    testleri var (`groups.test.tsx`). Buradaki tek iddia: Home dogru grubu
+    dogru adrese baglayarak `GroupCard`e veriyor.
+  */
+  it('grup basligi Grup Detay adresine baglanir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([
+      group({ id: 'g1', name: 'Ev Arkadaslari', slug: 'ev-arkadaslari' }),
+    ]);
+    mockedGroups.getGroupBalances.mockResolvedValue(balancesFor('0.00'));
+
+    renderHome();
+    await waitForPage();
+
+    // Sidebar'daki grup kisayolu **ayni ada** sahip; sorgu "Gruplar"
+    // bolumune (sidebar disina) kapsanmazsa "birden fazla eslesme" hatasi verir.
+    const groupsSection = (await screen.findByRole('heading', { name: 'Gruplar' })).closest(
+      'section'
+    ) as HTMLElement;
+    const link = within(groupsSection).getByRole('link', { name: 'Ev Arkadaslari' });
+    expect(link).toHaveAttribute('href', '/groups/ev-arkadaslari');
+  });
+
+  it('her satirda Harcama ekle butonu vardir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group({ id: 'g1', name: 'Ev Arkadaslari' })]);
+    mockedGroups.getGroupBalances.mockResolvedValue(balancesFor('0.00'));
+
+    renderHome();
+    await waitForPage();
+
+    expect(await screen.findByRole('button', { name: 'Harcama ekle' })).toBeInTheDocument();
+  });
+
+  it('bakiye tonuna gore renk/etiket degisir: borclu, alacakli, kapali', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group({ id: 'g1', name: 'Ev Arkadaslari' })]);
+    mockedGroups.getGroupBalances.mockResolvedValue(balancesFor('-135.00'));
+
+    renderHome();
+    await waitForPage();
+
+    expect(await screen.findByText('135,00 ₺')).toBeInTheDocument();
+    expect(screen.getByText('Sen borclusun')).toBeInTheDocument();
+  });
+
+  it('gruplar yuklenemezse hata gosterilir ve tekrar dene calisir', async () => {
+    mockedGroups.listGroups.mockRejectedValueOnce(new Error('bozuk'));
+
+    renderHome();
+    await waitForPage();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Gruplar yuklenemedi');
+
+    mockedGroups.listGroups.mockResolvedValue([group({ id: 'g1', name: 'Ev Arkadaslari' })]);
+    mockedGroups.getGroupBalances.mockResolvedValue(balancesFor('0.00'));
+    fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }));
+
+    expect(await screen.findByRole('heading', { name: 'Ev Arkadaslari' })).toBeInTheDocument();
   });
 });

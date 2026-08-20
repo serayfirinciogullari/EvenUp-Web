@@ -3,20 +3,22 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import CloseAccountDialog from '@/components/CloseAccountDialog';
+import GroupCard from '@/components/GroupCard';
 import HomeFeatureCard from '@/components/HomeFeatureCard';
 import HomeNetStatusCard from '@/components/HomeNetStatusCard';
 import HomeStatCard from '@/components/HomeStatCard';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getErrorMessage } from '../api/client';
 import settlementsApi from '../api/settlements';
-import { useSummaryData } from '../hooks/useAppData';
+import { useGroupsData, useSummaryData } from '../hooks/useAppData';
 import useAuth from '../hooks/useAuth';
 import { dative } from '../utils/turkish';
 import { RECEIPT_TILE, buildNetStatus, buildSpendTile } from '../utils/homeCards';
 import { centsToApiAmount, formatCents, parseAmountToCents } from '../utils/money';
 
-import type { Contact, PendingApproval, PendingDebt } from '../types/models';
+import type { Contact, GroupSummary, PendingApproval, PendingDebt } from '../types/models';
 import type { HomeNetStatus, HomeStatTile } from '../utils/homeCards';
 
 /**
@@ -51,6 +53,15 @@ import type { HomeNetStatus, HomeStatTile } from '../utils/homeCards';
  * ayakta kaliyor, yalnizca kisisel karolarin yerinde kucuk bir uyari cikiyor.
  * "Seni bekleyenler" de dogal olarak gizli kaliyor — ozet olmadan hangi
  * satirlarin gosterilecegi bilinmiyor, uydurmak yanlis olurdu.
+ *
+ * EN ALTTA: "GRUPLAR", GRUPLARIM'DAKI AYNI KART
+ * -------------------------------------------------
+ * "Seni bekleyenler"in altinda tum gruplarin listesi var — Gruplarim
+ * sayfasindaki **ayni** `GroupCard` bileseniyle, ikinci bir kopyasi
+ * yazilmadan (bkz. docs/decisions/3.14-home-gruplar-bolumu.md). Veri de ayni
+ * yerden: `useGroupsData()`, `AppDataProvider`in zaten tuttugu paylasilan
+ * `GET /groups` sonucu — Home'un kendi istegini atmasi ikinci bir ag
+ * gidis-donusu ve sidebar'daki grup kisayollarindan ayrisma riski demekti.
  */
 const HomePage = () => {
   const { user } = useAuth();
@@ -61,6 +72,7 @@ const HomePage = () => {
     acildiginda ayni uc noktaya ikinci bir istek gitmis olurdu.
   */
   const summary = useSummaryData();
+  const groups = useGroupsData();
 
   const netStatus = useMemo(() => buildNetStatus(summary.data), [summary.data]);
   const spendTile = useMemo(() => buildSpendTile(summary.data), [summary.data]);
@@ -124,6 +136,28 @@ const HomePage = () => {
           approvals={summary.data.pendingApprovals}
           debts={summary.data.pendingDebts}
           onChanged={summary.reload}
+        />
+      )}
+
+      {!groups.loading && groups.error && (
+        <div
+          className="state-box state-box--error card-solid border-destructive/30 p-4 text-sm"
+          role="alert"
+        >
+          <p className="text-destructive">{groups.error}</p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={groups.reload}>
+            Tekrar dene
+          </Button>
+        </div>
+      )}
+
+      {groups.loading && <GroupsSectionSkeleton />}
+
+      {!groups.loading && groups.data && groups.data.length > 0 && (
+        <GroupsSection
+          groups={groups.data}
+          currentUserId={user?.id ?? ''}
+          onExpenseAdded={groups.reload}
         />
       )}
     </section>
@@ -414,5 +448,59 @@ const DebtRow = ({ debt, onChanged }: { debt: PendingDebt; onChanged: () => void
     </li>
   );
 };
+
+/**
+ * "Gruplar" — Gruplarim sayfasindakiyle **ayni** liste, **ayni** `GroupCard`.
+ * Ikinci bir kart bileseni yazilmadi; gerekce docs/decisions/3.14-home-gruplar-bolumu.md.
+ *
+ * Grup yoksa bolum hic cizilmiyor — "Seni bekleyenler"le ayni kural: bos bir
+ * baslik + rozet, Home'un ana isine hicbir sey katmazdi ve `/groups` zaten
+ * kendi bos-durum ekranini gosteriyor.
+ */
+const GroupsSection = ({
+  groups,
+  currentUserId,
+  onExpenseAdded,
+}: {
+  groups: GroupSummary[];
+  currentUserId: string;
+  onExpenseAdded: () => void;
+}) => (
+  <section className="home-groups flex flex-col gap-3">
+    <div className="flex items-center justify-between gap-2">
+      <h2 className="text-lg">Gruplar</h2>
+      <Badge variant="outline" className="border-ink/15 bg-ink/5 text-ink-muted">
+        {groups.length} grup
+      </Badge>
+    </div>
+
+    <div className="flex flex-col gap-3">
+      {groups.map((group) => (
+        <GroupCard
+          key={group.id}
+          group={group}
+          currentUserId={currentUserId}
+          onExpenseAdded={onExpenseAdded}
+        />
+      ))}
+    </div>
+  </section>
+);
+
+/** Yukleme iskeleti — `GroupCard`in kabaca yuksekligiyle ayni, ziplama olmasin. */
+const GroupsSectionSkeleton = () => (
+  <div className="flex flex-col gap-3" aria-busy="true" aria-label="Gruplar yukleniyor">
+    {[0, 1].map((index) => (
+      <div className="group-card card-glass flex items-center gap-4 p-5" key={index}>
+        <Skeleton className="skeleton-line h-10 w-10 shrink-0 rounded-full" />
+        <div className="flex-1">
+          <Skeleton className="skeleton-line skeleton-line--title h-5 w-2/5" />
+          <Skeleton className="skeleton-line skeleton-line--short mt-2 h-3 w-3/5" />
+        </div>
+        <Skeleton className="skeleton-line h-10 w-24 rounded-lg" />
+      </div>
+    ))}
+  </div>
+);
 
 export default HomePage;
