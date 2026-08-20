@@ -5,7 +5,6 @@ import { Link } from 'react-router-dom';
 import ActivityRow from '@/components/ActivityRow';
 import CloseAccountDialog from '@/components/CloseAccountDialog';
 import GroupCard from '@/components/GroupCard';
-import HomeFeatureCard from '@/components/HomeFeatureCard';
 import HomeNetStatusCard from '@/components/HomeNetStatusCard';
 import HomeStatCard from '@/components/HomeStatCard';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +17,7 @@ import { useGroupsData, useSummaryData } from '../hooks/useAppData';
 import useAsync from '../hooks/useAsync';
 import useAuth from '../hooks/useAuth';
 import { dative } from '../utils/turkish';
-import { RECEIPT_TILE, buildNetStatus, buildSpendTile } from '../utils/homeCards';
+import { buildNetStatus, buildSpendTile } from '../utils/homeCards';
 import { centsToApiAmount, formatCents, parseAmountToCents } from '../utils/money';
 
 import type {
@@ -43,6 +42,15 @@ const RECENT_ACTIVITY_LIMIT = 5;
  * Home bir vitrin degil bir **giris holu**. Kullanici bu uygulamaya borcunu
  * gormeye geliyor; Home'un isi o yolu kisaltmak, uzatmak degil.
  *
+ * FIS TARAMA TANITIM KAROSU SIDEBAR'A TASINDI
+ * -----------------------------------------------
+ * Izgaranin ucuncu, tam genislikteki tanitim karosu (`HomeFeatureCard` +
+ * `RECEIPT_TILE`) buradan tamamen kaldirildi; ozellik artik kendi sidebar
+ * sekmesinde (`/fis-tara`, bkz. docs/decisions/3.16-fis-tara-sayfasi.md).
+ * `HomeFeatureCard.tsx` baska hicbir yerde kullanilmiyordu, o yuzden bilesen
+ * de silindi — kullanilmayan bir "tanitim karosu" cercevesi birakmanin
+ * kazanci yoktu.
+ *
  * IZGARANIN ALTI: CTA DEGIL, "SENI BEKLEYENLER"
  * -----------------------------------------------
  * Eskiden burada genel bir "Gruplarini Gor" butonu vardi. Kullanicinin asil
@@ -63,10 +71,10 @@ const RECENT_ACTIVITY_LIMIT = 5;
  *
  * HATA DURUMU SAYFAYI DUSURMUYOR
  * ------------------------------
- * Ozet cekilemezse sayfa hata ekranina donmuyor: karsilama ve tanitim karosu
- * ayakta kaliyor, yalnizca kisisel karolarin yerinde kucuk bir uyari cikiyor.
- * "Seni bekleyenler" de dogal olarak gizli kaliyor — ozet olmadan hangi
- * satirlarin gosterilecegi bilinmiyor, uydurmak yanlis olurdu.
+ * Ozet cekilemezse sayfa hata ekranina donmuyor: karsilama ayakta kaliyor,
+ * yalnizca kisisel karolarin yerinde kucuk bir uyari cikiyor. "Seni
+ * bekleyenler" de dogal olarak gizli kaliyor — ozet olmadan hangi satirlarin
+ * gosterilecegi bilinmiyor, uydurmak yanlis olurdu.
  *
  * EN ALTTA: "GRUPLAR", GRUPLARIM'DAKI AYNI KART
  * -------------------------------------------------
@@ -213,21 +221,18 @@ const HomePage = () => {
 };
 
 /**
- * Sabit izgara.
- *
- * DUZEN
- * -----
- *   ust satir : genis karo (net durum) + dar karo (bu ay harcanan)
- *   alt satir : tam genislikte tanitim karosu
+ * Sabit izgara: genis karo (net durum) + dar karo (bu ay harcanan).
  *
  * Genislik farki `sm:grid-cols-3` + `col-span-2` ile: net durum sayfanin
  * tasidigi **asil** sayi, dolayisiyla daha genis kutuyu o aliyor. Esit iki
  * kutu olsaydi ikisi de "esit onemde" okunurdu.
  *
- * Dar ekranda tek sutuna dusuyor ve sira aynen korunuyor.
+ * Dar ekranda tek sutuna dusuyor.
  *
- * Kisisel karolar yoksa (ozet okunamadi) izgara tek elemanli kaliyor: tanitim
- * karosu tam genislikte, tek basina. Yer tutan bos kutu birakilmiyor.
+ * Ucuncu, tam genislikteki tanitim karosu (fis tarama) kaldirildi — ozellik
+ * artik sidebar'da kendi sekmesi (bkz. docs/decisions/3.16-fis-tara-sayfasi.md).
+ * Kisisel karolar yoksa (ozet okunamadi) izgara bos kalir; uydurma bir dolgu
+ * konmuyor.
  */
 const HomeGrid = ({
   netStatus,
@@ -252,10 +257,6 @@ const HomeGrid = ({
         <HomeStatCard tile={spendTile} />
       </div>
     )}
-
-    <div className="sm:col-span-3">
-      <HomeFeatureCard tile={RECEIPT_TILE} />
-    </div>
   </div>
 );
 
@@ -269,7 +270,6 @@ const HomeGridSkeleton = () => (
   <div className="home-grid grid gap-4 sm:grid-cols-3" aria-busy="true" aria-label="Ozet yukleniyor">
     <Skeleton className="min-h-36 rounded-xl sm:col-span-2" />
     <Skeleton className="min-h-36 rounded-xl" />
-    <Skeleton className="min-h-24 rounded-xl sm:col-span-3" />
   </div>
 );
 

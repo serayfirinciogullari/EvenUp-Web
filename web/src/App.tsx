@@ -23,6 +23,7 @@ import JoinPage from './pages/JoinPage';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
+import ReceiptScanPage from './pages/ReceiptScanPage';
 import RegisterPage from './pages/RegisterPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -36,7 +37,8 @@ import SettingsPage from './pages/SettingsPage';
  *   /                 -> Landing (halka acik, guard YOK)
  *   /join/:inviteCode -> Davet linki (halka acik, guard YOK)
  *   GuestRoute        -> /login, /register        (giris yapmisken erisilmez)
- *   ProtectedRoute    -> /home, /groups, /groups/:id, /activity, /settings
+ *   ProtectedRoute    -> /home, /groups, /groups/:id, /activity, /contacts,
+ *                        /fis-tara, /settings
  *     + AdminRoute    -> /admin
  *
  * KOK ADRES: ONCE /groups, SONRA /home, SIMDI LANDING
@@ -124,6 +126,7 @@ const App = () => (
           */}
           <Route path="/groups/:groupKey" element={<GroupDetailPage />} />
           <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/fis-tara" element={<ReceiptScanPage />} />
           <Route path="/settings" element={<SettingsPage />}>
             <Route index element={<Navigate to="profile" replace />} />
             <Route path="profile" element={<ProfileTab />} />

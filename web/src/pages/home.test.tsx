@@ -224,7 +224,7 @@ describe('Home — izgara karolari', () => {
     expect(tiles.getByText('450,00 ₺')).toBeInTheDocument();
   });
 
-  it('izgara sabit: iki kisisel karo + bir tanitim karosu, hepsi ayni anda', async () => {
+  it('izgara sabit: iki kisisel karo, hepsi ayni anda', async () => {
     renderHome();
     await waitForPage();
 
@@ -232,9 +232,6 @@ describe('Home — izgara karolari', () => {
 
     expect(tiles.getByText('Tum gruplarda net durumun')).toBeInTheDocument();
     expect(tiles.getByText('Bu ay harcadigin')).toBeInTheDocument();
-    expect(tiles.getByText('Fisi cek, AI duzenlesin')).toBeInTheDocument();
-
-    // Kisisel karolar `article`; tanitim karosu bir buton. Toplam uc kutu.
     expect(tiles.getAllByRole('article')).toHaveLength(2);
   });
 
@@ -277,16 +274,6 @@ describe('Home — izgara karolari', () => {
     ).toBeInTheDocument();
   });
 
-  it('henuz yazilmamis ozellik Yakinda rozeti tasir ve bildirim gosterir', async () => {
-    renderHome();
-    await waitForPage();
-
-    expect(within(grid()).getByText('Yakinda')).toBeInTheDocument();
-
-    fireEvent.click(within(grid()).getByRole('button', { name: /Fisi cek, AI duzenlesin/ }));
-
-    expect(await screen.findByText('Bu ozellik yakinda')).toBeInTheDocument();
-  });
 });
 
 /* ------------------------------------------------------------ renk kurali */
@@ -295,10 +282,10 @@ describe('Home — tek renk ailesi', () => {
   /*
     jsdom stil dosyasini yuklemiyor, dolayisiyla gercek zemin rengi
     olculemiyor. Kural bu yuzden **sinif duzeyinde** korunuyor: her karo
-    yalnizca `home-tile--{balance|spend|feature}` yuzeylerinden birini
-    tasiyabilir ve bunlarin ucu de index.css'te rose/ink gradyanidir.
+    yalnizca `home-tile--{balance|spend}` yuzeylerinden birini tasiyabilir ve
+    bunlarin ucu de index.css'te rose/ink gradyanidir.
   */
-  const SURFACES = /home-tile--(balance|spend|feature)/;
+  const SURFACES = /home-tile--(balance|spend)/;
 
   it('her karo tek aileden bir yuzey sinifi tasir', async () => {
     renderHome();
@@ -306,7 +293,7 @@ describe('Home — tek renk ailesi', () => {
 
     const tiles = grid().querySelectorAll('.home-tile');
 
-    expect(tiles).toHaveLength(3);
+    expect(tiles).toHaveLength(2);
     tiles.forEach((tile) => expect(tile.className).toMatch(SURFACES));
   });
 
@@ -368,7 +355,7 @@ describe('Home — bekleyen odeme uyarisi', () => {
 /* ---------------------------------------------------------- hata / bos */
 
 describe('Home — ozet okunamadiginda', () => {
-  it('sayfa ayakta kalir: tanitim karosu gorunmeye devam eder, Seni bekleyenler gizli kalir', async () => {
+  it('sayfa ayakta kalir: karsilama gorunmeye devam eder, Seni bekleyenler gizli kalir', async () => {
     mockedSummary.getHomeSummary.mockRejectedValue(new Error('bozuk'));
 
     renderHome();
@@ -376,8 +363,8 @@ describe('Home — ozet okunamadiginda', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Ozet yuklenemedi');
 
-    // Home'un asil isi (ozet + yonlendirme) ozet olmadan da yapilabiliyor.
-    expect(within(grid()).getByText('Fisi cek, AI duzenlesin')).toBeInTheDocument();
+    // Home'un asil isi (karsilama + gezinme) ozet olmadan da yapilabiliyor.
+    expect(screen.getByRole('heading', { name: 'Merhaba, Deniz' })).toBeInTheDocument();
     // Ozet olmadan hangi satirlarin gosterilecegi bilinmiyor — uydurulmuyor.
     expect(screen.queryByRole('heading', { name: 'Seni bekleyenler' })).not.toBeInTheDocument();
   });

@@ -7,6 +7,7 @@ import {
   IdCard,
   LogOut,
   Moon,
+  ScanLine,
   Settings,
   ShieldCheck,
   Sun,
@@ -100,6 +101,9 @@ const NAV_ITEMS: readonly NavItem[] = [
   { to: '/groups', label: 'Gruplarim', icon: Users },
   { to: '/activity', label: 'Aktivite', icon: Bell, badge: true },
   { to: '/contacts', label: 'Kisiler', icon: IdCard },
+  // Henuz islevsiz (bkz. pages/ReceiptScanPage.tsx); sekme yine de gercek —
+  // Ayarlar'la ayni kural, "yakinda" olmasi tiklanamaz olmasini gerektirmiyor.
+  { to: '/fis-tara', label: 'Fis Tara', icon: ScanLine },
   { to: '/settings', label: 'Ayarlar', icon: Settings },
 ];
 

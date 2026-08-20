@@ -1,4 +1,4 @@
-import { ReceiptText, ScanLine } from 'lucide-react';
+import { ReceiptText } from 'lucide-react';
 
 import { formatCents, formatCentsAbsolute, parseAmountToCents } from './money';
 import { toneOfCents } from './balance';
@@ -29,10 +29,13 @@ import type { LucideIcon } from 'lucide-react';
  * Carousel alti kart tasiyabiliyordu cunku ucu her zaman ekran disindaydi.
  * Izgarada hepsi ayni anda gorunur; alti kutu bir "gosterge paneli" olurdu ve
  * Home'un tek isi (kullaniciyi gruplarina yollamak) o panelin icinde kaybolurdu.
- * Kalanlar: iki kisisel deger + bir tanitim. "Aktif grup sayisi" `netSentence`
- * icindeki cumleye tasindi; eskiden ayrica CTA'nin altinda da bir kopyasi
- * vardi (`ctaHintOf`), CTA kaldirilinca (bkz. docs/decisions/3.13-home-seni-bekleyenler.md)
- * o kopya da kaldirildi.
+ * Kalan iki kisisel deger (net durum + bu ay harcanan). "Aktif grup sayisi"
+ * `netSentence` icindeki cumleye tasindi. Ucuncu, tanitim amacli fis tarama
+ * karosu (`RECEIPT_TILE`/`HomeFeatureCard`) sidebar'a kendi sekmesi olarak
+ * tasindiginda kaldirildi (bkz. docs/decisions/3.16-fis-tara-sayfasi.md) —
+ * eskiden ayrica CTA'nin altinda bir kopyasi vardi (`ctaHintOf`), CTA
+ * kaldirilinca (bkz. docs/decisions/3.13-home-seni-bekleyenler.md) o da
+ * kaldirilmisti.
  */
 
 /** Karo yuzeyi. Uc deger de ayni rose/ink ailesinden; bkz. index.css. */
@@ -76,37 +79,6 @@ export interface HomeStatTile {
   surface: HomeTileSurface;
   icon: LucideIcon;
 }
-
-export interface HomeFeatureTile {
-  id: string;
-  title: string;
-  description: string;
-  /** Karonun uzerindeki eylem metni. */
-  cta: string;
-  /**
-   * Gidilecek rota. `null` = ozellik henuz yok; karo tiklanabilir kalir ama
-   * bir bildirim gosterir. Var olmayan bir adrese gonderip 404 ile
-   * karsilastirmaktansa durumu acikca soylemek dogru.
-   */
-  to: string | null;
-  icon: LucideIcon;
-}
-
-/**
- * Tam genislikteki tanitim karosu.
- *
- * Tek tanitim karosu kaldi ve o da fis tarama: uygulamanin asil vaadi bu.
- * Ikinci/ucuncu tanitim karosu (takma isimler, hatirlatma) izgarada CTA ile
- * yarisiyordu; ikisi de zaten uygulamanin icinde kesfedilebilir yerler.
- */
-export const RECEIPT_TILE: HomeFeatureTile = {
-  id: 'receipt-scan',
-  title: 'Fisi cek, AI duzenlesin',
-  description: 'Fisin fotografini yukle; kalemleri ve tutari kendisi cikarsin, sen yalnizca onayla.',
-  cta: 'Fis tara',
-  to: null,
-  icon: ScanLine,
-};
 
 /**
  * Yon rozetinin metni. Kisa ve chip gibi: "Sen borclusun" degil "Borcun var".

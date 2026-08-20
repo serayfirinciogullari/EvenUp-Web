@@ -185,14 +185,34 @@ beforeEach(() => {
 /* ------------------------------------------------------------ ana gezinme */
 
 describe('Sidebar — gezinme', () => {
-  it('dort ana hedefi tasir', async () => {
+  it('ana hedefleri tasir', async () => {
     renderApp();
     const nav = within(await waitForSidebar());
 
     expect(nav.getByRole('link', { name: 'Ana Sayfa' })).toHaveAttribute('href', '/home');
     expect(nav.getByRole('link', { name: 'Gruplarim' })).toHaveAttribute('href', '/groups');
     expect(nav.getByRole('link', { name: /Aktivite/ })).toHaveAttribute('href', '/activity');
+    expect(nav.getByRole('link', { name: 'Kisiler' })).toHaveAttribute('href', '/contacts');
+    expect(nav.getByRole('link', { name: 'Fis Tara' })).toHaveAttribute('href', '/fis-tara');
     expect(nav.getByRole('link', { name: 'Ayarlar' })).toHaveAttribute('href', '/settings');
+  });
+
+  /*
+   * Henuz islevsiz olmasi (`ReceiptScanPage.tsx`) sekmenin gercek bir rotaya
+   * baglanmasini engellemiyor — bkz. docs/decisions/3.16-fis-tara-sayfasi.md.
+   */
+  it('Fis Tara tiklaninca yer tutucu sayfayi acar', async () => {
+    renderApp();
+    const nav = within(await waitForSidebar());
+
+    fireEvent.click(nav.getByRole('link', { name: 'Fis Tara' }));
+
+    expect(await screen.findByRole('heading', { name: 'Yakinda' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Fis fotografini yukle, kalemleri ve tutari AI cikarsin, sen yalnizca onayla.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('Admin baglantisi yalnizca admin kullanicida cikar', async () => {
