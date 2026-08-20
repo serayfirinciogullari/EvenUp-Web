@@ -327,6 +327,86 @@ const listMembers = async (groupId: string, viewerId: string): Promise<GroupMemb
       'mn.nickname'
     ) as unknown as Promise<GroupMemberView[]>;
 
+/* ----------------------------------------------------------------- kisiler */
+
+/** "Kisiler" sayfasindaki bir kisinin ortak oldugu tek bir grup. */
+export interface ContactGroupRef {
+  id: string;
+  name: string;
+  slug: string;
+  /**
+   * Bu **grupta** verilmis takma isim (varsa) — `ContactRow.nickname`
+   * (ortak gruplar arasindaki en guncel olan) ile karistirilmamali. Takma
+   * isim duzenleme UI'i her grubu kendi degeriyle onceden doldurabilsin diye
+   * grup bazinda da tasiniyor.
+   */
+  nickname: string | null;
+}
+
+/** `listContactsForUser` satiri — bakiye burada yok, servis katmani ekliyor. */
+export interface ContactRow {
+  user_id: string;
+  name: string;
+  /**
+   * Ortak gruplardan birinde verilmis en son takma isim; hicbiri yoksa `null`.
+   * Takma isim gruba ozel oldugu icin (bkz. `upsertNickname`) tek bir "asil"
+   * degeri yok — secim kurali `docs/decisions/kisiler-sayfasi.md` icinde.
+   */
+  nickname: string | null;
+  shared_groups: ContactGroupRef[];
+}
+
+/**
+ * Kullanicinin en az bir grubu paylastigi her kisi + ortak gruplar + o
+ * kisiye verilmis (varsa) en guncel takma isim.
+ *
+ * NEDEN TEK SORGU
+ * ----------------
+ * `gm_me` (istekte bulunanin uyelikleri) ile `gm_them` (ayni gruptaki digerleri)
+ * `group_id` uzerinden birlestirilip kisi basina `GROUP BY` ile toplaniyor.
+ * Grup basina ayri bir `listMembers` cagrisi (N+1) yerine tum kisiler ve
+ * ortak gruplari tek gidis-donuste geliyor.
+ *
+ * NEDEN TAKMA ISIM `array_agg(... ORDER BY updated_at DESC NULLS LAST))[1]`
+ * ----------------------------------------------------------------------
+ * Ayni kisiye birden fazla ortak grupta farkli (ya da hic) takma isim
+ * verilmis olabilir. `LEFT JOIN` her (kisi, ortak grup) satirina o grubun
+ * takma ismini (varsa) ekliyor; `GROUP BY` sonrasi dizi en son guncellenmis
+ * takma ismi basa alacak sekilde siralaniyor ve ilk eleman aliniyor. Hicbir
+ * grupta takma isim yoksa dizinin tamami `NULL`, sonuc da `NULL`.
+ */
+const listContactsForUser = async (userId: string): Promise<ContactRow[]> => {
+  const rows = await db('group_members as gm_me')
+    .join('group_members as gm_them', function joinShared() {
+      this.on('gm_them.group_id', '=', 'gm_me.group_id').andOn(
+        'gm_them.user_id',
+        '<>',
+        'gm_me.user_id'
+      );
+    })
+    .join('users as u', 'u.id', 'gm_them.user_id')
+    .join('groups as g', 'g.id', 'gm_me.group_id')
+    .leftJoin('member_nicknames as mn', function joinNickname() {
+      this.on('mn.group_id', '=', 'gm_me.group_id')
+        .andOn('mn.target_user_id', '=', 'gm_them.user_id')
+        .andOnVal('mn.owner_user_id', '=', userId);
+    })
+    .where('gm_me.user_id', userId)
+    .whereNull('g.deleted_at')
+    .groupBy('u.id', 'u.name')
+    .orderBy('u.name', 'asc')
+    .select(
+      'u.id as user_id',
+      'u.name',
+      db.raw(`(array_agg(mn.nickname ORDER BY mn.updated_at DESC NULLS LAST))[1] as nickname`),
+      db.raw(
+        `json_agg(json_build_object('id', g.id, 'name', g.name, 'slug', g.slug, 'nickname', mn.nickname) ORDER BY g.name) as shared_groups`
+      )
+    );
+
+  return rows as unknown as ContactRow[];
+};
+
 /* ------------------------------------------------------------------ slug */
 
 /** PostgreSQL `unique_violation`. */
@@ -677,6 +757,7 @@ export default {
   listMembershipNames,
   listMembers,
   listMemberIds,
+  listContactsForUser,
   createWithOwner,
   updateDetails,
   removeMember,

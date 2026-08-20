@@ -85,11 +85,14 @@ const me: User = {
   role: 'user',
   is_active: true,
   created_at: '2026-08-01T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 const group = (over: Partial<GroupSummary> = {}): GroupSummary => ({
   id: 'aaaaaaaa-0000-4000-8000-000000000001',
   name: 'Ev Arkadaslari',
+  slug: 'ev-arkadaslari',
   description: null,
   created_by: ME_ID,
   created_at: '2026-08-01T10:00:00.000Z',
@@ -109,6 +112,7 @@ const groupDetailFor = (groupId: string): GroupDetail => ({
   group: {
     id: groupId,
     name: 'Ev Arkadaslari',
+    slug: 'ev-arkadaslari',
     description: null,
     created_by: ME_ID,
     created_at: '2026-08-01T10:00:00.000Z',
@@ -410,10 +414,11 @@ describe('bakiye renklendirme', () => {
 describe('yeni grup modali', () => {
   it('grup olusturur ve liste yenilenir', async () => {
     mockedGroups.listGroups.mockResolvedValueOnce([]);
-    mockedGroups.listGroups.mockResolvedValueOnce([group({ name: 'Tatil' })]);
+    mockedGroups.listGroups.mockResolvedValueOnce([group({ name: 'Tatil', slug: 'tatil' })]);
     mockedGroups.createGroup.mockResolvedValue({
       id: 'x',
       name: 'Tatil',
+      slug: 'tatil',
       description: null,
       created_by: ME_ID,
       created_at: '2026-08-15T10:00:00.000Z',

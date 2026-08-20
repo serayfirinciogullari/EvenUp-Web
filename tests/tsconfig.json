@@ -1,0 +1,10 @@
+{
+  // Editorler (VS Code) bir dosyanin projesini bulmak icin yukari dogru en
+  // yakin `tsconfig.json`'i arar. Kokteki `tsconfig.json` yalnizca `src/`i
+  // kapsadigi icin bu dosya olmadan `tests/` altindaki dosyalar hicbir
+  // projeye dahil olmuyordu; sonuc: jest/expect/describe gibi global tipler
+  // (@types/jest) editorde taninmiyordu, halbuki `npx jest` (ts-jest) zaten
+  // dogrudan tsconfig.typecheck.json'i kullandigi icin terminalde sorun
+  // gorunmuyordu. Bu dosya yalnizca editorun de ayni projeyi bulmasini saglar.
+  "extends": "../tsconfig.typecheck.json"
+}

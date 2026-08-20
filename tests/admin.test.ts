@@ -98,6 +98,8 @@ const makeUser = (name: string, role: UserRole = 'user', isActive = true): TestU
     role,
     is_active: isActive,
     created_at: new Date(Date.now() - users.length * 1000),
+    avatar: null,
+    handle: null,
     password_hash: passwordHash,
     token: jwt.sign({ userId: id, role }, TEST_JWT_SECRET, { expiresIn: '1h' }),
   };
@@ -129,6 +131,8 @@ const toPublicUser = (user: TestUser): PublicUser => ({
   role: user.role,
   is_active: user.is_active,
   created_at: user.created_at,
+  avatar: user.avatar,
+  handle: user.handle,
 });
 
 /** Model fonksiyonlarinin bellek ici karsiliklari (gercek sorgu semantigi ile ayni). */

@@ -35,6 +35,8 @@ export interface User {
   role: UserRole;
   is_active: boolean;
   created_at: string;
+  avatar: string | null;
+  handle: string | null;
 }
 
 /** `PublicGroup` — `deleted_at` disarida (soft delete ic detay). */
@@ -347,6 +349,41 @@ export interface PendingApproval {
   from_name: string;
   amount: string;
   created_at: string;
+}
+
+/* ---------------------------------------------------------------- kisiler */
+
+/** "Kisiler" sayfasindaki bir satirin, tek bir ortak gruptaki payi. */
+export interface ContactGroupBalance {
+  id: string;
+  name: string;
+  slug: string;
+  /** Bu **grupta** verilmis takma isim; `Contact.nickname` (ortak gruplar
+   *  arasindaki en guncel olan) ile karistirilmamali. */
+  nickname: string | null;
+  /** Yalnizca bu grupta, yalnizca bu kisiyle olan net bakiye. Pozitif = kisi borclu. */
+  net_balance: string;
+}
+
+/**
+ * `GET /users/me/contacts` satiri.
+ *
+ * `net_balance` **butun ortak gruplardaki toplam** — netlestirmenin
+ * (`BalanceResult.transfers`) degil, harcama paylari + onaylanmis odemelerden
+ * dogrudan hesaplanan kisi-bazli bir toplam. Gerekce: docs/decisions/kisiler-sayfasi.md.
+ */
+export interface Contact {
+  user_id: string;
+  name: string;
+  /** Ortak gruplardan birinde verilmis en son takma isim; yoksa `null`. */
+  nickname: string | null;
+  shared_groups: ContactGroupBalance[];
+  /** Pozitif = kisi sana borclu, negatif = sen borclusun, "0.00" = kapali. */
+  net_balance: string;
+}
+
+export interface ContactListResult {
+  contacts: Contact[];
 }
 
 /* ------------------------------------------------------------------ admin */

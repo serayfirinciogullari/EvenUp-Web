@@ -1,4 +1,5 @@
 import authService from '../services/auth.service';
+import contactsService from '../services/contacts.service';
 import summaryService from '../services/summary.service';
 import ApiError from '../utils/ApiError';
 
@@ -78,4 +79,21 @@ const markActivitySeen = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json({ message: 'Aktivite okundu olarak isaretlendi' });
 };
 
-export default { updateMe, changeMyPassword, getHomeSummary, markActivitySeen };
+/**
+ * GET /users/me/contacts -> 200 { contacts }  (requireAuth)
+ *
+ * `getHomeSummary` ile ayni gerekce: hedef her zaman token'daki kullanici,
+ * adreste ID yok — bu ucun cevabi butun ortak-grup gecmisini tasidigi icin bu
+ * onemli, tek bir ID parametresi butun bir kullanicinin borc agini disariya
+ * acan bir IDOR yuzeyi olurdu.
+ */
+const getContacts = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    throw ApiError.unauthorized('Kimlik dogrulamasi gerekli');
+  }
+
+  const contacts = await contactsService.getContacts(req.user.id);
+  res.status(200).json({ contacts });
+};
+
+export default { updateMe, changeMyPassword, getHomeSummary, markActivitySeen, getContacts };

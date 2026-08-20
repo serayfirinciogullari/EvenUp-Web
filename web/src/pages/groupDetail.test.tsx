@@ -111,12 +111,15 @@ const me: User = {
   role: 'user',
   is_active: true,
   created_at: '2026-08-01T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 const groupDetail: GroupDetail = {
   group: {
     id: GROUP_ID,
     name: 'Ev Arkadaslari',
+    slug: 'ev-arkadaslari',
     description: null,
     created_by: ME_ID,
     created_at: '2026-08-01T10:00:00.000Z',

@@ -4,18 +4,20 @@ import {
   ChevronsRight,
   ChevronsUpDown,
   House,
+  IdCard,
   LogOut,
   Moon,
   Settings,
   ShieldCheck,
   Sun,
+  User as UserIcon,
   Users,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AnimatedGradientText } from '@/components/ui/animated-gradient-text';
 import {
   DropdownMenu,
@@ -97,6 +99,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { to: '/home', label: 'Ana Sayfa', icon: House },
   { to: '/groups', label: 'Gruplarim', icon: Users },
   { to: '/activity', label: 'Aktivite', icon: Bell, badge: true },
+  { to: '/contacts', label: 'Kisiler', icon: IdCard },
   { to: '/settings', label: 'Ayarlar', icon: Settings },
 ];
 
@@ -285,12 +288,22 @@ const Sidebar = ({ collapsed, onToggleCollapsed, mobileOpen, onNavigate }: Sideb
 };
 
 /**
- * Hesap menusu — **tek** tiklanabilir oge.
+ * Hesap menusu — ince cerceveli bir **kart**, ayni zamanda **tek** tiklanabilir
+ * tetikleyici (2.6, Ayarlar yeniden tasarimi -> docs/decisions/ayarlar-sayfasi.md).
  *
  * Onceki surumde burada uc ayri kontrol vardi (avatar, tema ikonu, cikis
  * ikonu). Uc ikon yan yana, dar halde alt alta uc satir demekti ve ucu de
  * ayni sey hakkinda: hesap. Tek bir tetikleyici + menu hem daralmis halde tek
  * satira sigiyor hem de tema/cikis'i ayni yerde topluyor.
+ *
+ * NEDEN "TIKLAYINCA DOGRUDAN AYARLARA GIT" DEGIL, ACILIR MENU
+ * -------------------------------------------------------------
+ * Istekte "tiklanince Ayarlar > Profil'e gider" deniyordu ama bu kutu zaten
+ * calisan tema gecisi ve cikis'i tasiyor — dogrudan yonlendirme bu ikisini
+ * baska bir yere tasimayi gerektirirdi. `çalışan her şeyi taşı` kurali
+ * geregince menu korunuyor; kart artik **acilir menunun tetikleyicisi** ve
+ * menunun ilk ogesi "Profili duzenle" olarak Ayarlar > Profil'e goturuyor —
+ * boylece kartin kendisi de "profile giden bir yer" hissini veriyor.
  *
  * TEMA: MENU ICINDE HIZLI GECIS
  * -----------------------------
@@ -315,22 +328,32 @@ const UserMenu = ({ compact, onNavigate }: { compact: boolean; onNavigate: () =>
 
   const isDark = mounted && resolvedTheme === 'dark';
 
+  // Ikinci satir: takma ad varsa o, yoksa e-posta. Bos bir satir birakmaktansa
+  // her zaman elde olan bir bilgiyi gostermek daha faydali.
+  const secondLine = user?.handle ? `@${user.handle}` : user?.email;
+
   const handleLogout = () => {
     onNavigate();
     logout();
     navigate('/login', { replace: true });
   };
 
+  const handleEditProfile = () => {
+    onNavigate();
+    navigate('/settings/profile');
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          'sidebar__user flex w-full items-center gap-2 rounded-md py-2 text-left transition-colors hover:bg-ink/5',
+          'sidebar__user flex w-full items-center gap-2 rounded-lg border border-ink/10 py-2 text-left transition-colors hover:bg-ink/5',
           compact ? 'justify-center px-0' : 'px-2'
         )}
         aria-label="Hesap menusu"
       >
         <Avatar className="size-7 shrink-0">
+          {user?.avatar && <AvatarImage src={user.avatar} alt="" />}
           {/* `text-white` degil `text-cream`: koyu temada rose acik gule
               doner ve uzerindeki beyaz metin okunmaz olurdu. */}
           <AvatarFallback className="bg-rose text-xs font-semibold text-cream">
@@ -342,7 +365,7 @@ const UserMenu = ({ compact, onNavigate }: { compact: boolean; onNavigate: () =>
           <>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-ink">{user?.name}</span>
-              <span className="block truncate text-xs text-ink-muted">{user?.email}</span>
+              <span className="block truncate text-xs text-ink-muted">{secondLine}</span>
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-ink-muted" aria-hidden />
           </>
@@ -354,9 +377,14 @@ const UserMenu = ({ compact, onNavigate }: { compact: boolean; onNavigate: () =>
       <DropdownMenuContent align="start" side="top" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <p className="truncate text-sm font-medium text-ink">{user?.name}</p>
-          <p className="truncate text-xs text-ink-muted">{user?.email}</p>
+          <p className="truncate text-xs text-ink-muted">{secondLine}</p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+
+        <DropdownMenuItem onSelect={handleEditProfile}>
+          <UserIcon aria-hidden />
+          Profili duzenle
+        </DropdownMenuItem>
 
         <DropdownMenuItem onSelect={() => setTheme(isDark ? 'light' : 'dark')}>
           {isDark ? <Sun aria-hidden /> : <Moon aria-hidden />}

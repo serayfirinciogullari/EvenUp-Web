@@ -94,6 +94,8 @@ const deniz: User = {
   role: 'user',
   is_active: true,
   created_at: '2026-01-01T00:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 const HOUR_MS = 60 * 60 * 1000;

@@ -16,6 +16,10 @@ import type { User } from '../types/models';
 
 export interface UpdateProfileInput {
   name: string;
+  /** `null` -> takma adi kaldir. Bos string degil: PUT tam durumu tasir. */
+  handle: string | null;
+  /** `null` -> fotografi kaldir. Doluysa `data:image/...;base64,...`. */
+  avatar: string | null;
 }
 
 export interface ChangePasswordInput {

@@ -92,6 +92,8 @@ const admin: User = {
   role: 'admin',
   is_active: true,
   created_at: '2026-08-01T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 const deniz: User = {
@@ -101,6 +103,8 @@ const deniz: User = {
   role: 'user',
   is_active: true,
   created_at: '2026-08-02T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 const ece: User = {
@@ -110,6 +114,8 @@ const ece: User = {
   role: 'user',
   is_active: false,
   created_at: '2026-08-03T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 const stats: AdminStats = {

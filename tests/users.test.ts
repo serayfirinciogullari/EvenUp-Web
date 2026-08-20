@@ -27,7 +27,7 @@ jest.mock('../src/models/user.model', () => ({
     findPublicById: jest.fn(),
     create: jest.fn(),
     listPublic: jest.fn(),
-    updateName: jest.fn(),
+    updateProfile: jest.fn(),
     updatePasswordHash: jest.fn(),
     markActivitySeen: jest.fn(),
   },
@@ -63,6 +63,8 @@ const insertUser = async (input: {
     is_active: input.is_active ?? true,
     created_at: new Date(),
     activity_seen_at: new Date(),
+    avatar: null,
+    handle: null,
   };
 
   usersById.set(row.id, row);
@@ -90,15 +92,25 @@ beforeEach(() => {
     return row ? toPublic(row) : undefined;
   });
 
-  mockedUserModel.updateName.mockImplementation(async (userId: string, name: string) => {
+  mockedUserModel.updateProfile.mockImplementation(async (userId: string, patch) => {
     const row = usersById.get(userId);
 
     if (!row) {
       return undefined;
     }
 
-    // Gercek sorgu gibi: **yalnizca** name kolonu yaziliyor.
-    const updated: UserRow = { ...row, name };
+    // Gercek sorgu gibi: handle UNIQUE — baska bir kullanici zaten aliyorsa carpisma.
+    if (patch.handle) {
+      const taken = [...usersById.values()].some(
+        (other) => other.id !== userId && other.handle === patch.handle
+      );
+      if (taken) {
+        return 'handle_taken';
+      }
+    }
+
+    // Gercek sorgu gibi: **yalnizca** name/handle/avatar kolonlari yaziliyor.
+    const updated: UserRow = { ...row, name: patch.name, handle: patch.handle, avatar: patch.avatar };
     usersById.set(userId, updated);
     return toPublic(updated);
   });
@@ -175,7 +187,7 @@ describe('PUT /users/me', () => {
     const response = await request(app).put('/users/me').send({ name: 'Yeni Isim' });
 
     expect(response.status).toBe(401);
-    expect(mockedUserModel.updateName).not.toHaveBeenCalled();
+    expect(mockedUserModel.updateProfile).not.toHaveBeenCalled();
   });
 
   it('bos isim 400 doner, hata alan adiyla birlikte gelir', async () => {
@@ -228,7 +240,11 @@ describe('PUT /users/me', () => {
     expect(stored.role).toBe('user');
     expect(stored.is_active).toBe(true);
     expect(stored.email).toBe(user.email);
-    expect(mockedUserModel.updateName).toHaveBeenCalledWith(user.id, 'Yeni Isim');
+    expect(mockedUserModel.updateProfile).toHaveBeenCalledWith(user.id, {
+      name: 'Yeni Isim',
+      handle: null,
+      avatar: null,
+    });
   });
 
   it('govdedeki id baska bir kullaniciyi guncellemez', async () => {

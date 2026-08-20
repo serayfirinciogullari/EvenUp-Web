@@ -66,6 +66,8 @@ const user: User = {
   role: 'user',
   is_active: true,
   created_at: '2026-08-01T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 const authResult: AuthResult = { user, token: 'yeni.jwt.token', expiresIn: '7d' };

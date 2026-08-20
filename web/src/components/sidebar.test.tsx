@@ -99,6 +99,8 @@ const me: User = {
   role: 'user',
   is_active: true,
   created_at: '2026-08-01T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 const EV_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -107,6 +109,7 @@ const TATIL_ID = 'bbbbbbbb-0000-4000-8000-000000000002';
 const group = (over: Partial<GroupSummary> = {}): GroupSummary => ({
   id: EV_ID,
   name: 'Ev Arkadaslari',
+  slug: 'ev-arkadaslari',
   description: null,
   created_by: ME_ID,
   created_at: '2026-08-01T10:00:00.000Z',
@@ -140,7 +143,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
 
-  mockedGroups.listGroups.mockResolvedValue([group(), group({ id: TATIL_ID, name: 'Tatil' })]);
+  mockedGroups.listGroups.mockResolvedValue([
+    group(),
+    group({ id: TATIL_ID, name: 'Tatil', slug: 'tatil' }),
+  ]);
   mockedGroups.getGroupBalances.mockResolvedValue({
     balances: [],
     transfers: [],
@@ -202,7 +208,8 @@ describe('Sidebar — grup kisayollari', () => {
     const groupNav = await screen.findByRole('navigation', { name: 'Grup kisayollari' });
     const link = await within(groupNav).findByRole('link', { name: 'Ev Arkadaslari' });
 
-    expect(link).toHaveAttribute('href', `/groups/${EV_ID}`);
+    // Baglanti slug ile kuruluyor (bkz. utils/groupPath.ts) — uuid degil.
+    expect(link).toHaveAttribute('href', '/groups/ev-arkadaslari');
     expect(within(groupNav).getByRole('link', { name: 'Tatil' })).toBeInTheDocument();
 
     // Renk grup id'sinden turetiliyor, sunucudan gelmiyor (utils/groupColor).
@@ -215,6 +222,7 @@ describe('Sidebar — grup kisayollari', () => {
       group: {
         id: EV_ID,
         name: 'Ev Arkadaslari',
+        slug: 'ev-arkadaslari',
         description: null,
         created_by: ME_ID,
         created_at: '2026-08-01T10:00:00.000Z',
@@ -237,7 +245,8 @@ describe('Sidebar — grup kisayollari', () => {
     const groupNav = await screen.findByRole('navigation', { name: 'Grup kisayollari' });
     fireEvent.click(await within(groupNav).findByRole('link', { name: 'Tatil' }));
 
-    await waitFor(() => expect(mockedGroups.getGroup).toHaveBeenCalledWith(TATIL_ID));
+    // Baglanti slug ile kuruluyor (bkz. utils/groupPath.ts) — uuid degil.
+    await waitFor(() => expect(mockedGroups.getGroup).toHaveBeenCalledWith('tatil'));
   });
 
   /*
@@ -256,10 +265,14 @@ describe('Sidebar — grup kisayollari', () => {
 
   it('yeni grup olusturulunca sidebar da tazelenir', async () => {
     mockedGroups.listGroups.mockResolvedValueOnce([group()]);
-    mockedGroups.listGroups.mockResolvedValueOnce([group(), group({ id: TATIL_ID, name: 'Tatil' })]);
+    mockedGroups.listGroups.mockResolvedValueOnce([
+      group(),
+      group({ id: TATIL_ID, name: 'Tatil', slug: 'tatil' }),
+    ]);
     mockedGroups.createGroup.mockResolvedValue({
       id: TATIL_ID,
       name: 'Tatil',
+      slug: 'tatil',
       description: null,
       created_by: ME_ID,
       created_at: '2026-08-15T10:00:00.000Z',

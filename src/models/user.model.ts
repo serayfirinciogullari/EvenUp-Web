@@ -17,6 +17,8 @@ export const PUBLIC_USER_COLUMNS = [
   'role',
   'is_active',
   'created_at',
+  'avatar',
+  'handle',
 ] as const;
 
 /** Response'a konulabilecek kullanici gorunumu — password_hash icermez. */
@@ -47,23 +49,50 @@ const create = async (data: UserInsert): Promise<PublicUser> => {
 const listPublic = async (): Promise<PublicUser[]> =>
   db('users').select(publicColumns).orderBy('created_at', 'desc');
 
-/**
- * Kullanicinin **kendi** guncelleyebildigi tek alan: `name` (2.6).
- *
- * Fonksiyon bilerek kismi bir nesne (`UserUpdate`) almiyor. Govdeden gelen
- * nesneyi oldugu gibi `.update()`'e verseydik `role`, `is_active` ve
- * `password_hash` kolonlari da istemcinin erisimine acilirdi: `PUT /users/me`
- * govdesine `{"role":"admin"}` yazan biri kendini admin yapardi. Kolon adi
- * burada **sabit**; servis katmani ne gonderirse gondersin baska bir kolon
- * yazilamaz. Ayni gerekce 1.3'te `register`'in `role`'u yok saymasinda da var.
- */
-const updateName = async (userId: string, name: string): Promise<PublicUser | undefined> => {
-  const [updated] = await db('users')
-    .where({ id: userId })
-    .update({ name })
-    .returning(publicColumns);
+/** `updateProfile`in yazdigi alanlar — govdeden gelen nesnenin oldugu gibi
+ *  `.update()`e verilmemesinin gerekcesi altta. */
+export interface ProfilePatch {
+  name: string;
+  handle: string | null;
+  avatar: string | null;
+}
 
-  return updated as PublicUser | undefined;
+/**
+ * Kullanicinin **kendi** guncelleyebildigi alanlar: `name`, `handle`, `avatar`
+ * (2.6 + Ayarlar/Profil). `role`, `is_active` ve `password_hash` bilerek yok
+ * — govdeden gelen nesne oldugu gibi `.update()`e verilseydi `PUT /users/me`
+ * govdesine `{"role":"admin"}` yazan biri kendini admin yapardi. Yazilan
+ * kolon adlari burada **sabit**; servis katmani ne gonderirse gondersin
+ * baska bir kolon yazilamaz. Ayni gerekce 1.3'te `register`'in `role`'u yok
+ * saymasinda da var.
+ *
+ * `'handle_taken'`: `handle` kolonu `UNIQUE` (migration 18). Baska biri ayni
+ * handle'i aninda almis olabilir (yaris) — DB'nin kisiti son sozu soyluyor,
+ * bu fonksiyon onceden kontrol etmiyor (TOCTOU'dan kacinmak icin, `group.model`
+ * daki slug carpismasi kontroluyle ayni gerekce ama burada yeniden deneme
+ * yok: kullanici baska bir handle **secmeli**, otomatik numara eklenmez).
+ */
+const updateProfile = async (
+  userId: string,
+  patch: ProfilePatch
+): Promise<PublicUser | undefined | 'handle_taken'> => {
+  try {
+    const [updated] = await db('users')
+      .where({ id: userId })
+      .update({ name: patch.name, handle: patch.handle, avatar: patch.avatar })
+      .returning(publicColumns);
+
+    return updated as PublicUser | undefined;
+  } catch (error) {
+    const pgError = error as { code?: string } | null;
+
+    // 23505 = unique_violation. Bu UPDATE'te yazilan tek UNIQUE kolon `handle`.
+    if (pgError?.code === '23505') {
+      return 'handle_taken';
+    }
+
+    throw error;
+  }
 };
 
 /**
@@ -124,7 +153,7 @@ export default {
   findPublicById,
   create,
   listPublic,
-  updateName,
+  updateProfile,
   updatePasswordHash,
   setActive,
   findActivitySeenAt,

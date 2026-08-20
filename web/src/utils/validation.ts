@@ -31,9 +31,13 @@ export const MAX_PASSWORD_LENGTH = 72;
 export const MAX_NAME_LENGTH = 120;
 /** `users.email` kolonu ile ayni */
 export const MAX_EMAIL_LENGTH = 255;
+/** `auth.service.ts` -> MAX_AVATAR_BYTES */
+export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 /** Backend'deki EMAIL_PATTERN ile ayni: "bosluksuz yerel@alan.uzanti". */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+/** Backend'deki HANDLE_PATTERN ile ayni: kucuk harf, rakam, alt cizgi, 3-20. */
+const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/;
 
 export type FieldErrors = Record<string, string>;
 
@@ -56,6 +60,10 @@ export type RegisterFormValues = {
 /** Ayarlar > profil (2.6). Yalnizca `name`: e-posta ve rol degistirilemiyor. */
 export type ProfileFormValues = {
   name: string;
+  /** Bos string -> takma ad yok. `@` on ekli **degil** (yalnizca gosterimde eklenir). */
+  handle: string;
+  /** Bos string -> fotograf yok. Doluysa `data:image/...;base64,...`. */
+  avatar: string;
 };
 
 /** Ayarlar > sifre degistirme (2.6). */
@@ -143,6 +151,12 @@ export const validateProfileForm = (values: ProfileFormValues): FieldErrors => {
     errors.name = 'Isim zorunlu';
   } else if (name.length > MAX_NAME_LENGTH) {
     errors.name = `Isim en fazla ${MAX_NAME_LENGTH} karakter olabilir`;
+  }
+
+  // Bos -> kaldirma istegi, dogrulanmaz. Doluysa bicim kontrol edilir.
+  const handle = values.handle.trim().toLowerCase();
+  if (handle && !HANDLE_PATTERN.test(handle)) {
+    errors.handle = 'Takma ad yalnizca kucuk harf, rakam ve alt cizgi icerebilir (3-20 karakter)';
   }
 
   return errors;

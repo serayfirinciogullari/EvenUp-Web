@@ -59,6 +59,8 @@ const insertUser = async (input: {
     is_active: input.is_active ?? true,
     created_at: new Date(),
     activity_seen_at: new Date(),
+    avatar: null,
+    handle: null,
   };
 
   usersByEmail.set(row.email, row);
@@ -93,6 +95,8 @@ beforeEach(() => {
       is_active: data.is_active ?? true,
       created_at: data.created_at ?? new Date(),
       activity_seen_at: data.activity_seen_at ?? new Date(),
+      avatar: data.avatar ?? null,
+      handle: data.handle ?? null,
     };
 
     usersByEmail.set(row.email, row);

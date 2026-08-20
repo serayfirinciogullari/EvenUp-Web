@@ -50,6 +50,11 @@ export interface UserRow {
   created_at: Date;
   /** Aktivite akisini en son gordugu an; DB varsayilani `now()` (migration 16). */
   activity_seen_at: Date;
+  /** Profil fotografi, `data:image/...;base64,...` metni (migration 18). */
+  avatar: string | null;
+  /** Kendi hesap @adi — kucuk harf, benzersiz. Kisi bazli takma isimlerden
+   *  (member_nicknames) AYRI bir kavram (migration 18). */
+  handle: string | null;
 }
 
 export interface UserInsert {
@@ -62,6 +67,8 @@ export interface UserInsert {
   is_active?: boolean;
   created_at?: Date;
   activity_seen_at?: Date;
+  avatar?: string | null;
+  handle?: string | null;
 }
 
 export type UserUpdate = Partial<Omit<UserInsert, 'id'>>;

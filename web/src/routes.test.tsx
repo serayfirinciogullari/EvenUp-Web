@@ -151,6 +151,8 @@ const makeUser = (role: 'admin' | 'user' = 'user'): User => ({
   role,
   is_active: true,
   created_at: '2026-08-01T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 });
 
 /** Elde gecerli bir token varmis gibi davran. */
@@ -308,6 +310,7 @@ describe('giris yapmis kullanici', () => {
       group: {
         id: groupId,
         name: 'Tatil Fonu',
+        slug: 'tatil-fonu',
         description: null,
         created_by: '11111111-1111-4111-8111-111111111111',
         created_at: '2026-08-01T10:00:00.000Z',

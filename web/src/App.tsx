@@ -1,16 +1,21 @@
 import { ThemeProvider } from 'next-themes';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { Toaster } from '@/components/ui/sonner';
 import { THEME_STORAGE_KEY } from '@/lib/theme';
+import AccountTab from './components/AccountTab';
 import AdminRoute from './components/AdminRoute';
 import GuestRoute from './components/GuestRoute';
 import Layout from './components/Layout';
 import AppCursor from './components/AppCursor';
+import PreferencesTab from './components/PreferencesTab';
+import ProfileTab from './components/ProfileTab';
 import ProtectedRoute from './components/ProtectedRoute';
+import SecurityTab from './components/SecurityTab';
 import AppDataProvider from './context/AppDataProvider';
 import ActivityPage from './pages/ActivityPage';
 import AdminPage from './pages/AdminPage';
+import ContactsPage from './pages/ContactsPage';
 import GroupDetailPage from './pages/GroupDetailPage';
 import GroupsPage from './pages/GroupsPage';
 import HomePage from './pages/HomePage';
@@ -118,7 +123,14 @@ const App = () => (
             slug'a sessizce duzeltiyor (bkz. pages/GroupDetailPage.tsx).
           */}
           <Route path="/groups/:groupKey" element={<GroupDetailPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/settings" element={<SettingsPage />}>
+            <Route index element={<Navigate to="profile" replace />} />
+            <Route path="profile" element={<ProfileTab />} />
+            <Route path="security" element={<SecurityTab />} />
+            <Route path="preferences" element={<PreferencesTab />} />
+            <Route path="account" element={<AccountTab />} />
+          </Route>
 
           {/* Admin kontrolu ProtectedRoute'un ustune biner: once giris, sonra rol. */}
           <Route element={<AdminRoute />}>

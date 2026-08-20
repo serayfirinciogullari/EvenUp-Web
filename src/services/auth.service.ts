@@ -22,6 +22,13 @@ const MAX_EMAIL_LENGTH = 255; // users.email kolonu ile ayni
 // Tam RFC 5322 degil (o regex pratikte okunmaz); "bosluksuz yerel@alan.uzanti" yeterli.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+/** `users.handle` (migration 18): kucuk harf, rakam, alt cizgi; 3-20 karakter. */
+const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/;
+
+/** Yalnizca JPG/PNG kabul edilir; grup 2 base64 govdesidir. */
+const AVATAR_PATTERN = /^data:image\/(png|jpe?g);base64,([A-Za-z0-9+/]+=*)$/;
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB — Profil sekmesindeki metinle ayni sinir
+
 export interface RegisterInput {
   email: string;
   password: string;
@@ -39,9 +46,21 @@ export interface AuthResult {
   expiresIn: string;
 }
 
-/** PUT /users/me govdesi (2.6). E-posta ve rol bilerek yok — asagida gerekcesi. */
+/**
+ * PUT /users/me govdesi (2.6, Ayarlar/Profil ile genisletildi). E-posta ve
+ * rol bilerek yok — asagida gerekcesi.
+ *
+ * `handle`/`avatar` **tam durum** tasir (PUT'un anlami budur): `null` ya da
+ * bos metin "kaldir" demek, `undefined` degil — takma isim ucundakiyle
+ * (`PUT /groups/:id/members/:userId/nickname`) ayni sozlesme. Yani istemci
+ * her zaman formun **guncel** halini gonderir, kismi bir yama degil.
+ */
 export interface UpdateProfileInput {
   name: string;
+  /** Kendi hesap @adi. Kisi bazli takma isimlerden (member_nicknames) AYRI. */
+  handle: string | null;
+  /** `data:image/(png|jpeg);base64,...`; en fazla 2MB. */
+  avatar: string | null;
 }
 
 /** PUT /users/me/password govdesi (2.6). */
@@ -128,13 +147,42 @@ const validateRegisterInput = (input: Partial<RegisterInput>): RegisterInput => 
 
 const validateUpdateProfileInput = (input: Partial<UpdateProfileInput>): UpdateProfileInput => {
   const name = asString(input.name).trim();
-  const error = nameError(name);
+  const errors: Record<string, string> = {};
 
-  if (error) {
-    throw ApiError.badRequest('Gecersiz profil bilgileri', { name: error });
+  const nameProblem = nameError(name);
+  if (nameProblem) {
+    errors.name = nameProblem;
   }
 
-  return { name };
+  // Bos/verilmemis -> kaldir (null); verilmisse bicim dogrulanir.
+  const rawHandle = asString(input.handle).trim().toLowerCase();
+  let handle: string | null = null;
+  if (rawHandle) {
+    if (!HANDLE_PATTERN.test(rawHandle)) {
+      errors.handle = 'Takma ad yalnizca kucuk harf, rakam ve alt cizgi icerebilir (3-20 karakter)';
+    } else {
+      handle = rawHandle;
+    }
+  }
+
+  const rawAvatar = asString(input.avatar);
+  let avatar: string | null = null;
+  if (rawAvatar) {
+    const match = AVATAR_PATTERN.exec(rawAvatar);
+    if (!match) {
+      errors.avatar = 'Gecersiz fotograf formati (yalnizca JPG veya PNG)';
+    } else if (Buffer.byteLength(match[2], 'base64') > MAX_AVATAR_BYTES) {
+      errors.avatar = 'Fotograf en fazla 2MB olabilir';
+    } else {
+      avatar = rawAvatar;
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    throw ApiError.badRequest('Gecersiz profil bilgileri', errors);
+  }
+
+  return { name, handle, avatar };
 };
 
 const validateChangePasswordInput = (input: Partial<ChangePasswordInput>): ChangePasswordInput => {
@@ -266,6 +314,8 @@ const login = async (input: Partial<LoginInput>): Promise<AuthResult> => {
       role: user.role,
       is_active: user.is_active,
       created_at: user.created_at,
+      avatar: user.avatar,
+      handle: user.handle,
     },
     token: signToken({ id: user.id, role: user.role }),
     expiresIn: config.jwtExpiresIn,
@@ -305,9 +355,17 @@ const updateProfile = async (
   userId: string,
   input: Partial<UpdateProfileInput>
 ): Promise<PublicUser> => {
-  const { name } = validateUpdateProfileInput(input);
+  const { name, handle, avatar } = validateUpdateProfileInput(input);
 
-  const updated = await userModel.updateName(userId, name);
+  const updated = await userModel.updateProfile(userId, { name, handle, avatar });
+
+  // `handle` UNIQUE — araya baska bir istek girip ayni handle'i almis olabilir
+  // (yaris); DB'nin kisiti son sozu soyluyor (bkz. user.model.ts).
+  if (updated === 'handle_taken') {
+    throw ApiError.conflict('Bu takma ad zaten kullaniliyor', {
+      handle: 'Bu takma ad zaten kullaniliyor',
+    });
+  }
 
   // Token gecerli ama kullanici silinmis olabilir (getProfile ile ayni durum).
   if (!updated) {

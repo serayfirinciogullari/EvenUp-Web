@@ -8,18 +8,21 @@ import { AuthProvider } from '../context/AuthProvider';
 import type { User } from '../types/models';
 
 /**
- * Ayarlar sayfasi testleri (2.6).
+ * Ayarlar sayfasi testleri (2.6, yeniden tasarim -> docs/decisions/ayarlar-sayfasi.md).
  *
  * Yalnizca ag katmani mock'lanir (`api/auth`, `api/users`); form mantigi
  * (`useAuthForm`), dogrulama (`utils/validation`), oturum context'i, tema
  * saglayicisi ve Router gercek kod olarak calisir.
  *
- * Dosyanin uc asil derdi:
+ * Dosyanin asil derdi eskisiyle ayni uce artik bir dorduncu ekleniyor:
  *   1. profil degisikliginin **sunucudan geri okunarak** dogrulanmasi
- *      (yerel state'e yazip "kaydedildi" dememek)
+ *      (yerel state'e yazip "kaydedildi" dememek) — artik isim + takma ad +
+ *      fotograf ucu birden
  *   2. sifre degistirmenin mevcut sifre olmadan hic denenmemesi ve yanlis
  *      mevcut sifrede oturumun **dusmemesi**
  *   3. temanin secilmesi, saklanmasi ve `<html>` uzerine uygulanmasi
+ *   4. dort sekmenin **gercek route'lar** olmasi: dogrudan adresle acilabilme,
+ *      sekmeler arasi tiklamayla gecis, aktif sekmenin isaretlenmesi
  */
 vi.mock('../api/auth', () => ({
   __esModule: true,
@@ -84,6 +87,8 @@ const deniz: User = {
   role: 'user',
   is_active: true,
   created_at: '2026-08-02T10:00:00.000Z',
+  avatar: null,
+  handle: null,
 };
 
 /** Backend'in hata govdesini taklit eder: `message` + alan bazli `details`. */
@@ -95,12 +100,12 @@ const apiError = (statusCode: number, message: string, details?: Record<string, 
 
 /* ------------------------------------------------------------ yardimcilar */
 
-const renderSettings = (as: User = deniz) => {
+const renderSettings = (path = '/settings/profile', as: User = deniz) => {
   window.localStorage.setItem(TOKEN_KEY, 'gecerli.jwt.token');
   mockedAuth.getMe.mockResolvedValue(as);
 
   return render(
-    <MemoryRouter initialEntries={['/settings']}>
+    <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
         <App />
       </AuthProvider>
@@ -108,9 +113,9 @@ const renderSettings = (as: User = deniz) => {
   );
 };
 
-const waitForPage = () => screen.findByRole('heading', { name: 'Ayarlar' });
+const waitForShell = () => screen.findByRole('heading', { name: 'Hesabin ve tercihlerin' });
 
-/** Bolum kapsami: "Kaydet" ve sifre alanlari ayni sayfada birden fazla. */
+/** Bolum kapsami: "Kaydet" ve sifre alanlari ayni sekmede birden fazla olabilir. */
 const section = (name: string) =>
   screen.getByRole('heading', { name }).closest('section') as HTMLElement;
 
@@ -136,6 +141,9 @@ const submitPasswordForm = (values: {
   fireEvent.click(within(scope).getByRole('button', { name: 'Sifreyi degistir' }));
 };
 
+const pngFile = (name: string, sizeBytes: number, type = 'image/png') =>
+  new File([new Uint8Array(sizeBytes)], name, { type });
+
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -145,32 +153,92 @@ beforeEach(() => {
   mockedUsers.changePassword.mockResolvedValue(undefined);
 });
 
+/* ============================================================== sekmeler */
+
+describe('Ayarlar > sekmeler', () => {
+  it('/settings dogrudan Profil sekmesine yonlendirir', async () => {
+    renderSettings('/settings');
+    await waitForShell();
+
+    // Yonlendirme, Layout'taki sayfa gecisi animasyonunun (AnimatePresence)
+    // ardindan tamamlaniyor; `findBy` bu gecisi bekliyor, senkron `getBy` beklemez.
+    expect(await screen.findByRole('heading', { name: 'Profil' })).toBeInTheDocument();
+  });
+
+  it('dogrudan /settings/security adresi Guvenlik sekmesini acar', async () => {
+    renderSettings('/settings/security');
+    await waitForShell();
+
+    expect(screen.getByRole('heading', { name: 'Sifre degistir' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Profil' })).not.toBeInTheDocument();
+  });
+
+  /*
+    Uc ayri test, tek testte uc kere zincirlenmis gecis yerine: Layout'taki
+    sayfa gecisi animasyonu (AnimatePresence) her tiklamada gercek bir sure
+    aliyor, uc gecisi art arda zincirlemek paralel test kosumunda (bu dosya
+    tek basina degil digerleriyle birlikte kosarken) zaman asimi riskini
+    katlıyor. Tek gecisli testler ayni davranisi sinar, riski azaltir.
+  */
+  it('Guvenlik sekmesine tiklayinca Sifre degistir acilir', async () => {
+    renderSettings('/settings/profile');
+    await waitForShell();
+
+    fireEvent.click(screen.getByRole('link', { name: /Guvenlik/ }));
+    expect(await screen.findByRole('heading', { name: 'Sifre degistir' })).toBeInTheDocument();
+  });
+
+  it('Tercihler sekmesine tiklayinca Gorunum acilir', async () => {
+    renderSettings('/settings/profile');
+    await waitForShell();
+
+    fireEvent.click(screen.getByRole('link', { name: /Tercihler/ }));
+    expect(await screen.findByRole('heading', { name: 'Gorunum' })).toBeInTheDocument();
+  });
+
+  it('Hesap sekmesine tiklayinca Hesap acilir', async () => {
+    renderSettings('/settings/profile');
+    await waitForShell();
+
+    fireEvent.click(screen.getByRole('link', { name: /Hesap/ }));
+    expect(await screen.findByRole('heading', { name: 'Hesap' })).toBeInTheDocument();
+  });
+
+  it('aktif sekme isaretlenir', async () => {
+    renderSettings('/settings/security');
+    await waitForShell();
+
+    expect(screen.getByRole('link', { name: /Guvenlik/ })).toHaveClass('bg-rose/10');
+    expect(screen.getByRole('link', { name: /Profil/ })).not.toHaveClass('bg-rose/10');
+  });
+});
+
 /* ================================================================= profil */
 
 describe('Ayarlar > profil', () => {
-  it('ad alani mevcut isimle dolu gelir', async () => {
-    renderSettings();
-    await waitForPage();
-
-    expect(within(profileSection()).getByLabelText('Ad')).toHaveValue('Deniz Kaya');
-  });
-
-  it('e-posta ve rol gosterilir ama duzenlenebilir alan degildir', async () => {
-    renderSettings();
-    await waitForPage();
+  it('ad ve takma ad alanlari mevcut degerlerle dolu gelir', async () => {
+    renderSettings('/settings/profile', { ...deniz, handle: 'deniz' });
+    await waitForShell();
 
     const scope = profileSection();
-    expect(within(scope).getByText('deniz@evenup.dev')).toBeInTheDocument();
-    expect(within(scope).getByText('user')).toBeInTheDocument();
-
-    // Tek duzenlenebilir alan "Ad".
-    expect(within(scope).queryByLabelText('E-posta')).not.toBeInTheDocument();
-    expect(scope.querySelectorAll('input')).toHaveLength(1);
+    expect(within(scope).getByLabelText('Gorunen ad')).toHaveValue('Deniz Kaya');
+    expect(within(scope).getByLabelText('Takma ad')).toHaveValue('deniz');
   });
 
-  it('isim degismeden Kaydet kapalidir ve istek atilmaz', async () => {
+  it('e-posta maskeli gosterilir ve GIZLI etiketiyle birlikte duzenlenemez', async () => {
     renderSettings();
-    await waitForPage();
+    await waitForShell();
+
+    const scope = profileSection();
+    const emailInput = within(scope).getByLabelText('E-posta');
+    expect(emailInput).toHaveValue('d****@****.dev');
+    expect(emailInput).toHaveAttribute('readonly');
+    expect(within(scope).getByText('GIZLI')).toBeInTheDocument();
+  });
+
+  it('hicbir alan degismeden Kaydet kapalidir ve istek atilmaz', async () => {
+    renderSettings();
+    await waitForShell();
 
     const save = within(profileSection()).getByRole('button', { name: 'Kaydet' });
     expect(save).toBeDisabled();
@@ -181,16 +249,67 @@ describe('Ayarlar > profil', () => {
 
   it('yeni isimle kaydedince PUT gonderir ve basari bildirimi gosterir', async () => {
     renderSettings();
-    await waitForPage();
+    await waitForShell();
 
-    typeInto('Ad', 'Deniz Yilmaz', profileSection());
+    typeInto('Gorunen ad', 'Deniz Yilmaz', profileSection());
     fireEvent.click(within(profileSection()).getByRole('button', { name: 'Kaydet' }));
 
     await waitFor(() => {
-      expect(mockedUsers.updateProfile).toHaveBeenCalledWith({ name: 'Deniz Yilmaz' });
+      expect(mockedUsers.updateProfile).toHaveBeenCalledWith({
+        name: 'Deniz Yilmaz',
+        handle: null,
+        avatar: null,
+      });
     });
 
     expect(await screen.findByText('Profil guncellendi')).toBeInTheDocument();
+  });
+
+  it('takma ad kaydedilince kucuk harfe cevrilip gonderilir', async () => {
+    renderSettings();
+    await waitForShell();
+
+    typeInto('Takma ad', 'DenizK', profileSection());
+    fireEvent.click(within(profileSection()).getByRole('button', { name: 'Kaydet' }));
+
+    await waitFor(() => {
+      expect(mockedUsers.updateProfile).toHaveBeenCalledWith({
+        name: 'Deniz Kaya',
+        handle: 'denizk',
+        avatar: null,
+      });
+    });
+  });
+
+  it('gecersiz takma ad bicimi istemcide yakalanir, istek atilmaz', async () => {
+    renderSettings();
+    await waitForShell();
+
+    typeInto('Takma ad', 'a', profileSection());
+    fireEvent.click(within(profileSection()).getByRole('button', { name: 'Kaydet' }));
+
+    expect(
+      await within(profileSection()).findByText(
+        'Takma ad yalnizca kucuk harf, rakam ve alt cizgi icerebilir (3-20 karakter)'
+      )
+    ).toBeInTheDocument();
+    expect(mockedUsers.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('takma ad baskasi tarafindan alinmissa backend 409 hatasi alan altinda gosterilir', async () => {
+    renderSettings();
+    await waitForShell();
+
+    mockedUsers.updateProfile.mockRejectedValue(
+      apiError(409, 'Bu takma ad zaten kullaniliyor', { handle: 'Bu takma ad zaten kullaniliyor' })
+    );
+
+    typeInto('Takma ad', 'meraba', profileSection());
+    fireEvent.click(within(profileSection()).getByRole('button', { name: 'Kaydet' }));
+
+    expect(
+      await within(profileSection()).findByText('Bu takma ad zaten kullaniliyor')
+    ).toBeInTheDocument();
   });
 
   /**
@@ -199,30 +318,29 @@ describe('Ayarlar > profil', () => {
    */
   it('kaydettikten sonra kullaniciyi sunucudan geri okur', async () => {
     renderSettings();
-    await waitForPage();
+    await waitForShell();
 
     // Acilistaki dogrulama cagrisi (1) sayilmasin diye sifirlaniyor.
     mockedAuth.getMe.mockClear();
     mockedAuth.getMe.mockResolvedValue({ ...deniz, name: 'Deniz Yilmaz' });
 
-    typeInto('Ad', 'Deniz Yilmaz', profileSection());
+    typeInto('Gorunen ad', 'Deniz Yilmaz', profileSection());
     fireEvent.click(within(profileSection()).getByRole('button', { name: 'Kaydet' }));
 
     await waitFor(() => expect(mockedAuth.getMe).toHaveBeenCalledTimes(1));
 
-    // Sidebar'daki isim de tazelenen degeri gosteriyor (gezinme ust bardan
-    // sol sidebar'a tasindi; kullanici blogu artik orada).
+    // Sidebar'daki isim de tazelenen degeri gosteriyor.
     const sidebar = screen.getByRole('complementary', { name: 'Kenar cubugu' });
     expect(await within(sidebar).findByText('Deniz Yilmaz')).toBeInTheDocument();
   });
 
   it('sunucudan geri okuma basarisiz olursa basari bildirimi gosterilmez', async () => {
     renderSettings();
-    await waitForPage();
+    await waitForShell();
 
     mockedAuth.getMe.mockRejectedValue(apiError(500, 'Sunucu hatasi'));
 
-    typeInto('Ad', 'Deniz Yilmaz', profileSection());
+    typeInto('Gorunen ad', 'Deniz Yilmaz', profileSection());
     fireEvent.click(within(profileSection()).getByRole('button', { name: 'Kaydet' }));
 
     await waitFor(() =>
@@ -233,9 +351,9 @@ describe('Ayarlar > profil', () => {
 
   it('bos isimde istemci dogrulamasi takilir, ag istegi atilmaz', async () => {
     renderSettings();
-    await waitForPage();
+    await waitForShell();
 
-    typeInto('Ad', '   ', profileSection());
+    typeInto('Gorunen ad', '   ', profileSection());
     fireEvent.click(within(profileSection()).getByRole('button', { name: 'Kaydet' }));
 
     expect(await within(profileSection()).findByText('Isim zorunlu')).toBeInTheDocument();
@@ -244,18 +362,111 @@ describe('Ayarlar > profil', () => {
 
   it('backend hatasi alan altinda gosterilir', async () => {
     renderSettings();
-    await waitForPage();
+    await waitForShell();
 
     mockedUsers.updateProfile.mockRejectedValue(
       apiError(400, 'Gecersiz profil bilgileri', { name: 'Isim en fazla 120 karakter olabilir' })
     );
 
-    typeInto('Ad', 'Yeni Isim', profileSection());
+    typeInto('Gorunen ad', 'Yeni Isim', profileSection());
     fireEvent.click(within(profileSection()).getByRole('button', { name: 'Kaydet' }));
 
     expect(
       await within(profileSection()).findByText('Isim en fazla 120 karakter olabilir')
     ).toBeInTheDocument();
+  });
+
+  /* ----------------------------------------------------------- fotograf */
+
+  describe('fotograf', () => {
+    it('gecerli bir PNG secilince Kaydet acilir', async () => {
+      renderSettings();
+      await waitForShell();
+
+      const scope = profileSection();
+      const input = within(scope).getByLabelText('Fotograf yukle', { selector: 'input' });
+
+      fireEvent.change(input, { target: { files: [pngFile('foto.png', 1024)] } });
+
+      await waitFor(() => {
+        expect(within(scope).getByRole('button', { name: 'Kaydet' })).toBeEnabled();
+      });
+    });
+
+    it('kaydedince fotograf data URI olarak gonderilir', async () => {
+      renderSettings();
+      await waitForShell();
+
+      const scope = profileSection();
+      const input = within(scope).getByLabelText('Fotograf yukle', { selector: 'input' });
+
+      fireEvent.change(input, { target: { files: [pngFile('foto.png', 1024)] } });
+      await waitFor(() => expect(within(scope).getByRole('button', { name: 'Kaydet' })).toBeEnabled());
+
+      fireEvent.click(within(scope).getByRole('button', { name: 'Kaydet' }));
+
+      await waitFor(() => {
+        expect(mockedUsers.updateProfile).toHaveBeenCalledWith(
+          expect.objectContaining({ avatar: expect.stringMatching(/^data:image\/png;base64,/) })
+        );
+      });
+    });
+
+    it('2MB uzeri dosya reddedilir, secim uygulanmaz', async () => {
+      renderSettings();
+      await waitForShell();
+
+      const scope = profileSection();
+      const input = within(scope).getByLabelText('Fotograf yukle', { selector: 'input' });
+
+      fireEvent.change(input, { target: { files: [pngFile('buyuk.png', 3 * 1024 * 1024)] } });
+
+      expect(await within(scope).findByText('Fotograf en fazla 2MB olabilir')).toBeInTheDocument();
+      expect(within(scope).getByRole('button', { name: 'Kaydet' })).toBeDisabled();
+    });
+
+    it('desteklenmeyen dosya turu reddedilir', async () => {
+      renderSettings();
+      await waitForShell();
+
+      const scope = profileSection();
+      const input = within(scope).getByLabelText('Fotograf yukle', { selector: 'input' });
+
+      fireEvent.change(input, {
+        target: { files: [pngFile('belge.pdf', 1024, 'application/pdf')] },
+      });
+
+      expect(await within(scope).findByText('Yalnizca JPG veya PNG yuklenebilir')).toBeInTheDocument();
+      expect(within(scope).getByRole('button', { name: 'Kaydet' })).toBeDisabled();
+    });
+
+    it('mevcut fotografi olmayan kullanicida Kaldir butonu kapalidir', async () => {
+      renderSettings();
+      await waitForShell();
+
+      expect(within(profileSection()).getByRole('button', { name: 'Kaldir' })).toBeDisabled();
+    });
+
+    it('mevcut fotografi olan kullanici Kaldir ile kaldirir ve null gonderir', async () => {
+      renderSettings('/settings/profile', {
+        ...deniz,
+        avatar: 'data:image/png;base64,AAAA',
+      });
+      await waitForShell();
+
+      const scope = profileSection();
+      const removeButton = within(scope).getByRole('button', { name: 'Kaldir' });
+      expect(removeButton).toBeEnabled();
+
+      fireEvent.click(removeButton);
+      fireEvent.click(within(scope).getByRole('button', { name: 'Kaydet' }));
+
+      await waitFor(() => {
+        expect(mockedUsers.updateProfile).toHaveBeenCalledWith(
+          expect.objectContaining({ avatar: null })
+        );
+      });
+    });
   });
 });
 
@@ -263,8 +474,8 @@ describe('Ayarlar > profil', () => {
 
 describe('Ayarlar > sifre degistirme', () => {
   it('uc alan da sifre tipinde ve mevcut sifre ilk sirada', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     const scope = passwordSection();
     const inputs = [...scope.querySelectorAll('input')];
@@ -276,8 +487,8 @@ describe('Ayarlar > sifre degistirme', () => {
 
   /** Gorevin asil kurali: mevcut sifre olmadan istek hic ucmamali. */
   it('mevcut sifre bosken istek atilmaz', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     submitPasswordForm({ current: '', next: 'YeniSifre123', repeat: 'YeniSifre123' });
 
@@ -286,8 +497,8 @@ describe('Ayarlar > sifre degistirme', () => {
   });
 
   it('yeni sifre ile tekrari uyusmuyorsa istek atilmaz', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     submitPasswordForm({
       current: 'MevcutSifre123',
@@ -300,8 +511,8 @@ describe('Ayarlar > sifre degistirme', () => {
   });
 
   it('yeni sifre 8 karakterden kisaysa istek atilmaz', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     submitPasswordForm({ current: 'MevcutSifre123', next: 'kisa', repeat: 'kisa' });
 
@@ -312,8 +523,8 @@ describe('Ayarlar > sifre degistirme', () => {
   });
 
   it('yeni sifre mevcut sifreyle ayniysa istek atilmaz', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     submitPasswordForm({
       current: 'MevcutSifre123',
@@ -328,8 +539,8 @@ describe('Ayarlar > sifre degistirme', () => {
   });
 
   it('gecerli girdide iki alani da gonderir', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     submitPasswordForm({
       current: 'MevcutSifre123',
@@ -346,8 +557,8 @@ describe('Ayarlar > sifre degistirme', () => {
   });
 
   it('basaridan sonra alanlar temizlenir ve durum mesaji kalir', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     submitPasswordForm({
       current: 'MevcutSifre123',
@@ -370,8 +581,8 @@ describe('Ayarlar > sifre degistirme', () => {
    * alanin altinda gorunuyor ve kullanici **login sayfasina atilmiyor**.
    */
   it('mevcut sifre yanlissa acik hata gosterir, oturum dusmez', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     mockedUsers.changePassword.mockRejectedValue(
       apiError(400, 'Mevcut sifre hatali', { currentPassword: 'Mevcut sifre hatali' })
@@ -384,13 +595,13 @@ describe('Ayarlar > sifre degistirme', () => {
     });
 
     expect(await within(passwordSection()).findByText('Mevcut sifre hatali')).toBeInTheDocument();
-    expect(await waitForPage()).toBeInTheDocument();
+    expect(await waitForShell()).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Giris yap' })).not.toBeInTheDocument();
   });
 
   it('mevcut sifre hatasi ayni cumleyi iki kez gostermez', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     mockedUsers.changePassword.mockRejectedValue(
       apiError(400, 'Mevcut sifre hatali', { currentPassword: 'Mevcut sifre hatali' })
@@ -407,8 +618,8 @@ describe('Ayarlar > sifre degistirme', () => {
   });
 
   it('hata durumunda alanlar temizlenmez', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/security');
+    await waitForShell();
 
     mockedUsers.changePassword.mockRejectedValue(
       apiError(400, 'Mevcut sifre hatali', { currentPassword: 'Mevcut sifre hatali' })
@@ -425,12 +636,12 @@ describe('Ayarlar > sifre degistirme', () => {
   });
 });
 
-/* ================================================================ gorunum */
+/* ============================================================== tercihler */
 
-describe('Ayarlar > tema', () => {
+describe('Ayarlar > tercihler > tema', () => {
   it('uc secenek de bir radiogroup icinde sunulur', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/preferences');
+    await waitForShell();
 
     const group = within(themeSection()).getByRole('radiogroup', { name: 'Tema' });
     expect(within(group).getAllByRole('radio').map((option) => option.textContent)).toEqual([
@@ -441,8 +652,8 @@ describe('Ayarlar > tema', () => {
   });
 
   it('koyu tema secilince html uzerine dark sinifi biner ve tercih saklanir', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/preferences');
+    await waitForShell();
 
     fireEvent.click(within(themeSection()).getByRole('radio', { name: 'Koyu' }));
 
@@ -451,8 +662,8 @@ describe('Ayarlar > tema', () => {
   });
 
   it('acik temaya donunce dark sinifi kalkar', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/preferences');
+    await waitForShell();
 
     fireEvent.click(within(themeSection()).getByRole('radio', { name: 'Koyu' }));
     await waitFor(() => expect(document.documentElement).toHaveClass('dark'));
@@ -463,8 +674,8 @@ describe('Ayarlar > tema', () => {
   });
 
   it('secili secenek aria-checked ile isaretlenir', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/preferences');
+    await waitForShell();
 
     fireEvent.click(within(themeSection()).getByRole('radio', { name: 'Koyu' }));
 
@@ -480,13 +691,9 @@ describe('Ayarlar > tema', () => {
     );
   });
 
-  /**
-   * "Sistem" ayri bir deger olarak saklanmali: `resolvedTheme` yazilsaydi
-   * kullanici bir daha isletim sistemini takip eden duruma donemezdi.
-   */
   it('Sistem secenegi tercih olarak saklanir', async () => {
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/preferences');
+    await waitForShell();
 
     fireEvent.click(within(themeSection()).getByRole('radio', { name: 'Koyu' }));
     await waitFor(() => expect(window.localStorage.getItem(THEME_KEY)).toBe('dark'));
@@ -496,13 +703,13 @@ describe('Ayarlar > tema', () => {
   });
 
   /*
-    Hizli gecis ust bardan sidebar'daki hesap menusune tasindi (tek tiklanabilir
-    avatar). Davranis ayni: bu ekrandaki uc secenekli kontrolle **ayni** tercihi
+    Hizli gecis sidebar'daki hesap menusune tasindi (tek tiklanabilir kart).
+    Davranis ayni: bu ekrandaki uc secenekli kontrolle **ayni** tercihi
     yaziyor, iki ayri kayit olusmuyor.
   */
-  it('hesap menusundeki hizli anahtar ayni tercihi degistirir', async () => {
-    renderSettings();
-    await waitForPage();
+  it('sidebar hesap kartindaki hizli anahtar ayni tercihi degistirir', async () => {
+    renderSettings('/settings/preferences');
+    await waitForShell();
 
     // Radix menusu `pointerdown` ile aciliyor; `click` tek basina yetmiyor.
     fireEvent.pointerDown(
@@ -521,9 +728,66 @@ describe('Ayarlar > tema', () => {
   it('kayitli tercih acilista uygulanir', async () => {
     window.localStorage.setItem(THEME_KEY, 'dark');
 
-    renderSettings();
-    await waitForPage();
+    renderSettings('/settings/preferences');
+    await waitForShell();
 
     await waitFor(() => expect(document.documentElement).toHaveClass('dark'));
+  });
+});
+
+describe('Ayarlar > tercihler > yakinda gelecek', () => {
+  it('dil, para birimi ve bildirimler icin bir yer tutucu gosterilir', async () => {
+    renderSettings('/settings/preferences');
+    await waitForShell();
+
+    expect(
+      screen.getByRole('heading', { name: 'Dil, para birimi ve bildirimler' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Yakinda gelecek.')).toBeInTheDocument();
+  });
+});
+
+/* =================================================================== hesap */
+
+describe('Ayarlar > hesap', () => {
+  it('tamamen bir yer tutucu gosterir', async () => {
+    renderSettings('/settings/account');
+    await waitForShell();
+
+    expect(screen.getByRole('heading', { name: 'Hesap' })).toBeInTheDocument();
+    expect(screen.getByText('Yakinda gelecek.')).toBeInTheDocument();
+  });
+});
+
+/* ================================================================ sidebar */
+
+describe('Sidebar > hesap karti', () => {
+  it('Profili duzenle secilince Ayarlar > Profil acilir', async () => {
+    renderSettings('/settings/preferences');
+    await waitForShell();
+
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Hesap menusu' }),
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false })
+    );
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Profili duzenle' }));
+
+    expect(await screen.findByRole('heading', { name: 'Profil' })).toBeInTheDocument();
+  });
+
+  it('takma ad varsa hesap kartinda @takma-ad gosterilir', async () => {
+    renderSettings('/settings/profile', { ...deniz, handle: 'deniz' });
+    await waitForShell();
+
+    const sidebar = screen.getByRole('complementary', { name: 'Kenar cubugu' });
+    expect(within(sidebar).getByText('@deniz')).toBeInTheDocument();
+  });
+
+  it('takma ad yoksa hesap kartinda e-posta gosterilir', async () => {
+    renderSettings();
+    await waitForShell();
+
+    const sidebar = screen.getByRole('complementary', { name: 'Kenar cubugu' });
+    expect(within(sidebar).getByText('deniz@evenup.dev')).toBeInTheDocument();
   });
 });
