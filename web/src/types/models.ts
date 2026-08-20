@@ -282,6 +282,26 @@ export interface HomeSummary {
    * yerelde 0'a iner — bkz. docs/decisions/aktivite-okunma-sayaci.md.
    */
   unseenActivityCount: number;
+  /** Home > "Seni bekleyenler" -> ONY satirlari. `PendingApproval` ile ayni
+   *  satir, Aktivite sayfasindaki banner'la ayni kaynaktan geliyor. */
+  pendingApprovals: PendingApproval[];
+  /** Home > "Seni bekleyenler" -> BRC satirlari. */
+  pendingDebts: PendingDebt[];
+}
+
+/**
+ * Home > "Seni bekleyenler" -> BRC satiri: benim odemem gereken, **netlesmis**
+ * bir transfer (bkz. docs/decisions/3.13-home-seni-bekleyenler.md). Kisiler
+ * sayfasindaki `ContactGroupBalance.net_balance` ile KARISTIRILMAMALI — o
+ * ikili (pairwise) bir toplam, bu ise grubun kendi netlestirme algoritmasinin
+ * urettigi transfer.
+ */
+export interface PendingDebt {
+  group_id: string;
+  group_name: string;
+  to_user: string;
+  to_user_name: string;
+  amount: string;
 }
 
 /* --------------------------------------------------------------- aktivite */

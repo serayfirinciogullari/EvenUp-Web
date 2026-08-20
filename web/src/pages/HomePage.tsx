@@ -1,16 +1,22 @@
 import { ArrowRight, TriangleAlert } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import CloseAccountDialog from '@/components/CloseAccountDialog';
 import HomeFeatureCard from '@/components/HomeFeatureCard';
 import HomeNetStatusCard from '@/components/HomeNetStatusCard';
 import HomeStatCard from '@/components/HomeStatCard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getErrorMessage } from '../api/client';
+import settlementsApi from '../api/settlements';
 import { useSummaryData } from '../hooks/useAppData';
 import useAuth from '../hooks/useAuth';
-import { RECEIPT_TILE, buildNetStatus, buildSpendTile, ctaHintOf } from '../utils/homeCards';
+import { dative } from '../utils/turkish';
+import { RECEIPT_TILE, buildNetStatus, buildSpendTile } from '../utils/homeCards';
+import { centsToApiAmount, formatCents, parseAmountToCents } from '../utils/money';
 
+import type { Contact, PendingApproval, PendingDebt } from '../types/models';
 import type { HomeNetStatus, HomeStatTile } from '../utils/homeCards';
 
 /**
@@ -19,9 +25,16 @@ import type { HomeNetStatus, HomeStatTile } from '../utils/homeCards';
  * SAYFANIN AMACI: TUTMAK DEGIL, YONLENDIRMEK
  * ------------------------------------------
  * Home bir vitrin degil bir **giris holu**. Kullanici bu uygulamaya borcunu
- * gormeye geliyor; Home'un isi o yolu kisaltmak, uzatmak degil. Bu yuzden
- * izgaranin altinda tek ve buyuk bir CTA var ("Gruplarini Gor") ve sayfada
- * onunla yarisan ikinci bir birincil eylem yok.
+ * gormeye geliyor; Home'un isi o yolu kisaltmak, uzatmak degil.
+ *
+ * IZGARANIN ALTI: CTA DEGIL, "SENI BEKLEYENLER"
+ * -----------------------------------------------
+ * Eskiden burada genel bir "Gruplarini Gor" butonu vardi. Kullanicinin asil
+ * sorusu "hangi grubum var" degil "su an ne yapmam gerekiyor" oldugu icin
+ * buton, somut bir eylem listesiyle (onay bekleyen odemeler + odemem gereken
+ * netlesmis bakiyeler) degistirildi — bkz. docs/decisions/3.13-home-seni-bekleyenler.md.
+ * Bekleyen hicbir sey yoksa bolum tamamen gizleniyor; bos bir "her sey
+ * yolunda" kutusu Home'un ana isine (ozet + yonlendirme) hicbir sey katmiyor.
  *
  * CAROUSEL KALDIRILDI
  * -------------------
@@ -34,10 +47,10 @@ import type { HomeNetStatus, HomeStatTile } from '../utils/homeCards';
  *
  * HATA DURUMU SAYFAYI DUSURMUYOR
  * ------------------------------
- * Ozet cekilemezse sayfa hata ekranina donmuyor: karsilama, tanitim karosu ve
- * CTA ayakta kaliyor, yalnizca kisisel karolarin yerinde kucuk bir uyari
- * cikiyor. Gerekce — Home'un asil isi (kullaniciyi gruplarina yonlendirmek)
- * ozet olmadan da yapilabilir.
+ * Ozet cekilemezse sayfa hata ekranina donmuyor: karsilama ve tanitim karosu
+ * ayakta kaliyor, yalnizca kisisel karolarin yerinde kucuk bir uyari cikiyor.
+ * "Seni bekleyenler" de dogal olarak gizli kaliyor — ozet olmadan hangi
+ * satirlarin gosterilecegi bilinmiyor, uydurmak yanlis olurdu.
  */
 const HomePage = () => {
   const { user } = useAuth();
@@ -106,7 +119,13 @@ const HomePage = () => {
         <HomeGrid netStatus={netStatus} spendTile={spendTile} />
       )}
 
-      <PrimaryCta hint={ctaHintOf(summary.data)} />
+      {!summary.loading && summary.data && (
+        <PendingForYou
+          approvals={summary.data.pendingApprovals}
+          debts={summary.data.pendingDebts}
+          onChanged={summary.reload}
+        />
+      )}
     </section>
   );
 };
@@ -199,27 +218,201 @@ const PendingBanner = ({ count }: { count: number }) => (
 );
 
 /**
- * Sayfanin tek birincil eylemi.
+ * "Seni bekleyenler" — izgaranin altinda, eski CTA'nin yerinde.
  *
- * Buton `asChild` ile gercek bir `<a>`: sag tikla "yeni sekmede ac" calissin
- * ve ekran okuyucu bunu link olarak duyursun. `onClick` + `navigate` ile
- * yapilsaydi ikisi de kaybolurdu.
+ * Iki turden satir tek listede birlesiyor: ONY (onayimi bekleyen bir odeme —
+ * `pendingApprovals`, Aktivite sayfasindaki `PendingApprovalBanner` ile ayni
+ * uc noktadan) ve BRC (odemem gereken netlesmis bir bakiye — `pendingDebts`,
+ * `summary.service.ts`teki grup-bazli netlestirmeden). Onay once geliyor:
+ * bir karar benden bekliyor, borc ise dogrudan tek tikla kapatilabiliyor.
  *
- * Tam genislikte ve izgaranin altinda: uc karo "durum", bu satir "eylem".
- * Gradyani (`home-cta`) izgaranin ailesinden ama daha acik — sayfadaki tek
- * aydinlik yuzey, dolayisiyla goz once oraya gidiyor.
+ * Ikisi de bosken bolum hic cizilmiyor — gerekce yukarida, bilesenin
+ * basindaki dosya yorumunda.
  */
-const PrimaryCta = ({ hint }: { hint: string }) => (
-  <div className="home-page__cta flex flex-col items-center gap-2 text-center">
-    <Button asChild size="lg" className="home-cta h-12 w-full text-base">
-      <Link to="/groups">
-        Gruplarini Gor
-        <ArrowRight className="size-4" aria-hidden />
-      </Link>
-    </Button>
+const PendingForYou = ({
+  approvals,
+  debts,
+  onChanged,
+}: {
+  approvals: PendingApproval[];
+  debts: PendingDebt[];
+  onChanged: () => void;
+}) => {
+  if (approvals.length === 0 && debts.length === 0) {
+    return null;
+  }
 
-    <p className="text-xs text-ink-muted">{hint}</p>
-  </div>
-);
+  return (
+    <section className="home-pending flex flex-col gap-3">
+      <h2 className="text-lg">Seni bekleyenler</h2>
+
+      <ul className="flex flex-col gap-2">
+        {approvals.map((approval) => (
+          <ApprovalRow key={approval.id} approval={approval} onChanged={onChanged} />
+        ))}
+        {debts.map((debt) => (
+          <DebtRow key={`${debt.group_id}-${debt.to_user}`} debt={debt} onChanged={onChanged} />
+        ))}
+      </ul>
+    </section>
+  );
+};
+
+/**
+ * ONY satiri: birinin "odedim" diye isaretledigi, benim onayimi bekleyen bir
+ * kayit. Aksiyonlar Aktivite sayfasindaki `PendingApprovalBanner`le **ayni**
+ * uc noktalari kullaniyor (`confirmSettlement`/`rejectSettlement`); farkli
+ * olan yalnizca gorunum (banner tek kayit, burada liste satiri).
+ *
+ * Basari sonrasi yerel bir yama atilmiyor — `onChanged` (`summary.reload`)
+ * tum ozeti sunucudan yeniden okuyor: bu satirin kaybolmasi, toplam bakiye ve
+ * sidebar rozeti ayni anda, ayni kaynaktan degisiyor (bkz. dosyanin basindaki
+ * "SUNUCUDAN GERI OKUMA" ilkesi, docs/decisions/2.6.md).
+ */
+const ApprovalRow = ({
+  approval,
+  onChanged,
+}: {
+  approval: PendingApproval;
+  onChanged: () => void;
+}) => {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cents = parseAmountToCents(approval.amount) ?? 0;
+
+  const resolve = (action: 'confirm' | 'reject') => {
+    if (busy) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    const request =
+      action === 'confirm'
+        ? settlementsApi.confirmSettlement(approval.id)
+        : settlementsApi.rejectSettlement(approval.id);
+
+    void request
+      .then(() => onChanged())
+      .catch((caught: unknown) => {
+        setError(getErrorMessage(caught, 'Odeme guncellenemedi'));
+        setBusy(false);
+      });
+  };
+
+  return (
+    <li className="home-pending-row card-solid flex flex-wrap items-start justify-between gap-3 p-3.5">
+      <div className="flex min-w-0 items-start gap-3">
+        <span
+          className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-amber/25 bg-amber-surface text-[0.65rem] font-semibold tracking-wide text-amber"
+          title="Onay bekleniyor"
+        >
+          ONY
+        </span>
+
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-ink">
+            {approval.from_name}, sana {formatCents(cents)} odedigini isaretledi
+          </p>
+          <p className="mt-0.5 text-xs text-ink-muted">{approval.group_name} · onayin bekleniyor</p>
+          {error && (
+            <p className="field-error mt-1 text-xs text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => resolve('reject')}>
+          Itiraz Et
+        </Button>
+        <Button type="button" size="sm" disabled={busy} onClick={() => resolve('confirm')}>
+          Onayla
+        </Button>
+      </div>
+    </li>
+  );
+};
+
+/**
+ * BRC satiri: bir grupta net borclu oldugum, **netlesmis** (optimalNetting/
+ * greedyNetting transferi) bir bakiye. "Kisiler" sayfasindaki
+ * `ContactGroupBalance.net_balance` ile KARISTIRILMAMALI — bu ikili bir
+ * toplam degil, grubun kendi netlestirme algoritmasinin urettigi transfer
+ * (gerekce: docs/decisions/3.13-home-seni-bekleyenler.md).
+ *
+ * "Hesabi kapat" Kisiler sayfasindaki **ayni** `CloseAccountDialog`i
+ * kullaniyor — ikinci bir kopya yazilmadi. Diyalog bir `Contact` bekliyor;
+ * burada tek gruplu, bu satirdan uretilen sentetik bir kisi veriliyor.
+ * `slug` ve ust seviye `nickname` bu diyalogda hic okunmuyor (yalnizca
+ * Kisiler'deki ayri "ortak gruplar" diyalogu `slug` kullaniyor), bos
+ * birakilmalari zararsiz.
+ */
+const DebtRow = ({ debt, onChanged }: { debt: PendingDebt; onChanged: () => void }) => {
+  const [open, setOpen] = useState(false);
+  const cents = parseAmountToCents(debt.amount) ?? 0;
+
+  /*
+    `PendingDebt.amount` her zaman pozitif bir buyukluk (`Transfer.amount` >
+    0). `ContactGroupBalance.net_balance` ise tersi isaret kuralini kullaniyor
+    ("Pozitif = kisi borclu", yani karsi taraf bana borcluysa pozitif) — burada
+    BEN borcluyum, o yuzden negatife cevriliyor. `CloseAccountDialog` bu
+    isarete bakarak "odeyecegim" / "bana borclu" ayrimini yapiyor. `formatCents`
+    **degil** `centsToApiAmount` kullaniliyor: sonuc `CloseAccountDialog`
+    icinde `parseAmountToCents`ten tekrar geciyor, o da NUMERIC bicimi
+    ("-85.00") bekliyor, gosterim metnini ("-85,00 ₺") degil.
+  */
+  const negatedBalance = centsToApiAmount(-cents);
+
+  const contact: Contact = {
+    user_id: debt.to_user,
+    name: debt.to_user_name,
+    nickname: null,
+    net_balance: negatedBalance,
+    shared_groups: [
+      {
+        id: debt.group_id,
+        name: debt.group_name,
+        slug: '',
+        nickname: null,
+        net_balance: negatedBalance,
+      },
+    ],
+  };
+
+  return (
+    <li className="home-pending-row card-solid flex flex-wrap items-start justify-between gap-3 p-3.5">
+      <div className="flex min-w-0 items-start gap-3">
+        <span
+          className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-signal-negative/20 bg-signal-negative/10 text-[0.65rem] font-semibold tracking-wide text-signal-negative"
+          title="Netlesmis borc"
+        >
+          BRC
+        </span>
+
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-ink">
+            {dative(debt.to_user_name)} {formatCents(cents)} borcun var
+          </p>
+          <p className="mt-0.5 text-xs text-ink-muted">{debt.group_name} · netlesmis tutar</p>
+        </div>
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="shrink-0 border-rose/25 text-rose hover:bg-rose/10 hover:text-rose"
+        onClick={() => setOpen(true)}
+      >
+        Hesabi kapat
+      </Button>
+
+      <CloseAccountDialog open={open} onOpenChange={setOpen} contact={contact} onDone={onChanged} />
+    </li>
+  );
+};
 
 export default HomePage;

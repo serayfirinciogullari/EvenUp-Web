@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,6 +20,14 @@ import type { HomeSummary, User } from '../types/models';
  * Asagida bunun icin ayri bir blok var: ok butonu / nokta gostergesi / slide
  * rolu **hic** olmamali. Testin isi yalnizca yeni duzeni dogrulamak degil,
  * eskisinin geri sizmasini engellemek.
+ *
+ * "SENI BEKLEYENLER" — CTA'NIN YERINE GECEN BOLUM
+ * -------------------------------------------------
+ * Eski "Gruplarini Gor" CTA'si kaldirildi (bkz.
+ * docs/decisions/3.13-home-seni-bekleyenler.md); `api/settlements` bu yuzden
+ * artik burada da mock'lanir — ONY satirlarinin Onayla/Itiraz Et'i ve BRC
+ * satirlarinin "Hesabi kapat"i (Kisiler sayfasindaki ayni `CloseAccountDialog`)
+ * gercek istek atmadan test edilebilsin diye.
  */
 
 vi.mock('../api/auth', () => ({
@@ -30,6 +38,15 @@ vi.mock('../api/auth', () => ({
 vi.mock('../api/summary', () => ({
   __esModule: true,
   default: { getHomeSummary: vi.fn() },
+}));
+
+vi.mock('../api/settlements', () => ({
+  __esModule: true,
+  default: {
+    createSettlement: vi.fn(),
+    confirmSettlement: vi.fn(),
+    rejectSettlement: vi.fn(),
+  },
 }));
 
 vi.mock('../api/groups', () => ({
@@ -44,9 +61,11 @@ vi.mock('../api/groups', () => ({
 }));
 
 import authApi from '../api/auth';
+import settlementsApi from '../api/settlements';
 import summaryApi from '../api/summary';
 
 const mockedAuth = vi.mocked(authApi);
+const mockedSettlements = vi.mocked(settlementsApi);
 const mockedSummary = vi.mocked(summaryApi);
 
 /** `api/tokenStorage.ts` icindeki anahtar; disari acilmiyor (diger testlerle ayni desen). */
@@ -69,6 +88,8 @@ const summaryOf = (over: Partial<HomeSummary> = {}): HomeSummary => ({
   activeGroupsCount: 3,
   pendingSettlementsCount: 0,
   unseenActivityCount: 0,
+  pendingApprovals: [],
+  pendingDebts: [],
   ...over,
 });
 
@@ -256,35 +277,6 @@ describe('Home — carousel kaldirildi', () => {
   });
 });
 
-/* ------------------------------------------------------------------ CTA */
-
-describe('Home — yonlendirme', () => {
-  it('Gruplarini Gor bagli oldugu sayfaya goturur', async () => {
-    renderHome();
-    await waitForPage();
-
-    fireEvent.click(screen.getByRole('link', { name: /Gruplarini Gor/ }));
-
-    expect(
-      await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' })
-    ).toBeInTheDocument();
-  });
-
-  it('CTA bir link — sag tik/yeni sekme calissin diye buton degil', async () => {
-    renderHome();
-    await waitForPage();
-
-    expect(screen.getByRole('link', { name: /Gruplarini Gor/ })).toHaveAttribute('href', '/groups');
-  });
-
-  it('aktif grup sayisi CTA altindaki cumlede yasiyor', async () => {
-    renderHome();
-    await waitForPage();
-
-    expect(screen.getByText(/3 grupta aktifsin/)).toBeInTheDocument();
-  });
-});
-
 /* --------------------------------------------------------------- banner */
 
 describe('Home — bekleyen odeme uyarisi', () => {
@@ -311,7 +303,7 @@ describe('Home — bekleyen odeme uyarisi', () => {
 /* ---------------------------------------------------------- hata / bos */
 
 describe('Home — ozet okunamadiginda', () => {
-  it('sayfa ayakta kalir: CTA ve tanitim karosu gorunmeye devam eder', async () => {
+  it('sayfa ayakta kalir: tanitim karosu gorunmeye devam eder, Seni bekleyenler gizli kalir', async () => {
     mockedSummary.getHomeSummary.mockRejectedValue(new Error('bozuk'));
 
     renderHome();
@@ -319,9 +311,10 @@ describe('Home — ozet okunamadiginda', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Ozet yuklenemedi');
 
-    // Home'un asil isi (gruplara yonlendirmek) ozet olmadan da yapilabiliyor.
-    expect(screen.getByRole('link', { name: /Gruplarini Gor/ })).toBeInTheDocument();
+    // Home'un asil isi (ozet + yonlendirme) ozet olmadan da yapilabiliyor.
     expect(within(grid()).getByText('Fisi cek, AI duzenlesin')).toBeInTheDocument();
+    // Ozet olmadan hangi satirlarin gosterilecegi bilinmiyor — uydurulmuyor.
+    expect(screen.queryByRole('heading', { name: 'Seni bekleyenler' })).not.toBeInTheDocument();
   });
 
   it('hicbir kisisel karo uydurulmuyor — sifir degil, hic gosterilmiyor', async () => {
@@ -348,5 +341,148 @@ describe('Home — ozet okunamadiginda', () => {
     // `grid()` ile sarmalanmiyor: yeniden yukleme sirasinda iskelet ciziliyor
     // ve o an bolge yok. Tutar zaten yalnizca karoda gecebilir.
     expect(await screen.findByText('230,00 ₺')).toBeInTheDocument();
+  });
+});
+
+/* -------------------------------------------------------- seni bekleyenler */
+
+describe('Home — Seni bekleyenler', () => {
+  const approval = {
+    id: 'aaaaaaaa-0000-4000-8000-000000000001',
+    group_id: 'gggggggg-0000-4000-8000-000000000001',
+    group_name: 'Ev Arkadaslari',
+    from_user: '33333333-3333-4333-8333-333333333333',
+    from_name: 'Serenad',
+    amount: '310.00',
+    created_at: '2026-01-10T00:00:00.000Z',
+  };
+
+  const debt = {
+    group_id: 'gggggggg-0000-4000-8000-000000000002',
+    group_name: 'Ofis kahvesi',
+    to_user: '44444444-4444-4444-8444-444444444444',
+    to_user_name: 'Deniz',
+    amount: '85.00',
+  };
+
+  const section = () => screen.getByRole('heading', { name: 'Seni bekleyenler' }).closest('section') as HTMLElement;
+
+  beforeEach(() => {
+    mockedSettlements.confirmSettlement.mockResolvedValue({} as never);
+    mockedSettlements.rejectSettlement.mockResolvedValue({} as never);
+    mockedSettlements.createSettlement.mockResolvedValue({} as never);
+  });
+
+  it('onay ve borc yokken bolum hic gorunmez', async () => {
+    renderHome();
+    await waitForPage();
+
+    expect(screen.queryByRole('heading', { name: 'Seni bekleyenler' })).not.toBeInTheDocument();
+  });
+
+  it('ONY satiri onay bekleyen odemeyi ve grubunu gosterir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue(summaryOf({ pendingApprovals: [approval] }));
+
+    renderHome();
+    await waitForPage();
+
+    const scope = within(section());
+    expect(scope.getByText('Serenad, sana 310,00 ₺ odedigini isaretledi')).toBeInTheDocument();
+    expect(scope.getByText('Ev Arkadaslari · onayin bekleniyor')).toBeInTheDocument();
+  });
+
+  it('Onayla tiklaninca confirmSettlement cagrilir ve ozet yeniden okunur', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValueOnce(summaryOf({ pendingApprovals: [approval] }));
+    mockedSummary.getHomeSummary.mockResolvedValue(summaryOf());
+
+    renderHome();
+    await waitForPage();
+
+    fireEvent.click(within(section()).getByRole('button', { name: 'Onayla' }));
+
+    await waitFor(() => expect(mockedSettlements.confirmSettlement).toHaveBeenCalledWith(approval.id));
+    await waitFor(() => expect(mockedSummary.getHomeSummary).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Seni bekleyenler' })).not.toBeInTheDocument()
+    );
+  });
+
+  it('Itiraz Et tiklaninca rejectSettlement cagrilir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValueOnce(summaryOf({ pendingApprovals: [approval] }));
+    mockedSummary.getHomeSummary.mockResolvedValue(summaryOf());
+
+    renderHome();
+    await waitForPage();
+
+    fireEvent.click(within(section()).getByRole('button', { name: 'Itiraz Et' }));
+
+    await waitFor(() => expect(mockedSettlements.rejectSettlement).toHaveBeenCalledWith(approval.id));
+  });
+
+  it('onay basarisiz olursa satirin altinda hata gosterilir, satir kaybolmaz', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue(summaryOf({ pendingApprovals: [approval] }));
+    mockedSettlements.confirmSettlement.mockRejectedValue(
+      Object.assign(new Error('Kayit zaten sonuclanmis'), {
+        isAxiosError: true,
+        response: { status: 409, data: { message: 'Kayit zaten sonuclanmis' } },
+      })
+    );
+
+    renderHome();
+    await waitForPage();
+
+    fireEvent.click(within(section()).getByRole('button', { name: 'Onayla' }));
+
+    expect(await within(section()).findByRole('alert')).toHaveTextContent('Kayit zaten sonuclanmis');
+    // Ozet yeniden okunmadi: satir hala orada.
+    expect(within(section()).getByText('Ev Arkadaslari · onayin bekleniyor')).toBeInTheDocument();
+  });
+
+  it('BRC satiri kisi adini dogru ekle ve netlesmis tutar etiketiyle gosterir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue(summaryOf({ pendingDebts: [debt] }));
+
+    renderHome();
+    await waitForPage();
+
+    const scope = within(section());
+    // "Deniz" ince unluyle bitmiyor -> yonelme eki "'e" (bkz. utils/turkish.ts).
+    expect(scope.getByText("Deniz'e 85,00 ₺ borcun var")).toBeInTheDocument();
+    expect(scope.getByText('Ofis kahvesi · netlesmis tutar')).toBeInTheDocument();
+  });
+
+  it('Hesabi kapat, Kisiler sayfasindaki ayni diyalogu acar ve odeme olusturur', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValueOnce(summaryOf({ pendingDebts: [debt] }));
+    mockedSummary.getHomeSummary.mockResolvedValue(summaryOf());
+
+    renderHome();
+    await waitForPage();
+
+    fireEvent.click(within(section()).getByRole('button', { name: 'Hesabi kapat' }));
+
+    expect(await screen.findByRole('heading', { name: 'Hesabi kapat' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Odemeleri olustur' }));
+
+    await waitFor(() => {
+      expect(mockedSettlements.createSettlement).toHaveBeenCalledWith(debt.group_id, {
+        toUserId: debt.to_user,
+        amount: '85.00',
+      });
+    });
+  });
+
+  it('ONY satirlari BRC satirlarindan once gelir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue(
+      summaryOf({ pendingApprovals: [approval], pendingDebts: [debt] })
+    );
+
+    renderHome();
+    await waitForPage();
+
+    const badges = within(section())
+      .getAllByText(/^(ONY|BRC)$/)
+      .map((node) => node.textContent);
+
+    expect(badges).toEqual(['ONY', 'BRC']);
   });
 });

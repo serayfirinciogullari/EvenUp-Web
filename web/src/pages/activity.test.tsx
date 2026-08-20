@@ -55,6 +55,8 @@ vi.mock('../api/summary', () => ({
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     }),
   },
 }));
@@ -241,6 +243,8 @@ describe('Aktivite — onay bekleyen banner', () => {
       activeGroupsCount: 1,
       pendingSettlementsCount: 3,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
     mockedSettlements.listPendingApprovals.mockResolvedValueOnce([approvalOf()]);
     mockedSettlements.confirmSettlement.mockResolvedValue({
@@ -428,6 +432,8 @@ describe('Aktivite — okunmamis rozeti (aktivite-okunma-sayaci)', () => {
       activeGroupsCount: 1,
       pendingSettlementsCount: 0,
       unseenActivityCount: 5,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
     mockedActivity.listActivity.mockResolvedValue(feedOf([event()]));
 
@@ -447,6 +453,8 @@ describe('Aktivite — okunmamis rozeti (aktivite-okunma-sayaci)', () => {
       activeGroupsCount: 1,
       pendingSettlementsCount: 0,
       unseenActivityCount: 2,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
     mockedActivity.listActivity.mockResolvedValue(feedOf([event()]));
 
@@ -467,6 +475,8 @@ describe('Aktivite — okunmamis rozeti (aktivite-okunma-sayaci)', () => {
       activeGroupsCount: 1,
       pendingSettlementsCount: 3,
       unseenActivityCount: 2,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
     mockedActivity.listActivity.mockResolvedValue(feedOf([event()]));
 
@@ -488,6 +498,8 @@ describe('Aktivite — okunmamis rozeti (aktivite-okunma-sayaci)', () => {
       activeGroupsCount: 1,
       pendingSettlementsCount: 0,
       unseenActivityCount: 2,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
     mockedActivity.listActivity.mockResolvedValue(feedOf([]));
 

@@ -164,6 +164,8 @@ beforeEach(() => {
     activeGroupsCount: 2,
     pendingSettlementsCount: 0,
     unseenActivityCount: 0,
+    pendingApprovals: [],
+    pendingDebts: [],
   });
 });
 
@@ -304,6 +306,8 @@ describe('Sidebar — bekleyen odeme + okunmamis aktivite rozeti', () => {
       activeGroupsCount: 2,
       pendingSettlementsCount: 3,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
 
     renderApp();
@@ -324,6 +328,8 @@ describe('Sidebar — bekleyen odeme + okunmamis aktivite rozeti', () => {
       activeGroupsCount: 2,
       pendingSettlementsCount: 2,
       unseenActivityCount: 5,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
 
     renderApp();
@@ -340,6 +346,8 @@ describe('Sidebar — bekleyen odeme + okunmamis aktivite rozeti', () => {
       activeGroupsCount: 2,
       pendingSettlementsCount: 0,
       unseenActivityCount: 4,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
 
     renderApp();

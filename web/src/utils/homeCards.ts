@@ -29,8 +29,10 @@ import type { LucideIcon } from 'lucide-react';
  * Carousel alti kart tasiyabiliyordu cunku ucu her zaman ekran disindaydi.
  * Izgarada hepsi ayni anda gorunur; alti kutu bir "gosterge paneli" olurdu ve
  * Home'un tek isi (kullaniciyi gruplarina yollamak) o panelin icinde kaybolurdu.
- * Kalanlar: iki kisisel deger + bir tanitim. "Aktif grup sayisi" karti CTA'nin
- * altindaki cumleye tasindi (bkz. HomePage) — veri korundu, kutu eksildi.
+ * Kalanlar: iki kisisel deger + bir tanitim. "Aktif grup sayisi" `netSentence`
+ * icindeki cumleye tasindi; eskiden ayrica CTA'nin altinda da bir kopyasi
+ * vardi (`ctaHintOf`), CTA kaldirilinca (bkz. docs/decisions/3.13-home-seni-bekleyenler.md)
+ * o kopya da kaldirildi.
  */
 
 /** Karo yuzeyi. Uc deger de ayni rose/ink ailesinden; bkz. index.css. */
@@ -208,24 +210,4 @@ export const buildSpendTile = (summary: HomeSummary | null): HomeStatTile | null
     surface: 'spend',
     icon: ReceiptText,
   };
-};
-
-/**
- * CTA'nin altindaki yardimci cumle.
- *
- * Carousel'deki "Aktif oldugun grup" karti buraya tasindi: sayi bir kutuyu
- * hak edecek kadar onemli degildi ama kullaniciyi gruplarina yollayan
- * butonun hemen altinda **baglami** kuruyor. Ozet yoksa cumle yine var,
- * yalnizca sayisiz.
- */
-export const ctaHintOf = (summary: HomeSummary | null): string => {
-  if (!summary) {
-    return 'Kim kime ne kadar borclu, hepsi orada.';
-  }
-
-  if (summary.activeGroupsCount === 0) {
-    return 'Henuz bir gruba katilmadin — ilk grubunu orada olusturabilirsin.';
-  }
-
-  return `${summary.activeGroupsCount} grupta aktifsin · kim kime ne kadar borclu, hepsi orada.`;
 };

@@ -11,6 +11,7 @@ import settlementModel from '../src/models/settlement.model';
 import userModel from '../src/models/user.model';
 
 import type { GroupSummary } from '../src/models/group.model';
+import type { PendingApprovalView } from '../src/models/settlement.model';
 
 /**
  * `GET /users/me/home-summary` testleri.
@@ -22,7 +23,7 @@ import type { GroupSummary } from '../src/models/group.model';
  */
 jest.mock('../src/models/group.model', () => ({
   __esModule: true,
-  default: { listForUser: jest.fn() },
+  default: { listForUser: jest.fn(), listContactsForUser: jest.fn() },
 }));
 
 jest.mock('../src/models/expense.model', () => ({
@@ -32,7 +33,11 @@ jest.mock('../src/models/expense.model', () => ({
 
 jest.mock('../src/models/settlement.model', () => ({
   __esModule: true,
-  default: { listConfirmedByGroups: jest.fn(), countPendingForUser: jest.fn() },
+  default: {
+    listConfirmedByGroups: jest.fn(),
+    countPendingForUser: jest.fn(),
+    listPendingForCreditor: jest.fn(),
+  },
 }));
 
 jest.mock('../src/models/user.model', () => ({
@@ -77,6 +82,14 @@ interface ConfirmedFixture {
   amount: string;
 }
 
+/** `listContactsForUser` satirinin testteki karsiligi (bkz. group.model.ts -> ContactRow). */
+interface ContactFixture {
+  user_id: string;
+  name: string;
+  nickname: string | null;
+  shared_groups: { id: string; name: string; slug: string; nickname: string | null }[];
+}
+
 let memberships: string[] = [];
 let expenses: ExpenseFixture[] = [];
 let shares: ShareFixture[] = [];
@@ -84,6 +97,10 @@ let confirmed: ConfirmedFixture[] = [];
 let pendingCount = 0;
 let unseenCount = 0;
 let activitySeenAt: Date | undefined = new Date('2026-01-01T00:00:00.000Z');
+/** "Seni bekleyenler"in BRC satirlari icin isim eslemesi — varsayilan bos. */
+let contacts: ContactFixture[] = [];
+/** "Seni bekleyenler"in ONY satirlari. */
+let pendingApprovals: PendingApprovalView[] = [];
 
 const uid = (): string => randomUUID();
 
@@ -175,6 +192,11 @@ const installInMemoryModels = (): void => {
 
   mockedUserModel.findActivitySeenAt.mockImplementation(async () => activitySeenAt);
   mockedActivityModel.countUnseenForGroups.mockImplementation(async () => unseenCount);
+
+  mockedGroupModel.listContactsForUser.mockImplementation(async (userId: string) =>
+    userId === ME ? contacts : []
+  );
+  mockedSettlementModel.listPendingForCreditor.mockImplementation(async () => pendingApprovals);
 };
 
 /**
@@ -231,6 +253,8 @@ beforeEach(() => {
   pendingCount = 0;
   unseenCount = 0;
   activitySeenAt = new Date('2026-01-01T00:00:00.000Z');
+  contacts = [];
+  pendingApprovals = [];
 
   installInMemoryModels();
 });
@@ -380,6 +404,8 @@ describe('GET /users/me/home-summary — hic grubu olmayan kullanici', () => {
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
   });
 
@@ -426,6 +452,8 @@ describe('GET /users/me/home-summary — sorgu sayisi', () => {
     expect(mockedSettlementModel.listConfirmedByGroups).toHaveBeenCalledTimes(1);
     expect(mockedExpenseModel.sumPaidByUserBetween).toHaveBeenCalledTimes(1);
     expect(mockedSettlementModel.countPendingForUser).toHaveBeenCalledTimes(1);
+    expect(mockedGroupModel.listContactsForUser).toHaveBeenCalledTimes(1);
+    expect(mockedSettlementModel.listPendingForCreditor).toHaveBeenCalledTimes(1);
 
     // Ve gruplarin tamami tek cagriya veriliyor.
     expect(mockedExpenseModel.listForNettingByGroups).toHaveBeenCalledWith([
@@ -469,5 +497,136 @@ describe('GET /users/me/home-summary — unseenActivityCount', () => {
     expect(response.status).toBe(200);
     expect(response.body.summary.unseenActivityCount).toBe(0);
     expect(mockedActivityModel.countUnseenForGroups).not.toHaveBeenCalled();
+  });
+});
+
+/* --------------------------------------------------------- seni bekleyenler */
+
+describe('GET /users/me/home-summary — pendingApprovals (ONY)', () => {
+  it('listPendingForCreditor sonucunu oldugu gibi dondurur', async () => {
+    seedThreeGroups();
+    pendingApprovals = [
+      {
+        id: uid(),
+        group_id: GROUP_CREDIT,
+        group_name: `Grup ${GROUP_CREDIT.slice(0, 4)}`,
+        from_user: ALI,
+        from_name: 'Ali',
+        amount: '75.00',
+        created_at: new Date('2026-01-10T00:00:00.000Z'),
+      },
+    ];
+
+    const response = await request(app)
+      .get('/users/me/home-summary')
+      .set(...auth(ME));
+
+    expect(response.body.summary.pendingApprovals).toHaveLength(1);
+    expect(response.body.summary.pendingApprovals[0]).toMatchObject({
+      from_name: 'Ali',
+      amount: '75.00',
+    });
+  });
+});
+
+describe('GET /users/me/home-summary — pendingDebts (BRC)', () => {
+  it('net borclu oldugum grupta netlesmis transferi kisi adiyla doner', async () => {
+    seedThreeGroups();
+    contacts = [
+      {
+        user_id: ALI,
+        name: 'Ali',
+        nickname: null,
+        shared_groups: [
+          { id: GROUP_DEBT, name: 'Grup', slug: 'grup', nickname: null },
+        ],
+      },
+    ];
+
+    const response = await request(app)
+      .get('/users/me/home-summary')
+      .set(...auth(ME));
+
+    // GROUP_DEBT: Ali 240 odedi, ikimize esit bolundu -> ben Ali'ye 120 borcluyum.
+    expect(response.body.summary.pendingDebts).toEqual([
+      {
+        group_id: GROUP_DEBT,
+        group_name: `Grup ${GROUP_DEBT.slice(0, 4)}`,
+        to_user: ALI,
+        to_user_name: 'Ali',
+        amount: '120.00',
+      },
+    ]);
+  });
+
+  it('takma isim varsa gercek adin yerine gecer', async () => {
+    seedThreeGroups();
+    contacts = [
+      {
+        user_id: ALI,
+        name: 'Ali',
+        nickname: 'Aliş',
+        shared_groups: [
+          { id: GROUP_DEBT, name: 'Grup', slug: 'grup', nickname: 'Aliş' },
+        ],
+      },
+    ];
+
+    const response = await request(app)
+      .get('/users/me/home-summary')
+      .set(...auth(ME));
+
+    expect(response.body.summary.pendingDebts[0].to_user_name).toBe('Aliş');
+  });
+
+  it('net alacakli ya da dengede oldugum gruplar icin satir uretilmez', async () => {
+    seedThreeGroups();
+    // Ucu de kapsayan bir isim listesi versek bile GROUP_CREDIT (+200) ve
+    // GROUP_SETTLED (0) icin satir cikmamali — yalnizca GROUP_DEBT (-120) icin.
+    contacts = [
+      {
+        user_id: ALI,
+        name: 'Ali',
+        nickname: null,
+        shared_groups: [
+          { id: GROUP_CREDIT, name: 'Grup', slug: 'grup', nickname: null },
+          { id: GROUP_DEBT, name: 'Grup', slug: 'grup', nickname: null },
+          { id: GROUP_SETTLED, name: 'Grup', slug: 'grup', nickname: null },
+        ],
+      },
+      {
+        user_id: BURAK,
+        name: 'Burak',
+        nickname: null,
+        shared_groups: [{ id: GROUP_CREDIT, name: 'Grup', slug: 'grup', nickname: null }],
+      },
+    ];
+
+    const response = await request(app)
+      .get('/users/me/home-summary')
+      .set(...auth(ME));
+
+    expect(response.body.summary.pendingDebts).toHaveLength(1);
+    expect(response.body.summary.pendingDebts[0].group_id).toBe(GROUP_DEBT);
+  });
+
+  /**
+   * `namesByGroupFromContacts` yalnizca **hala grupta olan** kisileri tasir
+   * (`listContactsForUser` uyelik tablosundan geliyor). Karsi taraf gruptan
+   * cikarilmissa ad bulunamaz; bu durumda satir hic uretilmiyor, "Hesabi
+   * kapat"i kimin icin gosterecegini bilemeyen bir satir yerine.
+   */
+  it('borclu oldugum kisinin adi bulunamiyorsa (gruptan cikarilmis) satir uretilmez', async () => {
+    seedThreeGroups();
+    contacts = [];
+
+    const response = await request(app)
+      .get('/users/me/home-summary')
+      .set(...auth(ME));
+
+    expect(response.body.summary.pendingDebts).toEqual([]);
+    // Toplam bakiye yine de dogru: isim eksikligi yalnizca satir uretimini
+    // engelliyor, `totalNetBalance`i etkilemiyor.
+    expect(response.body.summary.totalNetBalance).toBe('80.00');
   });
 });

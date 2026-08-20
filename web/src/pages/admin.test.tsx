@@ -40,6 +40,8 @@ vi.mock('../api/summary', () => ({
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     }),
   },
 }));

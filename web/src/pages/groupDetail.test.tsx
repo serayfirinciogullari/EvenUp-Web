@@ -65,6 +65,8 @@ vi.mock('../api/summary', () => ({
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     }),
   },
 }));
@@ -1278,6 +1280,8 @@ describe('bekleyen odemeyi onaylama ve reddetme', () => {
       activeGroupsCount: 1,
       pendingSettlementsCount: 2,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
     mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
     mockedSettlements.confirmSettlement.mockResolvedValue({ ...settlement(), status: 'confirmed' });
@@ -1305,6 +1309,8 @@ describe('bekleyen odemeyi onaylama ve reddetme', () => {
       activeGroupsCount: 1,
       pendingSettlementsCount: 1,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
     mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
     mockedSettlements.rejectSettlement.mockResolvedValue({ ...settlement(), status: 'rejected' });
@@ -1328,6 +1334,8 @@ describe('bekleyen odemeyi onaylama ve reddetme', () => {
       activeGroupsCount: 1,
       pendingSettlementsCount: 2,
       unseenActivityCount: 0,
+      pendingApprovals: [],
+      pendingDebts: [],
     });
     mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
 
