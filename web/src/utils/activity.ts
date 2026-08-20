@@ -57,6 +57,19 @@ export const ACTIVITY_BADGE_TITLES: Record<ActivityKind, string> = {
   settlement_rejected: 'Odeme reddedildi',
 };
 
+/** Rozet turune gore zemin. Bilgi rengi tasimiyor — kisaltma zaten yazili,
+ *  ton yalnizca goze tur farkini hizli gostermek icin (bkz. 2.3 kurali).
+ *  `components/ActivityRow.tsx` kullaniyor; ikisi ayni yerde kalsin diye
+ *  diger rozet sabitleriyle (`ACTIVITY_BADGES`, `ACTIVITY_BADGE_TITLES`)
+ *  birlikte burada. */
+export const ACTIVITY_BADGE_TONE: Record<ActivityKind, string> = {
+  expense_created: 'bg-ink/6 text-ink-muted',
+  expense_edited: 'bg-ink/6 text-ink-muted',
+  settlement_created: 'bg-amber-surface text-amber border border-amber/25',
+  settlement_confirmed: 'bg-signal-positive/10 text-signal-positive',
+  settlement_rejected: 'bg-signal-negative/10 text-signal-negative',
+};
+
 const amountOf = (value: string | null): number | null =>
   value === null ? null : parseAmountToCents(value);
 

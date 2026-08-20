@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import ActivityRow from '../components/ActivityRow';
 import PendingApprovalBanner from '../components/PendingApprovalBanner';
 import activityApi from '../api/activity';
 import settlementsApi from '../api/settlements';
@@ -10,16 +11,9 @@ import useAsync from '../hooks/useAsync';
 import useActivityFeed from '../hooks/useActivityFeed';
 import { useSummaryData } from '../hooks/useAppData';
 import useAuth from '../hooks/useAuth';
-import {
-  ACTIVITY_BADGES,
-  ACTIVITY_BADGE_TITLES,
-  activitySentence,
-  groupByDay,
-} from '../utils/activity';
-import { formatTime } from '../utils/datetime';
-import { formatCents, parseAmountToCents } from '../utils/money';
+import { groupByDay } from '../utils/activity';
 
-import type { ActivityEvent, ActivityKind, PendingApproval } from '../types/models';
+import type { PendingApproval } from '../types/models';
 
 /**
  * Aktivite — kullanicinin **tum** gruplarindaki olaylarin birlesik akisi.
@@ -191,54 +185,6 @@ const ActivityFeedBody = ({
         </div>
       ))}
     </div>
-  );
-};
-
-/** Rozet turune gore zemin. Bilgi rengi tasimiyor — kisaltma zaten yazili,
- *  ton yalnizca goze tur farkini hizli gostermek icin (bkz. 2.3 kurali). */
-const BADGE_TONE: Record<ActivityKind, string> = {
-  expense_created: 'bg-ink/6 text-ink-muted',
-  expense_edited: 'bg-ink/6 text-ink-muted',
-  settlement_created: 'bg-amber-surface text-amber border border-amber/25',
-  settlement_confirmed: 'bg-signal-positive/10 text-signal-positive',
-  settlement_rejected: 'bg-signal-negative/10 text-signal-negative',
-};
-
-const ActivityRow = ({
-  event,
-  currentUserId,
-}: {
-  event: ActivityEvent;
-  currentUserId: string;
-}) => {
-  const cents = parseAmountToCents(event.amount) ?? 0;
-
-  return (
-    <li className="activity-row card-solid flex items-start justify-between gap-3 p-3.5">
-      <div className="flex min-w-0 items-start gap-3">
-        <span
-          className={`activity-row__badge mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg text-[0.65rem] font-semibold tracking-wide ${BADGE_TONE[event.kind]}`}
-          title={ACTIVITY_BADGE_TITLES[event.kind]}
-        >
-          {ACTIVITY_BADGES[event.kind]}
-        </span>
-
-        <div className="min-w-0">
-          <p className="activity-row__sentence text-sm font-medium text-ink">
-            {activitySentence(event, currentUserId)}
-          </p>
-          <p className="activity-row__meta mt-0.5 text-xs text-ink-muted">
-            {event.group_name}
-            {' · '}
-            <time dateTime={event.occurred_at}>{formatTime(event.occurred_at)}</time>
-          </p>
-        </div>
-      </div>
-
-      <p className="activity-row__amount shrink-0 text-sm font-semibold text-ink">
-        {formatCents(cents)}
-      </p>
-    </li>
   );
 };
 

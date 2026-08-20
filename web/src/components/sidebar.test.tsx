@@ -43,6 +43,19 @@ vi.mock('../api/summary', () => ({
   default: { getHomeSummary: vi.fn() },
 }));
 
+// Home "Son hareketler" bu ucu cagiriyor (bkz. docs/decisions/3.15-home-son-hareketler.md).
+// Bu dosyanin derdi sidebar oldugu icin bos bir akisla sabitleniyor.
+vi.mock('../api/activity', () => ({
+  __esModule: true,
+  default: {
+    listActivity: vi.fn().mockResolvedValue({
+      events: [],
+      pagination: { page: 1, limit: 5, total: 0, total_pages: 1, has_next: false, has_previous: false },
+    }),
+    markActivitySeen: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 vi.mock('../api/expenses', () => ({
   __esModule: true,
   default: {

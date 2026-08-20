@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import AuthProvider from '../context/AuthProvider';
 
-import type { GroupSummary, HomeSummary, User } from '../types/models';
+import type { ActivityEvent, GroupSummary, HomeSummary, User } from '../types/models';
 
 /**
  * Home ekrani testleri.
@@ -38,6 +38,14 @@ import type { GroupSummary, HomeSummary, User } from '../types/models';
  * detaya gitmesi) — davet linki, "Harcama ekle" akisi gibi `GroupCard`in
  * KENDI davranislari zaten `groups.test.tsx`te test ediliyor, burada
  * tekrarlanmiyor.
+ *
+ * "SON HAREKETLER" — AKTIVITE SAYFASINDAKI AYNI SATIR
+ * -------------------------------------------------------
+ * `ActivityRow`in kendi gorunum kurallari (rozet kisaltmalari, "Sen" ayrimi,
+ * ton renkleri) zaten `activity.test.tsx`te test ediliyor. Buradaki testler
+ * yalnizca Home'un entegrasyonunu sinar: `limit=5` ile cagirma, bos
+ * durumda bolumun gizlenmesi, "Tumunu gor" baglantisi
+ * (bkz. docs/decisions/3.15-home-son-hareketler.md).
  */
 
 vi.mock('../api/auth', () => ({
@@ -48,6 +56,11 @@ vi.mock('../api/auth', () => ({
 vi.mock('../api/summary', () => ({
   __esModule: true,
   default: { getHomeSummary: vi.fn() },
+}));
+
+vi.mock('../api/activity', () => ({
+  __esModule: true,
+  default: { listActivity: vi.fn(), markActivitySeen: vi.fn() },
 }));
 
 vi.mock('../api/settlements', () => ({
@@ -70,11 +83,13 @@ vi.mock('../api/groups', () => ({
   },
 }));
 
+import activityApi from '../api/activity';
 import authApi from '../api/auth';
 import groupsApi from '../api/groups';
 import settlementsApi from '../api/settlements';
 import summaryApi from '../api/summary';
 
+const mockedActivity = vi.mocked(activityApi);
 const mockedAuth = vi.mocked(authApi);
 const mockedGroups = vi.mocked(groupsApi);
 const mockedSettlements = vi.mocked(settlementsApi);
@@ -122,6 +137,23 @@ const group = (over: Partial<GroupSummary> = {}): GroupSummary => ({
   ...over,
 });
 
+const activityEvent = (over: Partial<ActivityEvent> = {}): ActivityEvent => ({
+  id: 'expense_created:eeeeeeee-0000-4000-8000-000000000001',
+  kind: 'expense_created',
+  occurred_at: '2026-08-20T10:00:00.000Z',
+  group_id: 'aaaaaaaa-0000-4000-8000-000000000001',
+  group_name: 'Ev Arkadaslari',
+  actor_id: '33333333-3333-4333-8333-333333333333',
+  actor_name: 'Serenad',
+  counterparty_id: null,
+  counterparty_name: null,
+  amount: '90.00',
+  previous_amount: null,
+  description: 'Market alisverisi',
+  previous_description: null,
+  ...over,
+});
+
 const renderHome = () => {
   window.localStorage.setItem(TOKEN_KEY, 'gecerli.jwt.token');
   mockedAuth.getMe.mockResolvedValue(deniz);
@@ -156,6 +188,10 @@ beforeEach(() => {
   window.localStorage.clear();
 
   mockedSummary.getHomeSummary.mockResolvedValue(summaryOf());
+  mockedActivity.listActivity.mockResolvedValue({
+    events: [],
+    pagination: { page: 1, limit: 5, total: 0, total_pages: 1, has_next: false, has_previous: false },
+  });
 });
 
 /* ------------------------------------------------------------- karsilama */
@@ -612,5 +648,79 @@ describe('Home — Gruplar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }));
 
     expect(await screen.findByRole('heading', { name: 'Ev Arkadaslari' })).toBeInTheDocument();
+  });
+});
+
+/* ------------------------------------------------------------ son hareketler */
+
+describe('Home — Son hareketler', () => {
+  it('hic aktivite yokken bolum hic gorunmez', async () => {
+    renderHome();
+    await waitForPage();
+
+    expect(screen.queryByRole('heading', { name: 'Son hareketler' })).not.toBeInTheDocument();
+  });
+
+  it('limit=5 ile cagirir', async () => {
+    renderHome();
+    await waitForPage();
+
+    await waitFor(() => {
+      expect(mockedActivity.listActivity).toHaveBeenCalledWith({ limit: 5 });
+    });
+  });
+
+  it('kayitlar varken ayni ActivityRow ile listelenir', async () => {
+    mockedActivity.listActivity.mockResolvedValue({
+      events: [activityEvent()],
+      pagination: { page: 1, limit: 5, total: 1, total_pages: 1, has_next: false, has_previous: false },
+    });
+
+    renderHome();
+    await waitForPage();
+
+    const heading = await screen.findByRole('heading', { name: 'Son hareketler' });
+    const section = heading.closest('section') as HTMLElement;
+
+    // `activitySentence` + rozet — Aktivite sayfasindaki ayni bilesenin ciktisi.
+    expect(within(section).getByText('Serenad Market alisverisi ekledi')).toBeInTheDocument();
+    expect(within(section).getByText('EKL')).toBeInTheDocument();
+    expect(within(section).getByText(/Ev Arkadaslari/)).toBeInTheDocument();
+    expect(within(section).getByText('90,00 ₺')).toBeInTheDocument();
+  });
+
+  it('Tumunu gor Aktivite sayfasina baglanir', async () => {
+    mockedActivity.listActivity.mockResolvedValue({
+      events: [activityEvent()],
+      pagination: { page: 1, limit: 5, total: 1, total_pages: 1, has_next: false, has_previous: false },
+    });
+
+    renderHome();
+    await waitForPage();
+
+    const heading = await screen.findByRole('heading', { name: 'Son hareketler' });
+    const section = heading.closest('section') as HTMLElement;
+
+    expect(within(section).getByRole('link', { name: 'Tumunu gor' })).toHaveAttribute(
+      'href',
+      '/activity'
+    );
+  });
+
+  it('yuklenemezse hata gosterilir ve tekrar dene calisir', async () => {
+    mockedActivity.listActivity.mockRejectedValueOnce(new Error('bozuk'));
+
+    renderHome();
+    await waitForPage();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Son hareketler alinamadi');
+
+    mockedActivity.listActivity.mockResolvedValue({
+      events: [activityEvent()],
+      pagination: { page: 1, limit: 5, total: 1, total_pages: 1, has_next: false, has_previous: false },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }));
+
+    expect(await screen.findByRole('heading', { name: 'Son hareketler' })).toBeInTheDocument();
   });
 });

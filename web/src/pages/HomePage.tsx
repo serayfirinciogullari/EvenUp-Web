@@ -1,7 +1,8 @@
 import { ArrowRight, TriangleAlert } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import ActivityRow from '@/components/ActivityRow';
 import CloseAccountDialog from '@/components/CloseAccountDialog';
 import GroupCard from '@/components/GroupCard';
 import HomeFeatureCard from '@/components/HomeFeatureCard';
@@ -10,16 +11,29 @@ import HomeStatCard from '@/components/HomeStatCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import activityApi from '../api/activity';
 import { getErrorMessage } from '../api/client';
 import settlementsApi from '../api/settlements';
 import { useGroupsData, useSummaryData } from '../hooks/useAppData';
+import useAsync from '../hooks/useAsync';
 import useAuth from '../hooks/useAuth';
 import { dative } from '../utils/turkish';
 import { RECEIPT_TILE, buildNetStatus, buildSpendTile } from '../utils/homeCards';
 import { centsToApiAmount, formatCents, parseAmountToCents } from '../utils/money';
 
-import type { Contact, GroupSummary, PendingApproval, PendingDebt } from '../types/models';
+import type {
+  ActivityEvent,
+  ActivityListResult,
+  Contact,
+  GroupSummary,
+  PendingApproval,
+  PendingDebt,
+} from '../types/models';
 import type { HomeNetStatus, HomeStatTile } from '../utils/homeCards';
+
+/** Ana sayfadaki "Son hareketler" kac kayit gosteriyor — Aktivite sayfasinin
+ *  tam akisi degil, bir onizleme (bkz. docs/decisions/3.15-home-son-hareketler.md). */
+const RECENT_ACTIVITY_LIMIT = 5;
 
 /**
  * Home — giris sonrasi ilk ekran.
@@ -62,6 +76,16 @@ import type { HomeNetStatus, HomeStatTile } from '../utils/homeCards';
  * yerden: `useGroupsData()`, `AppDataProvider`in zaten tuttugu paylasilan
  * `GET /groups` sonucu — Home'un kendi istegini atmasi ikinci bir ag
  * gidis-donusu ve sidebar'daki grup kisayollarindan ayrisma riski demekti.
+ *
+ * EN ALTTA: "SON HAREKETLER", AKTIVITE SAYFASINDAKI AYNI SATIR
+ * ------------------------------------------------------------------
+ * `GroupCard` ile ayni ilke: yeni bir satir bileseni yazilmadi,
+ * `components/ActivityRow.tsx` Aktivite sayfasindan buraya tasindi ve iki
+ * yer de oradan import ediyor (bkz. docs/decisions/3.15-home-son-hareketler.md).
+ * Veri de yeni bir uc nokta degil — **ayni** `GET /activity`, yalnizca
+ * `limit=5` ile (Aktivite sayfasi `useActivityFeed` uzerinden sayfalanmis tam
+ * akisi cekiyor; burasi "daha fazla yukle" gerektirmeyen tek seferlik kucuk
+ * bir istek, o yuzden dogrudan `useAsync` kullanildi).
  */
 const HomePage = () => {
   const { user } = useAuth();
@@ -73,6 +97,12 @@ const HomePage = () => {
   */
   const summary = useSummaryData();
   const groups = useGroupsData();
+
+  const fetchRecentActivity = useCallback(
+    () => activityApi.listActivity({ limit: RECENT_ACTIVITY_LIMIT }),
+    []
+  );
+  const recentActivity = useAsync<ActivityListResult>(fetchRecentActivity, 'Son hareketler alinamadi');
 
   const netStatus = useMemo(() => buildNetStatus(summary.data), [summary.data]);
   const spendTile = useMemo(() => buildSpendTile(summary.data), [summary.data]);
@@ -159,6 +189,24 @@ const HomePage = () => {
           currentUserId={user?.id ?? ''}
           onExpenseAdded={groups.reload}
         />
+      )}
+
+      {!recentActivity.loading && recentActivity.error && (
+        <div
+          className="state-box state-box--error card-solid border-destructive/30 p-4 text-sm"
+          role="alert"
+        >
+          <p className="text-destructive">{recentActivity.error}</p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={recentActivity.reload}>
+            Tekrar dene
+          </Button>
+        </div>
+      )}
+
+      {recentActivity.loading && <RecentActivitySkeleton />}
+
+      {!recentActivity.loading && recentActivity.data && recentActivity.data.events.length > 0 && (
+        <RecentActivitySection events={recentActivity.data.events} currentUserId={user?.id ?? ''} />
       )}
     </section>
   );
@@ -498,6 +546,52 @@ const GroupsSectionSkeleton = () => (
           <Skeleton className="skeleton-line skeleton-line--short mt-2 h-3 w-3/5" />
         </div>
         <Skeleton className="skeleton-line h-10 w-24 rounded-lg" />
+      </div>
+    ))}
+  </div>
+);
+
+/**
+ * "Son hareketler" — Aktivite sayfasindaki `ActivityRow`in **ayni** hali,
+ * gunlere bolunmeden duz bir liste olarak (Aktivite'nin `groupByDay`si burada
+ * yok — bu bir onizleme, sayfalanmis bir gecmis degil).
+ */
+const RecentActivitySection = ({
+  events,
+  currentUserId,
+}: {
+  events: ActivityEvent[];
+  currentUserId: string;
+}) => (
+  <section className="home-recent-activity flex flex-col gap-3">
+    <div className="flex items-center justify-between gap-2">
+      <h2 className="text-lg">Son hareketler</h2>
+      <Link to="/activity" className="text-sm text-rose hover:underline">
+        Tumunu gor
+      </Link>
+    </div>
+
+    <ul className="flex flex-col gap-2">
+      {events.map((event) => (
+        <ActivityRow key={event.id} event={event} currentUserId={currentUserId} />
+      ))}
+    </ul>
+  </section>
+);
+
+/** Yukleme iskeleti — `ActivityRow`in kabaca yuksekligiyle ayni. */
+const RecentActivitySkeleton = () => (
+  <div className="flex flex-col gap-2" aria-busy="true" aria-label="Son hareketler yukleniyor">
+    {[0, 1, 2].map((index) => (
+      <div className="activity-row card-solid flex justify-between gap-3 p-3.5" key={index}>
+        <div className="flex w-full items-center gap-3">
+          <Skeleton className="size-9 shrink-0 rounded-lg" />
+          <div className="flex w-full flex-col gap-2">
+            <Skeleton className="skeleton-line h-4 w-3/5" />
+            <Skeleton className="skeleton-line h-3 w-1/4" />
+          </div>
+        </div>
+        <Skeleton className="skeleton-line h-5 w-16 shrink-0" />
       </div>
     ))}
   </div>
