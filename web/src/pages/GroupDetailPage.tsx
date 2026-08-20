@@ -20,10 +20,17 @@ import useAsync from '../hooks/useAsync';
 import useAuth from '../hooks/useAuth';
 import useExpenseFeed from '../hooks/useExpenseFeed';
 import { viewForUser } from '../utils/balance';
+import { groupPath } from '../utils/groupPath';
 import { formatCentsAbsolute } from '../utils/money';
 
 import type { SettleTarget } from '@/components/SettleUpModal';
-import type { BalanceResult, GroupDetail, SettlementListResult } from '../types/models';
+import type {
+  BalanceResult,
+  GroupDetail,
+  Settlement,
+  SettlementListResult,
+  SettlementView,
+} from '../types/models';
 
 /**
  * Grup detayi — uygulamanin uctan uca akisi burada tamamlaniyor:
@@ -46,7 +53,14 @@ import type { BalanceResult, GroupDetail, SettlementListResult } from '../types/
  * olurdu. Gerekce docs/decisions/2.4.md.
  */
 const GroupDetailPage = () => {
-  const { id = '' } = useParams<{ id: string }>();
+  /*
+    Adresteki grup anahtari: normalde slug (`ev-arkadaslari`), eski linklerde
+    uuid. Ikisi de oldugu gibi backend'e gidiyor — cozumleme tek kapida
+    yapiliyor (src/middlewares/group.middleware.ts), yani bu sayfanin once
+    uuid'ye cevirmek icin fazladan bir istek atmasi gerekmiyor.
+    Rota kaliba gore parametre hep var; tip tarafinda `string | undefined`.
+  */
+  const { groupKey = '' } = useParams<{ groupKey: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const currentUserId = user?.id ?? '';
@@ -58,10 +72,10 @@ const GroupDetailPage = () => {
   */
   const groups = useGroupsData();
 
-  const fetchDetail = useCallback(() => groupsApi.getGroup(id), [id]);
+  const fetchDetail = useCallback(() => groupsApi.getGroup(groupKey), [groupKey]);
   const detail = useAsync<GroupDetail>(fetchDetail, 'Grup bilgileri yuklenemedi');
 
-  const fetchBalances = useCallback(() => groupsApi.getGroupBalances(id), [id]);
+  const fetchBalances = useCallback(() => groupsApi.getGroupBalances(groupKey), [groupKey]);
   const balances = useAsync<BalanceResult>(fetchBalances, 'Bakiye alinamadi');
 
   /*
@@ -70,15 +84,15 @@ const GroupDetailPage = () => {
     icinde gorunuyor.
   */
   const fetchSettlements = useCallback(
-    () => settlementsApi.listSettlements(id, { status: 'pending', limit: 50 }),
-    [id]
+    () => settlementsApi.listSettlements(groupKey, { status: 'pending', limit: 50 }),
+    [groupKey]
   );
   const settlements = useAsync<SettlementListResult>(
     fetchSettlements,
     'Bekleyen odemeler alinamadi'
   );
 
-  const feed = useExpenseFeed(id);
+  const feed = useExpenseFeed(groupKey);
 
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [settleTarget, setSettleTarget] = useState<SettleTarget | null>(null);
@@ -129,6 +143,79 @@ const GroupDetailPage = () => {
   };
 
   const refreshAll = useCallback(() => refresh.current(), []);
+
+  /**
+   * "Ode" akisi — IYIMSER GUNCELLEME, `refreshAll`in bilincli istisnasi.
+   *
+   * Yukaridaki genel kural (2.4) "elle guncelleme yok, yeniden istek var"
+   * cunku bakiye netlestirmenin sonucu ve onu istemcide hesaplamak backend
+   * algoritmasinin ikinci bir kopyasi olurdu. Burada o risk **yok**: bir
+   * kayit `pending` acildiginda net bakiye degismiyor (1.7 — onaylanana kadar
+   * hicbir seyi etkilemiyor), yani netlestirme kopyalanmiyor. Yapilan tek sey
+   * iki **bilinen** satiri yerlestirmek:
+   *
+   *   - Transferler listesinden ayni (borclu, alacakli) ciftini kaldirmak.
+   *     Rastgele bir tahmin degil: backend zaten bu cifte ikinci bir bekleyen
+   *     kayda izin vermiyor (409 "zaten bekleyen bir kayit var"), yani "Ode"
+   *     butonu bu satirda tekrar calismayacakti — satiri kaldirmak yalnizca
+   *     bunu **gorunur** kiliyor.
+   *   - Bekleyen odemeler listesine sunucunun donduru GERCEK satiri (id, tutar,
+   *     created_at) eklemek. Yalnizca ekrandaki isimler (`from_name`/`to_name`)
+   *     yerelde tamamlaniyor — `POST /settlements` onlari tasimiyor, ama ikisi
+   *     de zaten elimizde (kendi adimiz + `SettleTarget.name`).
+   *
+   * Bilerek arkadan bir `reload()` da tetiklenmiyor: `useAsync.reload` `loading`u
+   * true yapar ve `BalancesTab` o an skeleton'a doner — tam da "aninda kalksin"
+   * isteginin tersini yapardi. Sunucuyla olasi sapma (ör. ayni anda baska bir
+   * uyenin islem yapmasi) sayfa bir sonraki dogal yenilemede kendiliginden
+   * kapanir; ayni kabul `AppDataProvider`in oturum-basi-tek-istek modelinde de var.
+   * Gerekce: docs/decisions/optimistic-ui-duzeltme.md.
+   */
+  const handleSettlementCreated = (settlement: Settlement) => {
+    const creditorName = settleTarget?.name ?? nameOf(settlement.to_user);
+
+    balances.mutate((current) =>
+      current
+        ? {
+            ...current,
+            transfers: current.transfers.filter(
+              (transfer) =>
+                !(
+                  transfer.from_user === settlement.from_user &&
+                  transfer.to_user === settlement.to_user
+                )
+            ),
+          }
+        : current
+    );
+
+    settlements.mutate((current) => {
+      const row: SettlementView = {
+        ...settlement,
+        from_name: user?.name ?? 'Sen',
+        to_name: creditorName,
+      };
+
+      if (!current) {
+        return {
+          settlements: [row],
+          pagination: {
+            page: 1,
+            limit: 50,
+            total: 1,
+            total_pages: 1,
+            has_next: false,
+            has_previous: false,
+          },
+        };
+      }
+
+      return {
+        settlements: [row, ...current.settlements],
+        pagination: { ...current.pagination, total: current.pagination.total + 1 },
+      };
+    });
+  };
 
   if (detail.loading) {
     return <GroupDetailSkeleton />;
@@ -240,7 +327,7 @@ const GroupDetailPage = () => {
 
         <TabsContent value="members">
           <MembersTab
-            groupId={id}
+            groupId={groupKey}
             groupName={group.name}
             members={members}
             currentUserId={currentUserId}
@@ -272,7 +359,7 @@ const GroupDetailPage = () => {
       <AddExpenseModal
         open={expenseModalOpen}
         onOpenChange={setExpenseModalOpen}
-        groupId={id}
+        groupId={groupKey}
         members={members}
         currentUserId={currentUserId}
         onCreated={refreshAll}
@@ -285,9 +372,9 @@ const GroupDetailPage = () => {
             setSettleTarget(null);
           }
         }}
-        groupId={id}
+        groupId={groupKey}
         target={settleTarget}
-        onCreated={refreshAll}
+        onCreated={handleSettlementCreated}
       />
 
       {role === 'owner' && (
@@ -295,9 +382,21 @@ const GroupDetailPage = () => {
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
           group={group}
-          onUpdated={() => {
-            detail.reload();
+          onUpdated={(updated) => {
             groups.reload();
+
+            /*
+              Ad degistiyse slug de degisti: sayfanin durdugu adres artik
+              hicbir gruba cozulmuyor ve `detail.reload()` 403 alirdi. Adresi
+              duzeltmek tazelemenin yerine geciyor — `fetchDetail` anahtara
+              bagli oldugu icin istek yeni adresle kendiliginden tekrarlaniyor.
+            */
+            if (updated.slug === groupKey) {
+              detail.reload();
+              return;
+            }
+
+            navigate(groupPath(updated), { replace: true });
           }}
           onDeleted={() => {
             groups.reload();

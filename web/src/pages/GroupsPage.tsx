@@ -21,6 +21,12 @@ import useAuth from '../hooks/useAuth';
  * Gorsel kimlik uygulanirken yalnizca sunum katmani degisti; veri akisi
  * (`useAsync`), yenileme stratejisi ve hata metinleri 2.3'teki gibi
  * (bkz. docs/decisions/gorsel-kimlik.md).
+ *
+ * IZGARA DEGIL SATIR LISTESI
+ * --------------------------
+ * Kartlar artik yan yana degil alt alta, tam genislikte: her satirda avatar
+ * yigini + ad + son hareket + bakiye ayni goz hizasinda. Gerekce:
+ * docs/decisions/gruplar-kart-tasarimi.md.
  */
 const GroupsPage = () => {
   const { user } = useAuth();
@@ -38,10 +44,19 @@ const GroupsPage = () => {
     <section className="groups-page">
       <header className="groups-page__head flex flex-wrap items-center justify-between gap-3">
         <div>
+          {/*
+            Kucuk gri etiket: kac grup oldugu bir bakista. Buyuk harf CSS'e
+            degil metnin kendisine yazili — `formatDayGroup`/`ACTIVITY_BADGES`
+            ile ayni kural: gorunen ve okunan metin ayni olmali (testler dahil).
+          */}
+          <p className="groups-page__eyebrow text-xs font-medium tracking-[0.14em] text-ink-muted">
+            GRUPLAR · {groups.data?.length ?? 0}
+          </p>
           {/* Baslik ink + Fraunces; rose burada degil. */}
-          <h1>Gruplar</h1>
+          <h1>Ortak hesap tuttugun gruplar</h1>
           <p className="mt-0.5 text-sm text-ink-muted">
-            Uyesi oldugun gruplar ve her birindeki net durumun.
+            Her kartta o gruptaki net durumun ve son hareket var. Gruba dokun, harcamalar ve
+            bakiyeler acilir.
           </p>
         </div>
 
@@ -75,7 +90,7 @@ const GroupsPage = () => {
       )}
 
       {!groups.loading && !groups.error && groups.data && groups.data.length > 0 && (
-        <div className="group-grid mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="group-grid mt-6 flex flex-col gap-3">
           {groups.data.map((group, index) => (
             <motion.div
               key={group.id}
@@ -87,7 +102,7 @@ const GroupsPage = () => {
               */
               transition={{ duration: 0.2, delay: Math.min(index, 6) * 0.04, ease: 'easeOut' }}
             >
-              <GroupCard group={group} currentUserId={user?.id ?? ''} />
+              <GroupCard group={group} currentUserId={user?.id ?? ''} onExpenseAdded={groups.reload} />
             </motion.div>
           ))}
         </div>
@@ -111,18 +126,17 @@ const GroupsPage = () => {
   );
 };
 
-/** Iskelet kartlar: veri gelince sayfanin ziplamasini (layout shift) onler. */
+/** Iskelet satirlar: veri gelince sayfanin ziplamasini (layout shift) onler. */
 const GroupListSkeleton = () => (
-  <div
-    className="group-grid mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-    aria-busy="true"
-    aria-label="Gruplar yukleniyor"
-  >
+  <div className="group-grid mt-6 flex flex-col gap-3" aria-busy="true" aria-label="Gruplar yukleniyor">
     {[0, 1, 2].map((index) => (
-      <div className="group-card card-glass flex flex-col gap-3 p-5" key={index}>
-        <Skeleton className="skeleton-line skeleton-line--title h-5 w-3/5" />
-        <Skeleton className="skeleton-line skeleton-line--short h-3 w-2/5" />
-        <Skeleton className="skeleton-line h-14 w-full rounded-lg" />
+      <div className="group-card card-glass flex items-center gap-4 p-5" key={index}>
+        <Skeleton className="skeleton-line h-10 w-10 shrink-0 rounded-full" />
+        <div className="flex-1">
+          <Skeleton className="skeleton-line skeleton-line--title h-5 w-2/5" />
+          <Skeleton className="skeleton-line skeleton-line--short mt-2 h-3 w-3/5" />
+        </div>
+        <Skeleton className="skeleton-line h-10 w-24 rounded-lg" />
       </div>
     ))}
   </div>

@@ -4,16 +4,18 @@ import jwt from 'jsonwebtoken';
 import request from 'supertest';
 
 import app from '../src/app';
+import activityModel from '../src/models/activity.model';
 import expenseModel from '../src/models/expense.model';
 import groupModel from '../src/models/group.model';
 import settlementModel from '../src/models/settlement.model';
+import userModel from '../src/models/user.model';
 
 import type { GroupSummary } from '../src/models/group.model';
 
 /**
  * `GET /users/me/home-summary` testleri.
  *
- * Uc model birden mock'lanip yerine bellek ici tablolar konuyor; geri kalan her
+ * Bes model birden mock'lanip yerine bellek ici tablolar konuyor; geri kalan her
  * sey — routing, requireAuth, `summary.service`in gruplama/toplama mantigi,
  * 1.6'daki netlestirme, para donusumleri — gercek kod olarak calisiyor. Yani bu
  * dosya asil olarak **toplamanin dogrulugunu** ve **sorgu sayisini** test ediyor.
@@ -33,9 +35,21 @@ jest.mock('../src/models/settlement.model', () => ({
   default: { listConfirmedByGroups: jest.fn(), countPendingForUser: jest.fn() },
 }));
 
+jest.mock('../src/models/user.model', () => ({
+  __esModule: true,
+  default: { findActivitySeenAt: jest.fn() },
+}));
+
+jest.mock('../src/models/activity.model', () => ({
+  __esModule: true,
+  default: { countUnseenForGroups: jest.fn() },
+}));
+
 const mockedGroupModel = groupModel as jest.Mocked<typeof groupModel>;
 const mockedExpenseModel = expenseModel as jest.Mocked<typeof expenseModel>;
 const mockedSettlementModel = settlementModel as jest.Mocked<typeof settlementModel>;
+const mockedUserModel = userModel as jest.Mocked<typeof userModel>;
+const mockedActivityModel = activityModel as jest.Mocked<typeof activityModel>;
 
 const TEST_JWT_SECRET = process.env.JWT_SECRET as string;
 
@@ -68,6 +82,8 @@ let expenses: ExpenseFixture[] = [];
 let shares: ShareFixture[] = [];
 let confirmed: ConfirmedFixture[] = [];
 let pendingCount = 0;
+let unseenCount = 0;
+let activitySeenAt: Date | undefined = new Date('2026-01-01T00:00:00.000Z');
 
 const uid = (): string => randomUUID();
 
@@ -107,12 +123,16 @@ const installInMemoryModels = (): void => {
       ? memberships.map<GroupSummary>((groupId) => ({
           id: groupId,
           name: `Grup ${groupId.slice(0, 4)}`,
+          slug: `grup-${groupId.slice(0, 4)}`,
           description: null,
           created_by: ME,
           created_at: new Date(),
           role: 'member',
           joined_at: new Date(),
           member_count: 2,
+          member_preview: [],
+          has_pending_incoming: false,
+          last_activity: null,
         }))
       : []
   );
@@ -152,6 +172,9 @@ const installInMemoryModels = (): void => {
   );
 
   mockedSettlementModel.countPendingForUser.mockImplementation(async () => pendingCount);
+
+  mockedUserModel.findActivitySeenAt.mockImplementation(async () => activitySeenAt);
+  mockedActivityModel.countUnseenForGroups.mockImplementation(async () => unseenCount);
 };
 
 /**
@@ -206,6 +229,8 @@ beforeEach(() => {
   shares = [];
   confirmed = [];
   pendingCount = 0;
+  unseenCount = 0;
+  activitySeenAt = new Date('2026-01-01T00:00:00.000Z');
 
   installInMemoryModels();
 });
@@ -354,6 +379,7 @@ describe('GET /users/me/home-summary — hic grubu olmayan kullanici', () => {
       monthlySpend: '0.00',
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
+      unseenActivityCount: 0,
     });
   });
 
@@ -407,5 +433,41 @@ describe('GET /users/me/home-summary — sorgu sayisi', () => {
       GROUP_DEBT,
       GROUP_SETTLED,
     ]);
+
+    expect(mockedUserModel.findActivitySeenAt).toHaveBeenCalledTimes(1);
+    expect(mockedActivityModel.countUnseenForGroups).toHaveBeenCalledTimes(1);
+    expect(mockedActivityModel.countUnseenForGroups).toHaveBeenCalledWith(
+      [GROUP_CREDIT, GROUP_DEBT, GROUP_SETTLED],
+      ME,
+      activitySeenAt
+    );
+  });
+});
+
+/* -------------------------------------------------------- okunmamis aktivite */
+
+describe('GET /users/me/home-summary — unseenActivityCount', () => {
+  it('cevaba giriyor', async () => {
+    seedThreeGroups();
+    unseenCount = 4;
+
+    const response = await request(app)
+      .get('/users/me/home-summary')
+      .set(...auth(ME));
+
+    expect(response.body.summary.unseenActivityCount).toBe(4);
+  });
+
+  it('kullanicinin activity_seen_at satiri hic yoksa (silinmis kullanici) 0 doner, hata firlatmaz', async () => {
+    seedThreeGroups();
+    activitySeenAt = undefined;
+
+    const response = await request(app)
+      .get('/users/me/home-summary')
+      .set(...auth(ME));
+
+    expect(response.status).toBe(200);
+    expect(response.body.summary.unseenActivityCount).toBe(0);
+    expect(mockedActivityModel.countUnseenForGroups).not.toHaveBeenCalled();
   });
 });

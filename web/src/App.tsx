@@ -111,7 +111,13 @@ const App = () => (
           <Route path="/home" element={<HomePage />} />
           <Route path="/groups" element={<GroupsPage />} />
           <Route path="/activity" element={<ActivityPage />} />
-          <Route path="/groups/:id" element={<GroupDetailPage />} />
+          {/*
+            Parametre bir uuid degil, grubun adindan uretilmis adres parcasi
+            (`/groups/ev-arkadaslari`). Uuid'li eski adresler de ayni rotaya
+            dusuyor ve calisiyor: backend ikisini de cozuyor, sayfa da adresi
+            slug'a sessizce duzeltiyor (bkz. pages/GroupDetailPage.tsx).
+          */}
+          <Route path="/groups/:groupKey" element={<GroupDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
 
           {/* Admin kontrolu ProtectedRoute'un ustune biner: once giris, sonra rol. */}

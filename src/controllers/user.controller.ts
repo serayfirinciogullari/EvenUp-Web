@@ -62,4 +62,20 @@ const getHomeSummary = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json({ summary });
 };
 
-export default { updateMe, changeMyPassword, getHomeSummary };
+/**
+ * POST /users/me/activity-seen -> 200 { message }  (requireAuth)
+ *
+ * Govde yok: "simdi" tek anlamli deger. Aktivite sayfasi akisini her
+ * yukledi ginde bunu cagirir, sidebar rozetindeki okunmamis kismi boylece
+ * sayfa yenilenmeden sifirlanir (bkz. docs/decisions/aktivite-okunma-sayaci.md).
+ */
+const markActivitySeen = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    throw ApiError.unauthorized('Kimlik dogrulamasi gerekli');
+  }
+
+  await authService.markActivitySeen(req.user.id);
+  res.status(200).json({ message: 'Aktivite okundu olarak isaretlendi' });
+};
+
+export default { updateMe, changeMyPassword, getHomeSummary, markActivitySeen };

@@ -1,9 +1,10 @@
-import { Check, Link2, Users } from 'lucide-react';
+import { Check, Link2, Plus, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import GlassCard from '@/components/GlassCard';
+import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NumberTicker } from '@/components/ui/number-ticker';
@@ -11,45 +12,60 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getErrorMessage } from '../api/client';
 import groupsApi from '../api/groups';
 import useAsync from '../hooks/useAsync';
+import { lastActivitySentence } from '../utils/activity';
 import { viewForUser } from '../utils/balance';
+import { formatRelativeTime } from '../utils/datetime';
+import { colorOfGroup } from '../utils/groupColor';
+import { groupPath } from '../utils/groupPath';
 import { buildJoinUrl, copyToClipboard } from '../utils/invite';
 import { formatCentsAbsolute } from '../utils/money';
+import AddExpenseModal from './AddExpenseModal';
 
-import type { BalanceResult, GroupSummary } from '../types/models';
+import type { MouseEvent } from 'react';
+import type { BalanceResult, GroupMember, GroupSummary } from '../types/models';
 
 /**
- * Grup listesi karti — **glass** yuzey.
+ * Grup listesi karti — **satir**, "kart izgarasi" degil.
  *
- * Neden glass: bu kartin tasidigi asil sey net bakiye **ozeti**, yani bir
- * durumun sonucu. Yuzey ayrimi icerige gore veriliyor (bkz. index.css).
+ * NEDEN TAM GENISLIK SATIR
+ * -------------------------
+ * Onceki surumde kartlar bir izgarada yan yanaydi ve her biri kendi basina bir
+ * ozetti. Yeni tasarim listeyi tek bir **taranan** akis olarak kuruyor: avatar
+ * yigini, ad, son hareket ve bakiye ayni goz hizasinda — kullanici gruplarini
+ * yukaridan asagi okuyor, bir izgarada gezinmiyor. Gerekce:
+ * docs/decisions/gruplar-kart-tasarimi.md.
  *
  * KARTIN TAMAMI NEDEN TIKLANABILIR — VE NEDEN SARMALAYICI BIR <a> DEGIL
  * ---------------------------------------------------------------------
- * Detaya gecis kartin her yerinden yapilabiliyor, ama link hala yalnizca
- * basliktaki `<a>`: uzerine kartin tamamini kaplayan gorunmez bir `::after`
- * seriliyor ("stretched link"). Karti bastan sona bir `<a>` icine almak daha
- * kisa olurdu ama iki seyi bozardi: (1) icindeki davet butonu link icinde
- * buton olurdu — gecersiz HTML ve ekran okuyucuda tek bir devasa link,
- * (2) erisilebilirlik agacinda linkin adi kartin tum metni olurdu
- * ("Ev Arkadaslari 4 uye ... 300,00 ₺ ... Davet linkini kopyala").
- * Bu haliyle link adi grup adi, odak halkasi baslikta.
- *
- * Katmanin ustunde kalmasi gereken ogeler (davet butonu, "Tekrar dene",
- * elle kopyalanacak link metni) `relative z-10` tasiyor. Bedeli: kart
- * metninin geri kalani fareyle secilemez — desenin bilinen takasi.
+ * Ayni "stretched link" deseni 2.3'ten korunuyor: gorunmez `::after` katmani
+ * kartin tamamini kapliyor, gercek link yalnizca baslikta. Uzerinde kalmasi
+ * gereken interaktif ogeler (davet butonu, "Harcama ekle", "Tekrar dene")
+ * `relative z-10` tasiyor — boylece ayrica `stopPropagation` cagirmaya gerek
+ * kalmiyor, z-index sirasi zaten tiklamayi dogru yere yonlendiriyor.
  *
  * BAKIYE NEDEN KART BASINA AYRI ISTEK
  * -----------------------------------
- * Backend'de "tum gruplarin bakiyesi" diye toplu bir uc nokta yok; bakiye grup
- * basina hesaplaniyor ve hesaplamak icin grubun **tum** harcamalarini okumak
- * gerekiyor (docs/decisions/1.7.md). Istek kartin kendi icinde: liste bakiyeler
- * beklenmeden goruntuleniyor ve tek bir grubun bakiyesi hata verirse yalnizca
- * o kart etkileniyor.
+ * Degismedi: backend'de "tum gruplarin bakiyesi" diye toplu bir uc nokta yok
+ * (docs/decisions/1.7.md). Istek kartin kendi icinde.
+ *
+ * "HARCAMA EKLE" NEDEN GRUBA GIRMEDEN CALISIYOR
+ * -----------------------------------------------
+ * `GET /groups` satiri yalnizca `member_count` tasiyor, tam uye listesini
+ * degil (formu doldurmak icin gereken "kim odedi" secenekleri ve pay
+ * satirlari icin uye kimligi/adi gerekiyor). Bu yuzden butona basildiginda
+ * `GET /groups/:id` **anlik olarak** cekiliyor, sonra modal aciliyor. Bunu
+ * `GET /groups`e tum uye listesini eklemek yerine yapmak bilincli: her grup
+ * icin her zaman butun uye listesini tasimak, listenin ana yukunu (tek istek,
+ * kucuk govde) sokup her acilista kullanilmayacak veri indirmek olurdu —
+ * gerekce: docs/decisions/gruplar-kart-tasarimi.md.
  */
 
 interface GroupCardProps {
   group: GroupSummary;
   currentUserId: string;
+  /** Karttan hizli harcama eklendikten sonra listeyi tazelemek icin — son
+   *  hareket satirinin ve bekleyen-onay rozetinin guncellenmesi bundan gecer. */
+  onExpenseAdded: () => void;
 }
 
 type InviteState =
@@ -61,11 +77,21 @@ type InviteState =
   | { status: 'manual'; url: string }
   | { status: 'error'; message: string };
 
-const GroupCard = ({ group, currentUserId }: GroupCardProps) => {
+type ExpenseFlow =
+  | { status: 'closed' }
+  | { status: 'loading' }
+  | { status: 'open'; members: GroupMember[] }
+  | { status: 'error'; message: string };
+
+/** MembersTab'daki ayni ifadeyle ayni: bas harf, yoksa "?". */
+const initialOf = (name: string): string => name.trim().charAt(0).toUpperCase() || '?';
+
+const GroupCard = ({ group, currentUserId, onExpenseAdded }: GroupCardProps) => {
   const fetchBalances = useCallback(() => groupsApi.getGroupBalances(group.id), [group.id]);
   const balances = useAsync<BalanceResult>(fetchBalances, 'Bakiye alinamadi');
 
   const [invite, setInvite] = useState<InviteState>({ status: 'idle' });
+  const [expenseFlow, setExpenseFlow] = useState<ExpenseFlow>({ status: 'closed' });
 
   const handleInvite = async () => {
     if (invite.status === 'pending') {
@@ -85,89 +111,184 @@ const GroupCard = ({ group, currentUserId }: GroupCardProps) => {
     }
   };
 
+  const openExpenseFlow = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+
+    if (expenseFlow.status === 'loading') {
+      return;
+    }
+
+    setExpenseFlow({ status: 'loading' });
+
+    try {
+      const detail = await groupsApi.getGroup(group.id);
+      setExpenseFlow({ status: 'open', members: detail.members });
+    } catch (caught) {
+      setExpenseFlow({
+        status: 'error',
+        message: getErrorMessage(caught, 'Grup bilgisi alinamadi'),
+      });
+    }
+  };
+
+  const closeExpenseFlow = () => setExpenseFlow({ status: 'closed' });
+
+  const handleExpenseCreated = () => {
+    // Bu grubun bakiyesi degisti (2.4: netlestirme istemcide tekrarlanmaz,
+    // tam yeniden istek). Listenin geri kalani (son hareket, bekleyen onay
+    // rozeti) `onExpenseAdded` uzerinden sayfa seviyesinde tazeleniyor.
+    balances.reload();
+    onExpenseAdded();
+    closeExpenseFlow();
+  };
+
+  const overflowCount = group.member_count - group.member_preview.length;
+
   return (
-    /*
-      Hover'da hafif yukselme + golge. Orta yogunluk: olcek degil, 3px'lik bir
-      kalkma — kart listesi icinde olcek degisimi komsu kartlarla cakisir.
-    */
     <motion.div
-      whileHover={{ y: -3 }}
+      whileHover={{ y: -2 }}
       transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-      className="h-full"
     >
       {/* `group` = Tailwind hover grubu: kartin herhangi bir yerinde hover,
           basligi renklendirerek nereye gidilecegini soyluyor. */}
-      <GlassCard as="article" className="group group-card flex h-full flex-col gap-3 p-5">
-        <header className="group-card__head flex items-start justify-between gap-2">
-          <h2 className="group-card__title text-lg leading-tight">
-            <Link
-              to={`/groups/${group.id}`}
-              className="rounded-sm transition-colors after:absolute after:inset-0 after:rounded-[inherit] after:content-[''] group-hover:text-rose"
-            >
-              {group.name}
-            </Link>
-          </h2>
-          {group.role === 'owner' && (
-            <Badge variant="outline" className="shrink-0 border-rose/30 bg-rose/8 text-rose">
-              Sahip
-            </Badge>
-          )}
-        </header>
+      <GlassCard
+        as="article"
+        className="group group-card flex flex-col flex-wrap gap-4 p-5 sm:flex-row sm:items-center"
+      >
+        <AvatarGroup className="shrink-0">
+          {group.member_preview.map((member) => (
+            <Avatar key={member.user_id}>
+              <AvatarFallback
+                style={{ backgroundColor: colorOfGroup(member.user_id), color: '#fff' }}
+                className="font-medium"
+              >
+                {initialOf(member.name)}
+              </AvatarFallback>
+            </Avatar>
+          ))}
+          {overflowCount > 0 && <AvatarGroupCount>+{overflowCount}</AvatarGroupCount>}
+        </AvatarGroup>
 
-        <p className="group-card__meta flex items-center gap-1.5 text-sm text-ink-muted">
-          <Users className="size-3.5 shrink-0" aria-hidden />
-          {group.member_count} uye
-          {group.description ? ` · ${group.description}` : ''}
-        </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="group-card__title text-lg leading-tight">
+              <Link
+                to={groupPath(group)}
+                className="rounded-sm transition-colors after:absolute after:inset-0 after:rounded-[inherit] after:content-[''] group-hover:text-rose"
+              >
+                {group.name}
+              </Link>
+            </h2>
 
-        <BalanceCell balances={balances} currentUserId={currentUserId} />
+            <span className="group-card__meta flex items-center gap-1 text-sm text-ink-muted">
+              <Users className="size-3.5 shrink-0" aria-hidden />
+              {group.member_count} kisi
+            </span>
 
-        {/*
-          Davet uretmeyi yalnizca owner yapabilir; uye cagirirsa backend 403
-          doner (1.4). Butonu gizlemek bir guvenlik onlemi degil — calismayacak
-          bir aksiyonu gostermemek.
-        */}
-        {group.role === 'owner' && (
-          <div className="group-card__actions relative z-10 mt-auto pt-1">
+            {group.role === 'owner' && (
+              <Badge variant="outline" className="shrink-0 border-rose/30 bg-rose/8 text-rose">
+                Sahip
+              </Badge>
+            )}
+
+            {/* Onay bekleyen bir odeme varsa gorunur — bkz. docs/decisions/gruplar-kart-tasarimi.md. */}
+            {group.has_pending_incoming && (
+              <Badge
+                variant="outline"
+                className="group-card__pending shrink-0 border-amber/25 bg-amber-surface text-amber"
+              >
+                ONAY BEKLIYOR
+              </Badge>
+            )}
+          </div>
+
+          <p className="group-card__activity mt-1 truncate text-sm text-ink-muted">
+            {group.last_activity
+              ? `${formatRelativeTime(group.last_activity.occurred_at)} · ${lastActivitySentence(group.last_activity, currentUserId)}`
+              : 'Henuz hareket yok'}
+          </p>
+        </div>
+
+        <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-end gap-3">
+          <BalanceCell balances={balances} currentUserId={currentUserId} />
+
+          <div className="flex items-center gap-2">
+            {/*
+              Davet uretmeyi yalnizca owner yapabilir; uye cagirirsa backend 403
+              doner (1.4). Butonu gizlemek bir guvenlik onlemi degil — calismayacak
+              bir aksiyonu gostermemek. Ikon-yalnizca: satirda yer dar, "Harcama
+              ekle" asil eylem.
+            */}
+            {group.role === 'owner' && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label="Davet linkini kopyala"
+                onClick={() => void handleInvite()}
+                disabled={invite.status === 'pending'}
+                className="border-rose/25 bg-surface/60 text-rose hover:bg-rose/10 hover:text-rose"
+              >
+                {invite.status === 'copied' ? (
+                  <Check className="size-4" aria-hidden />
+                ) : (
+                  <Link2 className="size-4" aria-hidden />
+                )}
+              </Button>
+            )}
+
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => void handleInvite()}
-              disabled={invite.status === 'pending'}
-              className="w-full border-rose/25 bg-surface/60 text-rose hover:bg-rose/10 hover:text-rose"
+              onClick={(event) => void openExpenseFlow(event)}
+              disabled={expenseFlow.status === 'loading'}
+              className="border-rose/25 bg-surface/60 text-rose hover:bg-rose/10 hover:text-rose"
             >
-              {invite.status === 'copied' ? (
-                <Check className="size-4" aria-hidden />
-              ) : (
-                <Link2 className="size-4" aria-hidden />
-              )}
-              {invite.status === 'pending' ? 'Link aliniyor...' : 'Davet linkini kopyala'}
+              <Plus className="size-4" aria-hidden />
+              {expenseFlow.status === 'loading' ? 'Aciliyor...' : 'Harcama ekle'}
             </Button>
-
-            {invite.status === 'copied' && (
-              <p className="group-card__note mt-2 text-xs text-ink-muted" role="status">
-                Davet linki panoya kopyalandi.
-              </p>
-            )}
-
-            {invite.status === 'manual' && (
-              <p className="group-card__note mt-2 text-xs text-ink-muted" role="status">
-                Pano kullanilamadi, linki elle kopyalayin:{' '}
-                <code className="group-card__link block break-all text-[11px] text-ink">
-                  {invite.url}
-                </code>
-              </p>
-            )}
-
-            {invite.status === 'error' && (
-              <p className="field-error mt-2 text-xs text-destructive" role="alert">
-                {invite.message}
-              </p>
-            )}
           </div>
+        </div>
+
+        {invite.status === 'copied' && (
+          <p className="group-card__note relative z-10 basis-full text-xs text-ink-muted" role="status">
+            Davet linki panoya kopyalandi.
+          </p>
+        )}
+
+        {invite.status === 'manual' && (
+          <p className="group-card__note relative z-10 basis-full text-xs text-ink-muted" role="status">
+            Pano kullanilamadi, linki elle kopyalayin:{' '}
+            <code className="group-card__link block break-all text-[11px] text-ink">{invite.url}</code>
+          </p>
+        )}
+
+        {invite.status === 'error' && (
+          <p className="field-error relative z-10 basis-full text-xs text-destructive" role="alert">
+            {invite.message}
+          </p>
+        )}
+
+        {expenseFlow.status === 'error' && (
+          <p className="field-error relative z-10 basis-full text-xs text-destructive" role="alert">
+            {expenseFlow.message}
+          </p>
         )}
       </GlassCard>
+
+      <AddExpenseModal
+        open={expenseFlow.status === 'open'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeExpenseFlow();
+          }
+        }}
+        groupId={group.id}
+        members={expenseFlow.status === 'open' ? expenseFlow.members : []}
+        currentUserId={currentUserId}
+        onCreated={handleExpenseCreated}
+      />
     </motion.div>
   );
 };

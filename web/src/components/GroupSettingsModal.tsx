@@ -42,8 +42,15 @@ interface GroupSettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   group: Group;
-  /** Ad/aciklama kaydedilince grup detayini tazelemek icin. */
-  onUpdated: () => void;
+  /**
+   * Ad/aciklama kaydedilince cagirilir; **guncel grubu** tasiyor.
+   *
+   * Bos cagri yetmiyor: ad degisince backend slug'i yeniden uretiyor, yani
+   * sayfanin bulundugu adres (`/groups/eski-ad`) artik hicbir gruba
+   * cozulmuyor. Cagiran taraf adresi duzeltebilsin diye yeni satir
+   * gonderiliyor (bkz. pages/GroupDetailPage.tsx).
+   */
+  onUpdated: (group: Group) => void;
   /** Grup silinince cagirilir; sayfa /groups'a yonlendirmeli. */
   onDeleted: () => void;
 }
@@ -117,8 +124,8 @@ const GroupSettingsModal = ({
 
     void groupsApi
       .updateGroup(group.id, { name: trimmedName, description: trimmedDescription })
-      .then(() => {
-        onUpdated();
+      .then((updated) => {
+        onUpdated(updated);
         toast.success('Grup ayarlari kaydedildi');
         onOpenChange(false);
       })

@@ -106,8 +106,14 @@ export const RECEIPT_TILE: HomeFeatureTile = {
   icon: ScanLine,
 };
 
-/** Yon rozetinin metni. Kisa ve chip gibi: "Sen borclusun" degil "Borcun var". */
-const PILL_LABEL: Record<BalanceTone, string> = {
+/**
+ * Yon rozetinin metni. Kisa ve chip gibi: "Sen borclusun" degil "Borcun var".
+ *
+ * Disariya da aciliyor: gruplar listesi kartindaki bakiye rozeti (`GroupCard`)
+ * ayni yonlu-rozet kavramini tasiyor ve ayni metni kullaniyor — ikinci bir
+ * kopya, ikisi zamanla ayrisirdi (bkz. docs/decisions/gruplar-kart-tasarimi.md).
+ */
+export const PILL_LABEL: Record<BalanceTone, string> = {
   credit: 'Sana borclular',
   debt: 'Borcun var',
   settled: 'Hesabin kapali',

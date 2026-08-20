@@ -102,6 +102,7 @@ const seedGroup = (owner: TestUser, extraMembers: TestUser[] = []): GroupRow => 
   const group: GroupRow = {
     id: randomUUID(),
     name: 'Ev Arkadaslari',
+    slug: 'ev-arkadaslari',
     description: null,
     created_by: owner.id,
     deleted_at: null,

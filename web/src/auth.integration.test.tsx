@@ -191,7 +191,9 @@ describe('giris ekrani gercek backend ile', () => {
 
     expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(screen.getByRole('heading', { name: 'Giris yap' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Gruplar' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Ortak hesap tuttugun gruplar' })
+    ).not.toBeInTheDocument();
   });
 
   it('dogru bilgi: /groups ekranina duser ve token localStorage e yazilir', async () => {
@@ -202,7 +204,9 @@ describe('giris ekrani gercek backend ile', () => {
     type('Sifre', SEED_PASSWORD);
     submit('Giris yap');
 
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' })
+    ).toBeInTheDocument();
 
     const stored = window.localStorage.getItem(TOKEN_KEY);
     expect(stored).toBeTruthy();
@@ -254,7 +258,9 @@ describe('kayit ekrani gercek backend ile', () => {
 
     // KARAR: kayit cevabindaki token dogrudan kullanilir; login ekranina
     // yonlendirme yok (bkz. docs/decisions/2.2.md).
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' })
+    ).toBeInTheDocument();
     // Kullanici adi Layout basliginda; yeni kullanicinin hic grubu olmadigi icin
     // liste bos durum gosterecek (2.3).
     expect(screen.getByText('E2E Kullanici')).toBeInTheDocument();

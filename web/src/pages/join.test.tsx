@@ -54,6 +54,7 @@ vi.mock('../api/summary', () => ({
       monthlySpend: '0.00',
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
+      unseenActivityCount: 0,
     }),
   },
 }));

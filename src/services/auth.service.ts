@@ -370,12 +370,26 @@ const changePassword = async (
   }
 };
 
+/**
+ * POST /users/me/activity-seen — kullanicinin Aktivite akisini en son ne
+ * zaman gordugunu simdiki zamana gunceller. Govde yok, govdeye de gerek yok:
+ * "simdi" tek anlamli deger. Gerekce: docs/decisions/aktivite-okunma-sayaci.md.
+ */
+const markActivitySeen = async (userId: string): Promise<void> => {
+  const changed = await userModel.markActivitySeen(userId);
+
+  if (!changed) {
+    throw ApiError.unauthorized('Kullanici bulunamadi');
+  }
+};
+
 export default {
   register,
   login,
   getProfile,
   updateProfile,
   changePassword,
+  markActivitySeen,
   signToken,
   verifyToken,
 };

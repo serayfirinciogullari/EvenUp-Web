@@ -7,7 +7,14 @@ import { AuthProvider } from '../context/AuthProvider';
 import { formatCents, parseAmountToCents } from '../utils/money';
 import { toneOfCents } from '../utils/balance';
 
-import type { BalanceResult, GroupSummary, InviteResult, User } from '../types/models';
+import type {
+  BalanceResult,
+  Expense,
+  GroupDetail,
+  GroupSummary,
+  InviteResult,
+  User,
+} from '../types/models';
 
 /**
  * Gruplarim ekrani testleri.
@@ -27,7 +34,19 @@ vi.mock('../api/groups', () => ({
     createGroup: vi.fn(),
     createInvite: vi.fn(),
     getGroupBalances: vi.fn(),
+    getGroup: vi.fn(),
   },
+}));
+
+/*
+  "Harcama ekle" akisi grubun tam uye listesini `GET /groups/:id` ile anlik
+  cekiyor (bkz. docs/decisions/gruplar-kart-tasarimi.md), sonra gercek
+  `AddExpenseModal`i aciyor — o da `createExpense`i cagiriyor. Ikisi de gercek
+  bilesen, yalnizca ag katmani mock'lu.
+*/
+vi.mock('../api/expenses', () => ({
+  __esModule: true,
+  default: { listExpenses: vi.fn(), createExpense: vi.fn() },
 }));
 
 /*
@@ -43,15 +62,18 @@ vi.mock('../api/summary', () => ({
       monthlySpend: '0.00',
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
+      unseenActivityCount: 0,
     }),
   },
 }));
 
 import authApi from '../api/auth';
+import expensesApi from '../api/expenses';
 import groupsApi from '../api/groups';
 
 const mockedAuth = vi.mocked(authApi);
 const mockedGroups = vi.mocked(groupsApi);
+const mockedExpenses = vi.mocked(expensesApi);
 
 const TOKEN_KEY = 'evenup.token';
 const ME_ID = '11111111-1111-4111-8111-111111111111';
@@ -74,6 +96,61 @@ const group = (over: Partial<GroupSummary> = {}): GroupSummary => ({
   role: 'owner',
   joined_at: '2026-08-01T10:00:00.000Z',
   member_count: 4,
+  member_preview: [{ user_id: ME_ID, name: 'Deniz' }],
+  has_pending_incoming: false,
+  last_activity: null,
+  ...over,
+});
+
+const ECE_ID = '22222222-2222-4222-8222-222222222222';
+
+/** "Harcama ekle" akisinin cektigi tam grup detayi. */
+const groupDetailFor = (groupId: string): GroupDetail => ({
+  group: {
+    id: groupId,
+    name: 'Ev Arkadaslari',
+    description: null,
+    created_by: ME_ID,
+    created_at: '2026-08-01T10:00:00.000Z',
+  },
+  role: 'owner',
+  members: [
+    {
+      user_id: ME_ID,
+      name: 'Deniz',
+      email: 'deniz@evenup.dev',
+      role: 'owner',
+      joined_at: '2026-08-01T10:00:00.000Z',
+      nickname: null,
+    },
+    {
+      user_id: ECE_ID,
+      name: 'Ece',
+      email: 'ece@evenup.dev',
+      role: 'member',
+      joined_at: '2026-08-01T10:00:00.000Z',
+      nickname: null,
+    },
+  ],
+});
+
+const expense = (over: Partial<Expense> = {}): Expense => ({
+  id: 'eeeeeeee-0000-4000-8000-000000000001',
+  group_id: group().id,
+  paid_by: ME_ID,
+  created_by: ME_ID,
+  amount: '40.00',
+  description: 'Market',
+  category: 'market',
+  split_type: 'equal',
+  created_at: '2026-08-16T10:00:00.000Z',
+  updated_at: '2026-08-16T10:00:00.000Z',
+  payer_name: 'Deniz',
+  creator_name: 'Deniz',
+  shares: [
+    { user_id: ME_ID, name: 'Deniz', share_amount: '20.00' },
+    { user_id: ECE_ID, name: 'Ece', share_amount: '20.00' },
+  ],
   ...over,
 });
 
@@ -497,6 +574,167 @@ describe('davet linki kopyala', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Bu islem icin grup sahibi olmalisiniz'
     );
+  });
+});
+
+/* ============================================================ satir kart tasarimi */
+
+describe('avatar yigini', () => {
+  it('onizlemedeki uyelerin bas harfleri gosterilir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([
+      group({
+        member_preview: [
+          { user_id: ME_ID, name: 'Deniz' },
+          { user_id: ECE_ID, name: 'Ece' },
+        ],
+      }),
+    ]);
+
+    renderGroups();
+    const card = await findCard('Ev Arkadaslari');
+
+    expect(within(card).getByText('D')).toBeInTheDocument();
+    expect(within(card).getByText('E')).toBeInTheDocument();
+  });
+
+  it('onizlemeden fazla uye varsa "+N" sayaci gosterilir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([
+      group({
+        member_count: 6,
+        member_preview: [
+          { user_id: ME_ID, name: 'Deniz' },
+          { user_id: ECE_ID, name: 'Ece' },
+        ],
+      }),
+    ]);
+
+    renderGroups();
+    const card = await findCard('Ev Arkadaslari');
+
+    expect(within(card).getByText('+4')).toBeInTheDocument();
+  });
+
+  it('tum uyeler onizlemede sigiyorsa sayac gosterilmez', async () => {
+    mockedGroups.listGroups.mockResolvedValue([
+      group({ member_count: 1, member_preview: [{ user_id: ME_ID, name: 'Deniz' }] }),
+    ]);
+
+    renderGroups();
+    const card = await findCard('Ev Arkadaslari');
+
+    expect(within(card).queryByText(/^\+/)).not.toBeInTheDocument();
+  });
+});
+
+describe('onay bekleyen rozeti', () => {
+  it('has_pending_incoming true ise ONAY BEKLIYOR gosterilir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group({ has_pending_incoming: true })]);
+
+    renderGroups();
+    const card = await findCard('Ev Arkadaslari');
+
+    expect(within(card).getByText('ONAY BEKLIYOR')).toBeInTheDocument();
+  });
+
+  it('has_pending_incoming false ise rozet hic yok', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group({ has_pending_incoming: false })]);
+
+    renderGroups();
+    const card = await findCard('Ev Arkadaslari');
+
+    expect(within(card).queryByText('ONAY BEKLIYOR')).not.toBeInTheDocument();
+  });
+});
+
+describe('son hareket satiri', () => {
+  it('son hareket varsa gorece zaman + cumle gosterilir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([
+      group({
+        last_activity: {
+          kind: 'expense_created',
+          // "renderGroups" cagrisindan hemen once sabitlenen saate gore 2 saat once.
+          occurred_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          actor_id: ECE_ID,
+          actor_name: 'Ece',
+          counterparty_id: null,
+          counterparty_name: null,
+          amount: '90.00',
+          description: 'market alisverisi',
+        },
+      }),
+    ]);
+
+    renderGroups();
+    const card = await findCard('Ev Arkadaslari');
+
+    // Cumle `activitySentence` ile ayni kaynaktan: "Ece market alisverisi ekledi".
+    expect(
+      await within(card).findByText(/2 saat once · Ece market alisverisi ekledi/)
+    ).toBeInTheDocument();
+  });
+
+  it('son hareket yoksa yer tutucu metin gosterilir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group({ last_activity: null })]);
+
+    renderGroups();
+    const card = await findCard('Ev Arkadaslari');
+
+    expect(await within(card).findByText('Henuz hareket yok')).toBeInTheDocument();
+  });
+});
+
+describe('kartan hizli harcama ekleme', () => {
+  it('Harcama ekle grup detayini anlik ceker ve formu uyelerle acar', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group()]);
+    mockedGroups.getGroup.mockResolvedValue(groupDetailFor(group().id));
+
+    renderGroups();
+    await findCard('Ev Arkadaslari');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Harcama ekle' }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(mockedGroups.getGroup).toHaveBeenCalledWith(group().id);
+    // Form gercekten cekilen uyelerle acildi: "Ece dahil" onay kutusu var.
+    expect(screen.getByLabelText('Ece dahil')).toBeInTheDocument();
+  });
+
+  it('basarili eklemeden sonra modal kapanir ve liste + bu kartin bakiyesi yeniden istenir', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group()]);
+    mockedGroups.getGroup.mockResolvedValue(groupDetailFor(group().id));
+    mockedExpenses.createExpense.mockResolvedValue(expense());
+
+    renderGroups();
+    await findCard('Ev Arkadaslari');
+
+    const balanceCallsBefore = mockedGroups.getGroupBalances.mock.calls.length;
+    const listCallsBefore = mockedGroups.listGroups.mock.calls.length;
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Harcama ekle' }));
+    await screen.findByRole('dialog');
+
+    fireEvent.change(screen.getByLabelText('Aciklama'), { target: { value: 'Market' } });
+    fireEvent.change(screen.getByLabelText('Tutar (₺)'), { target: { value: '40' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    // 2.4: bakiye netlestirmesi istemcide tekrarlanmiyor, tam yeniden istek.
+    expect(mockedGroups.getGroupBalances.mock.calls.length).toBeGreaterThan(balanceCallsBefore);
+    expect(mockedGroups.listGroups.mock.calls.length).toBeGreaterThan(listCallsBefore);
+  });
+
+  it('grup bilgisi alinamazsa hata gosterilir, modal acilmaz', async () => {
+    mockedGroups.listGroups.mockResolvedValue([group()]);
+    mockedGroups.getGroup.mockRejectedValue(apiError(500, 'Grup bilgisi alinamadi'));
+
+    renderGroups();
+    await findCard('Ev Arkadaslari');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Harcama ekle' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Grup bilgisi alinamadi');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
 

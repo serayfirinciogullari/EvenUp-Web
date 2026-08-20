@@ -159,6 +159,55 @@ export const formatDayGroup = (value: string, now: Date = new Date()): string =>
   return `${date.getDate()} ${MONTHS[date.getMonth()].toUpperCase()}${year}`;
 };
 
+/**
+ * Gruplar listesi kartindaki "son hareket ne zaman oldu" metni: "az once",
+ * "12 dakika once", "3 saat once", "dun", "4 gun once".
+ *
+ * `formatExpenseDate`ten farkli bir olcek: o "Bugun 14:32" gibi **saat**
+ * gosteriyor, bu ise gecen **sureyi**. Kart listesinde onemli olan "ne kadar
+ * once" (goz gezdirirken en tazeyi bulmak), tam saat degil — bkz.
+ * docs/decisions/gruplar-kart-tasarimi.md.
+ *
+ * Bir haftadan eskiye gecince tarihe donuyor (`formatDate`): "18 gun once"
+ * gibi buyuk sayilar okumayi degil, tarihi zihinde canlandirmayi zorlastirir.
+ */
+export const formatRelativeTime = (value: string, now: Date = new Date()): string => {
+  const date = parseIso(value);
+
+  if (!date) {
+    return 'Tarih bilinmiyor';
+  }
+
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+
+  if (diffMin < 1) {
+    return 'az once';
+  }
+
+  if (diffMin < 60) {
+    return `${diffMin} dakika once`;
+  }
+
+  const diffHour = Math.floor(diffMin / 60);
+
+  if (diffHour < 24) {
+    return `${diffHour} saat once`;
+  }
+
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / DAY_MS);
+
+  if (dayDiff === 1) {
+    return 'dun';
+  }
+
+  if (dayDiff < 7) {
+    return `${dayDiff} gun once`;
+  }
+
+  return formatDate(value);
+};
+
 /** Tam tarih — `<time title=...>` icin; kisaltilmis metnin arkasindaki gercek deger. */
 export const formatFullDate = (value: string): string => {
   const date = parseIso(value);
@@ -179,5 +228,6 @@ export default {
   formatTime,
   dayKeyOf,
   formatDayGroup,
+  formatRelativeTime,
   formatFullDate,
 };

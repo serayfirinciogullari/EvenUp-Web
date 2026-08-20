@@ -8,6 +8,7 @@ import { getErrorMessage, isNetworkError } from '../api/client';
 import groupsApi from '../api/groups';
 import { clearPendingInvite, savePendingInvite } from '../api/pendingInvite';
 import useAuth from '../hooks/useAuth';
+import { groupPath } from '../utils/groupPath';
 
 /**
  * Davet linkinin acildigi sayfa: `/join/:inviteCode`.
@@ -94,7 +95,7 @@ const JoinPage = () => {
         gecisle birlikte mount olup listeyi bastan cekiyor. Yeni grup hem
         sidebar'da hem Gruplarim'da gorunuyor.
       */
-      navigate(`/groups/${group.id}`, { replace: true });
+      navigate(groupPath(group), { replace: true });
     } catch (caught) {
       setState({
         status: 'error',

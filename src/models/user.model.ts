@@ -98,6 +98,26 @@ const setActive = async (userId: string, isActive: boolean): Promise<PublicUser 
   return updated as PublicUser | undefined;
 };
 
+/**
+ * "Aktivite'yi en son ne zaman gordu" — sidebar rozetindeki okunmamis sayisi
+ * bunun ustune hesaplanir (bkz. docs/decisions/aktivite-okunma-sayaci.md).
+ * `undefined` yalnizca kullanici satiri hic yoksa doner (silinmis kullanici).
+ */
+const findActivitySeenAt = async (userId: string): Promise<Date | undefined> => {
+  const row = await db('users').select('activity_seen_at').where({ id: userId }).first();
+
+  return row?.activity_seen_at;
+};
+
+/** Simdiki zamani "gorulme ani" olarak yazar. Donen deger "satir bulundu mu". */
+const markActivitySeen = async (userId: string): Promise<boolean> => {
+  const affected = await db('users')
+    .where({ id: userId })
+    .update({ activity_seen_at: new Date() });
+
+  return affected > 0;
+};
+
 export default {
   findByEmail,
   findById,
@@ -107,4 +127,6 @@ export default {
   updateName,
   updatePasswordHash,
   setActive,
+  findActivitySeenAt,
+  markActivitySeen,
 };

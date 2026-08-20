@@ -1,6 +1,8 @@
+import activityModel from '../models/activity.model';
 import expenseModel from '../models/expense.model';
 import groupModel from '../models/group.model';
 import settlementModel from '../models/settlement.model';
+import userModel from '../models/user.model';
 import { formatCents, netAmountToCents, parseAmountToCents } from '../utils/money';
 import { buildNettingInputs } from './balance.service';
 import { calculateNetBalances } from './netting.service';
@@ -31,6 +33,13 @@ export interface HomeSummary {
   monthlySpend: string;
   activeGroupsCount: number;
   pendingSettlementsCount: number;
+  /**
+   * Onay bekleyenler DISINDA, kullanicinin henuz Aktivite sayfasinda
+   * gormedigi olay sayisi (harcama eklendi/duzenlendi, odeme onaylandi/
+   * reddedildi). `settlement_created` burada yok — o zaten
+   * `pendingSettlementsCount`in kapsaminda (bkz. docs/decisions/aktivite-okunma-sayaci.md).
+   */
+  unseenActivityCount: number;
 }
 
 /**
@@ -54,22 +63,34 @@ const currentMonthRange = (now: Date = new Date()): { from: Date; to: Date } => 
 /**
  * GET /users/me/home-summary
  *
- * Sorgu sayisi **sabit**: kullanicinin kac grubu olursa olsun 6 sorgu —
- * gruplar, harcamalar, paylar, onayli odemeler, aylik toplam, bekleyen sayi.
- * Gruplarin bakiyesi bellekte hesaplaniyor, grup basina sorgu atilmiyor.
+ * Sorgu sayisi **sabit**: kullanicinin kac grubu olursa olsun 7 sorgu —
+ * gruplar, aktivite-gorulme zamani, harcamalar, paylar, onayli odemeler,
+ * aylik toplam, bekleyen sayi, okunmamis aktivite sayisi. Gruplarin bakiyesi
+ * bellekte hesaplaniyor, grup basina sorgu atilmiyor.
+ *
+ * `activitySeenAt` neden Promise.all'in DISINDA: alttaki bes sorgudan hicbiri
+ * ona bagimli degil ama `countUnseenForGroups` bagimli — o yuzden once
+ * cekiliyor, sonra geri kalanla birlikte paralel calisiyor.
  */
 const getHomeSummary = async (userId: string): Promise<HomeSummary> => {
   const groups = await groupModel.listForUser(userId);
   const groupIds = groups.map((group) => group.id);
   const { from, to } = currentMonthRange();
+  const activitySeenAt = await userModel.findActivitySeenAt(userId);
 
-  // Dordu de birbirinden bagimsiz: sirayla beklemek icin sebep yok.
-  const [netting, confirmed, monthlyTotal, pendingSettlementsCount] = await Promise.all([
-    expenseModel.listForNettingByGroups(groupIds),
-    settlementModel.listConfirmedByGroups(groupIds),
-    expenseModel.sumPaidByUserBetween(userId, from, to),
-    settlementModel.countPendingForUser(userId),
-  ]);
+  // Besi de birbirinden bagimsiz: sirayla beklemek icin sebep yok.
+  const [netting, confirmed, monthlyTotal, pendingSettlementsCount, unseenActivityCount] =
+    await Promise.all([
+      expenseModel.listForNettingByGroups(groupIds),
+      settlementModel.listConfirmedByGroups(groupIds),
+      expenseModel.sumPaidByUserBetween(userId, from, to),
+      settlementModel.countPendingForUser(userId),
+      // `activitySeenAt` yalnizca kullanici satiri hic yoksa (silinmis) tanimsiz;
+      // o durumda 0 gostermek, hata firlatmaktan daha az zararli.
+      activitySeenAt
+        ? activityModel.countUnseenForGroups(groupIds, userId, activitySeenAt)
+        : Promise.resolve(0),
+    ]);
 
   /*
     `?? 0` savunma amacli: `parseAmountToCents` yalnizca bicim bozuksa ya da
@@ -85,6 +106,7 @@ const getHomeSummary = async (userId: string): Promise<HomeSummary> => {
     monthlySpend: formatCents(monthlyCents),
     activeGroupsCount: groups.length,
     pendingSettlementsCount,
+    unseenActivityCount,
   };
 };
 

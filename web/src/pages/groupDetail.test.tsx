@@ -64,6 +64,7 @@ vi.mock('../api/summary', () => ({
       monthlySpend: '0.00',
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
+      unseenActivityCount: 0,
     }),
   },
 }));
@@ -87,11 +88,13 @@ import authApi from '../api/auth';
 import expensesApi from '../api/expenses';
 import groupsApi from '../api/groups';
 import settlementsApi from '../api/settlements';
+import summaryApi from '../api/summary';
 
 const mockedAuth = vi.mocked(authApi);
 const mockedGroups = vi.mocked(groupsApi);
 const mockedExpenses = vi.mocked(expensesApi);
 const mockedSettlements = vi.mocked(settlementsApi);
+const mockedSummary = vi.mocked(summaryApi);
 
 /* ------------------------------------------------------------------ veri */
 
@@ -1262,6 +1265,88 @@ describe('bekleyen odemeyi onaylama ve reddetme', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('zaten onaylanmis');
   });
+
+  /* ================================== sidebar rozeti (optimistic-ui-duzeltme) */
+
+  it('Onayla sidebar rozetini SUNUCUYA SORMADAN yerelde 1 azaltir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 1,
+      pendingSettlementsCount: 2,
+      unseenActivityCount: 0,
+    });
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+    mockedSettlements.confirmSettlement.mockResolvedValue({ ...settlement(), status: 'confirmed' });
+
+    renderDetail();
+    await openBalances();
+
+    const sidebarLink = () => screen.getByRole('link', { name: /Aktivite/ });
+    expect(within(sidebarLink()).getByText('2')).toBeInTheDocument();
+
+    const summaryCallsBefore = mockedSummary.getHomeSummary.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    await waitFor(() => expect(within(sidebarLink()).getByText('1')).toBeInTheDocument());
+
+    // Azalma yerel: `GET /users/me/home-summary` tekrar cagirilmadi.
+    expect(mockedSummary.getHomeSummary.mock.calls.length).toBe(summaryCallsBefore);
+  });
+
+  it('Reddet de sidebar rozetini yerelde 1 azaltir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 1,
+      pendingSettlementsCount: 1,
+      unseenActivityCount: 0,
+    });
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+    mockedSettlements.rejectSettlement.mockResolvedValue({ ...settlement(), status: 'rejected' });
+
+    renderDetail();
+    await openBalances();
+
+    const sidebarLink = () => screen.getByRole('link', { name: /Aktivite/ });
+    expect(within(sidebarLink()).getByText('1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reddet' }));
+
+    // Rozet tamamen kalkar (0 -> hic rozet cizilmez, bkz. Sidebar.tsx).
+    await waitFor(() => expect(within(sidebarLink()).queryByText('1')).not.toBeInTheDocument());
+  });
+
+  it("sayfayi acip bakmak rozeti DEGISTIRMEZ — yalnizca Onayla/Reddet degistirir", async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 1,
+      pendingSettlementsCount: 2,
+      unseenActivityCount: 0,
+    });
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+
+    renderDetail();
+    await openBalances();
+
+    const sidebarLink = () => screen.getByRole('link', { name: /Aktivite/ });
+    expect(within(sidebarLink()).getByText('2')).toBeInTheDocument();
+
+    // Sekmeler arasi gezinme — Onayla/Reddet'e hic basilmadi. `@ece` Kisiler
+    // sekmesine ozgu (bkz. MembersTab.handleOf); "Deniz" sidebar'da da gectigi
+    // icin `findByText('Deniz')` birden fazla eslesme verirdi.
+    selectTab('Kisiler');
+    await screen.findByText('@ece');
+    selectTab(/Odemeler/);
+    await screen.findByText('Kim kime odeyecek');
+
+    expect(within(sidebarLink()).getByText('2')).toBeInTheDocument();
+    // Ozet oturum basina TEK istekle geldi (AppDataProvider); sayfa gezintisi
+    // ikinci bir istek uretmedi.
+    expect(mockedSummary.getHomeSummary).toHaveBeenCalledTimes(1);
+  });
 });
 
 /* ================================================ KRITIK: uctan uca akis */
@@ -1294,7 +1379,7 @@ describe('KRITIK akis: harcama -> bakiye -> odeme -> onay', () => {
     expect(await screen.findByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
   });
 
-  it('bekleyen odeme bakiyeyi degistirmez, onay degistirir', async () => {
+  it('bekleyen odeme IYIMSER olarak isleniyor: transfer satiri aninda kalkar, bekleyen listeye aninda eklenir', async () => {
     mockedSettlements.listSettlements.mockResolvedValueOnce(settlementPage([]));
     mockedSettlements.createSettlement.mockResolvedValue(
       settlement({
@@ -1310,28 +1395,34 @@ describe('KRITIK akis: harcama -> bakiye -> odeme -> onay', () => {
     await openBalances();
     expect(screen.getByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
 
-    // 1) "Ode" -> kayit acildi ama PENDING. Bakiye AYNI kalmali (1.7).
-    mockedSettlements.listSettlements.mockResolvedValue(
-      settlementPage([
-        settlement({
-          from_user: ME_ID,
-          to_user: ECE_ID,
-          from_name: 'Deniz',
-          to_name: 'Ece',
-          amount: '30.00',
-        }),
-      ])
-    );
+    const balanceCallsBefore = mockedGroups.getGroupBalances.mock.calls.length;
+    const settlementListCallsBefore = mockedSettlements.listSettlements.mock.calls.length;
 
     fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Odedim' }));
 
+    // Bekleyen odemeler listesine sunucuya sormadan, ANINDA ekleniyor
+    // (docs/decisions/optimistic-ui-duzeltme.md).
     expect(await screen.findByText(/Ece'ye 30,00 ₺ odedigini bildirdin/)).toBeInTheDocument();
-    // Bekleyen kayit bakiyeyi ETKILEMEZ: borc hala ekranda.
-    expect(screen.getByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
+
+    // "Sayfa yenilenmeden": ne bakiye ne bekleyen liste sunucudan yeniden
+    // istendi — ikisi de yalnizca yerel `mutate` ile guncellendi.
+    expect(mockedGroups.getGroupBalances.mock.calls.length).toBe(balanceCallsBefore);
+    expect(mockedSettlements.listSettlements.mock.calls.length).toBe(settlementListCallsBefore);
+
+    // Transfer satiri da ANINDA kalkiyor: backend zaten ayni cifte ikinci bir
+    // bekleyen kayda izin vermiyor (409), yani "Ode" butonu bu satirda tekrar
+    // calismayacakti — satirin kalkmasi bunu gorunur kiliyor. Bu, ONCEKI
+    // surumden BILINCLI bir davranis degisikligi: eskiden tam yeniden istek
+    // atildigi icin (ve bekleyen kayit bakiyeyi etkilemedigi icin, 1.7) satir
+    // sunucudan ayni sekilde geri geliyordu; simdi hic yeniden istek atilmiyor.
+    expect(screen.queryByText("Sen Ece'ye 30,00 ₺ borclusun")).not.toBeInTheDocument();
+
     // Bu tarafta onay/red butonu yok; kaydi alacakli kapatir.
     expect(screen.queryByRole('button', { name: 'Onayla' })).not.toBeInTheDocument();
 
+    // Ikinci bir "Ode" istegi de atilmadi: transfer satiri (ve butonu) artik yok.
+    expect(mockedSettlements.createSettlement).toHaveBeenCalledTimes(1);
   });
 
   /**

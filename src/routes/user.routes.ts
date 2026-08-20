@@ -29,6 +29,9 @@ router.use(requireAuth);
 // **kullaniciya** ait. Gerekce docs/decisions/home-summary.md
 router.get('/me/home-summary', asyncHandler(userController.getHomeSummary));
 
+// Aktivite sayfasi acilinca cagrilir: okunmamis rozetini sifirlar.
+router.post('/me/activity-seen', asyncHandler(userController.markActivitySeen));
+
 router.put('/me', asyncHandler(userController.updateMe));
 
 // Ayri uc nokta: sifre degisikligi mevcut sifreyi de ister ve profil

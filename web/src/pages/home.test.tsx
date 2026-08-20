@@ -66,6 +66,7 @@ const summaryOf = (over: Partial<HomeSummary> = {}): HomeSummary => ({
   monthlySpend: '450.00',
   activeGroupsCount: 3,
   pendingSettlementsCount: 0,
+  unseenActivityCount: 0,
   ...over,
 });
 
@@ -262,7 +263,9 @@ describe('Home — yonlendirme', () => {
 
     fireEvent.click(screen.getByRole('link', { name: /Gruplarini Gor/ }));
 
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' })
+    ).toBeInTheDocument();
   });
 
   it('CTA bir link — sag tik/yeni sekme calissin diye buton degil', async () => {

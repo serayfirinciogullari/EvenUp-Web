@@ -1,12 +1,14 @@
 import { CalendarClock } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import PendingApprovalBanner from '../components/PendingApprovalBanner';
+import activityApi from '../api/activity';
 import settlementsApi from '../api/settlements';
 import useAsync from '../hooks/useAsync';
 import useActivityFeed from '../hooks/useActivityFeed';
+import { useSummaryData } from '../hooks/useAppData';
 import useAuth from '../hooks/useAuth';
 import {
   ACTIVITY_BADGES,
@@ -30,6 +32,16 @@ import type { ActivityEvent, ActivityKind, PendingApproval } from '../types/mode
  * Ayrimin gerekcesi docs/decisions/aktivite-akisi.md icinde. Onaydan sonra
  * ikisi de tazeleniyor: onaylanan kayit hem banner'dan dusuyor hem de akista
  * yeni bir ONY satiri olarak beliriyor.
+ *
+ * OKUNMAMIS ROZETI — SAYFA ACILINCA SIFIRLANIR
+ * ----------------------------------------------
+ * Bu, `PendingApprovalBanner`deki rozet kuralinin (yalnizca Onayla/Reddet'e
+ * basinca azalir) **bilerek tersi**: burasi "ne oldu" akisi, orasi "benden ne
+ * bekleniyor" is listesi — ikisi ayni bildirim degil, ayri kurallar tasiyorlar.
+ * Feed ilk yuklendiginde sunucuya "gordum" bildirilir ve sidebar rozetindeki
+ * okunmamis kismi yerelde sifirlanir; `summary.reload()` YOK, aynen
+ * optimistic-ui-duzeltme.md'deki gerekce: `reload()` `loading`i tetikler,
+ * rozet bir an kaybolup geri gelirdi. Gerekce: docs/decisions/aktivite-okunma-sayaci.md.
  */
 const ActivityPage = () => {
   const { user } = useAuth();
@@ -39,6 +51,27 @@ const ActivityPage = () => {
   const pending = useAsync<PendingApproval[]>(fetchPending, 'Onay bekleyenler alinamadi');
 
   const feed = useActivityFeed();
+  const summary = useSummaryData();
+
+  /*
+    `seenSent` bir kereden fazla tetiklenmeyi engelliyor: onay/red sonrasi
+    `feed.reload()` ya da "daha fazla yukle" ayni isareti tekrar tekrar
+    atmamali — sayfa basina bir kez, ilk yukleme bitince yeterli.
+  */
+  const seenSent = useRef(false);
+  useEffect(() => {
+    if (feed.loading || seenSent.current) {
+      return;
+    }
+
+    seenSent.current = true;
+    void activityApi.markActivitySeen().then(() => {
+      summary.mutate((current) =>
+        current ? { ...current, unseenActivityCount: 0 } : current
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feed.loading]);
 
   const handleResolved = () => {
     pending.reload();

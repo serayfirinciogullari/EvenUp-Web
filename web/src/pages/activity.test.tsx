@@ -54,13 +54,14 @@ vi.mock('../api/summary', () => ({
       monthlySpend: '0.00',
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
+      unseenActivityCount: 0,
     }),
   },
 }));
 
 vi.mock('../api/activity', () => ({
   __esModule: true,
-  default: { listActivity: vi.fn() },
+  default: { listActivity: vi.fn(), markActivitySeen: vi.fn().mockResolvedValue(undefined) },
 }));
 
 vi.mock('../api/settlements', () => ({
@@ -77,10 +78,12 @@ vi.mock('../api/settlements', () => ({
 import authApi from '../api/auth';
 import activityApi from '../api/activity';
 import settlementsApi from '../api/settlements';
+import summaryApi from '../api/summary';
 
 const mockedAuth = vi.mocked(authApi);
 const mockedActivity = vi.mocked(activityApi);
 const mockedSettlements = vi.mocked(settlementsApi);
+const mockedSummary = vi.mocked(summaryApi);
 
 const TOKEN_KEY = 'evenup.token';
 
@@ -229,6 +232,43 @@ describe('Aktivite — onay bekleyen banner', () => {
     await waitFor(() => expect(mockedActivity.listActivity).toHaveBeenCalledTimes(2));
   });
 
+  it('Onayla sidebar rozetini SUNUCUYA SORMADAN yerelde 1 azaltir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 1,
+      pendingSettlementsCount: 3,
+      unseenActivityCount: 0,
+    });
+    mockedSettlements.listPendingApprovals.mockResolvedValueOnce([approvalOf()]);
+    mockedSettlements.confirmSettlement.mockResolvedValue({
+      id: 'sssssss-approval-1',
+      group_id: 'g2',
+      from_user: 'zzzzzzzz-0000-4000-8000-000000000001',
+      to_user: deniz.id,
+      amount: '310.00',
+      status: 'confirmed',
+      created_at: hoursAgo(18),
+      confirmed_at: hoursAgo(0),
+      rejected_at: null,
+    });
+
+    renderActivity();
+    await waitForPage();
+    const banner = await screen.findByRole('region', { name: 'Onay bekleyen odeme' });
+
+    const sidebarLink = () => screen.getByRole('link', { name: /Aktivite/ });
+    expect(within(sidebarLink()).getByText('3')).toBeInTheDocument();
+
+    const summaryCallsBefore = mockedSummary.getHomeSummary.mock.calls.length;
+
+    fireEvent.click(within(banner).getByRole('button', { name: 'Onayla' }));
+
+    await waitFor(() => expect(within(sidebarLink()).getByText('2')).toBeInTheDocument());
+    // Azalma yerel: `GET /users/me/home-summary` tekrar cagirilmadi.
+    expect(mockedSummary.getHomeSummary.mock.calls.length).toBe(summaryCallsBefore);
+  });
+
   it('bekleyenler alinamazsa akis yine de gorunur, banner alaninda hata yazar', async () => {
     mockedSettlements.listPendingApprovals.mockRejectedValue(apiError(500, 'Sunucu hatasi'));
     mockedActivity.listActivity.mockResolvedValue(feedOf([event()]));
@@ -373,6 +413,86 @@ describe('Aktivite — akis', () => {
 
     await screen.findByText('1 / 1 aktivite');
     expect(screen.queryByRole('button', { name: 'Daha fazla yukle' })).not.toBeInTheDocument();
+  });
+});
+
+/* ==================================================== okunmamis rozeti */
+
+describe('Aktivite — okunmamis rozeti (aktivite-okunma-sayaci)', () => {
+  it('sayfa acilip feed yuklenince sunucuya "gordum" bildirilir ve rozet yerelde sifirlanir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 1,
+      pendingSettlementsCount: 0,
+      unseenActivityCount: 5,
+    });
+    mockedActivity.listActivity.mockResolvedValue(feedOf([event()]));
+
+    renderActivity();
+
+    const sidebarLink = () => screen.getByRole('link', { name: /Aktivite/ });
+    expect(within(await screen.findByRole('link', { name: /Aktivite/ })).getByText('5')).toBeInTheDocument();
+
+    await waitFor(() => expect(mockedActivity.markActivitySeen).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(within(sidebarLink()).queryByText('5')).not.toBeInTheDocument());
+  });
+
+  it('sunucuya sormadan yerelde sifirlanir — GET /users/me/home-summary tekrar cagirilmaz', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 1,
+      pendingSettlementsCount: 0,
+      unseenActivityCount: 2,
+    });
+    mockedActivity.listActivity.mockResolvedValue(feedOf([event()]));
+
+    renderActivity();
+    await waitForPage();
+
+    const summaryCallsBefore = mockedSummary.getHomeSummary.mock.calls.length;
+
+    await waitFor(() => expect(mockedActivity.markActivitySeen).toHaveBeenCalledTimes(1));
+
+    expect(mockedSummary.getHomeSummary.mock.calls.length).toBe(summaryCallsBefore);
+  });
+
+  it('onay bekleyenler kismini ETKILEMEZ — yalnizca okunmamis kismi sifirlanir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 1,
+      pendingSettlementsCount: 3,
+      unseenActivityCount: 2,
+    });
+    mockedActivity.listActivity.mockResolvedValue(feedOf([event()]));
+
+    renderActivity();
+    await waitForPage();
+
+    // 3 (bekleyen) + 2 (okunmamis) = 5, oncesinde.
+    const sidebarLink = () => screen.getByRole('link', { name: /Aktivite/ });
+    expect(within(sidebarLink()).getByText('5')).toBeInTheDocument();
+
+    // Feed yuklenince okunmamis kisim sifirlanir: yalnizca bekleyen (3) kalir.
+    await waitFor(() => expect(within(sidebarLink()).getByText('3')).toBeInTheDocument());
+  });
+
+  it('feed bos ise de "gordum" bildirilir (rozeti sifirlamak icin olay olmasi gerekmiyor)', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 1,
+      pendingSettlementsCount: 0,
+      unseenActivityCount: 2,
+    });
+    mockedActivity.listActivity.mockResolvedValue(feedOf([]));
+
+    renderActivity();
+    await waitForPage();
+
+    await waitFor(() => expect(mockedActivity.markActivitySeen).toHaveBeenCalledTimes(1));
   });
 });
 

@@ -17,6 +17,7 @@ import settlementsApi from '../api/settlements';
 import { centsToApiAmount, formatCents, parseInputToCents } from '../utils/money';
 import { dative } from '../utils/turkish';
 
+import type { Settlement } from '../types/models';
 import type { SubmitEvent } from 'react';
 
 /**
@@ -44,8 +45,14 @@ interface SettleUpModalProps {
   onOpenChange: (open: boolean) => void;
   groupId: string;
   target: SettleTarget | null;
-  /** Kayit acildiktan sonra bekleyen odemeleri ve bakiyeyi tazelemek icin. */
-  onCreated: () => void;
+  /**
+   * Kayit olusunca sunucunun donduru **gercek** satirla cagrilir.
+   *
+   * Bos bir bildirim degil, tam nesne: cagiran taraf (GroupDetailPage) bunu
+   * bekleyen odemeler listesine iyimser olarak ekleyebiliyor — ikinci bir
+   * `GET` beklemeden. Gerekce: docs/decisions/optimistic-ui-duzeltme.md.
+   */
+  onCreated: (settlement: Settlement) => void;
 }
 
 const SettleUpModal = ({ open, onOpenChange, groupId, target, onCreated }: SettleUpModalProps) => {
@@ -101,8 +108,8 @@ const SettleUpModal = ({ open, onOpenChange, groupId, target, onCreated }: Settl
 
     void settlementsApi
       .createSettlement(groupId, { toUserId: target.userId, amount: centsToApiAmount(cents) })
-      .then(() => {
-        onCreated();
+      .then((settlement) => {
+        onCreated(settlement);
         close();
         toast.success('Odeme bildirildi', {
           description: `${target.name} onaylayinca bakiyeye islenecek.`,

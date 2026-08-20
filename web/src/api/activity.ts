@@ -25,4 +25,17 @@ export const listActivity = async (
   return data;
 };
 
-export default { listActivity };
+/**
+ * `POST /users/me/activity-seen` — "aktivite akisini simdi gordum" isareti.
+ * Govde yok: "simdi" tek anlamli deger. Aktivite sayfasi feed'i her
+ * yukledi ginde bunu cagirir; sidebar rozetindeki okunmamis kismi boylece
+ * sayfa yenilenmeden sifirlanir (bkz. docs/decisions/aktivite-okunma-sayaci.md).
+ *
+ * `/users/me/*` altinda ama burada duruyor: aktivite akisinin okunma durumu,
+ * `listActivity` ile ayni verinin iki farkli sorusu — bu dosyanin ailesi.
+ */
+export const markActivitySeen = async (): Promise<void> => {
+  await api.post('/users/me/activity-seen');
+};
+
+export default { listActivity, markActivitySeen };

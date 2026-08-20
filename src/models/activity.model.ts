@@ -303,4 +303,49 @@ const listForGroups = async (
   return { events, total: Number(count) };
 };
 
-export default { listForGroups };
+/**
+ * "Okunmamis" sayimina giren turler.
+ *
+ * `settlement_created` bilerek DISARIDA: o olay zaten `pendingSettlementsCount`
+ * (sabit banner + rozet, bkz. settlement.model/summary.service) tarafindan
+ * kapsaniyor. Ikisini de saymak ayni bekleyen odemeyi rozette iki kez
+ * gostermek olurdu. Gerekce: docs/decisions/aktivite-okunma-sayaci.md.
+ */
+const UNSEEN_KINDS: ActivityKind[] = [
+  'expense_created',
+  'expense_edited',
+  'settlement_confirmed',
+  'settlement_rejected',
+];
+
+/**
+ * Verilen gruplarda, `seenAt`ten sonra olan ve kullanicinin **kendi**
+ * yapmadigi olay sayisi.
+ *
+ * `listForGroups` ile ayni birlesimi (`eventsUnion`) kullanir ama farkli bir
+ * soru sorar: sayfalanmis bir liste degil, tek bir sayi — bu yuzden sayfalama
+ * yok, dogrudan COUNT.
+ *
+ * `actor_id != currentUserId`: kendi yaptigin bir is seni "bildirim" olarak
+ * ilgilendirmez — kendi eklendigin harcama kendine bildirim uretmemeli.
+ */
+const countUnseenForGroups = async (
+  groupIds: readonly string[],
+  currentUserId: string,
+  seenAt: Date
+): Promise<number> => {
+  if (groupIds.length === 0) {
+    return 0;
+  }
+
+  const [{ count }] = (await db
+    .from(eventsUnion(groupIds).as('events'))
+    .whereNot('events.actor_id', currentUserId)
+    .whereIn('events.kind', UNSEEN_KINDS)
+    .where('events.occurred_at', '>', seenAt)
+    .count('* as count')) as unknown as { count: string }[];
+
+  return Number(count);
+};
+
+export default { listForGroups, countUnseenForGroups };

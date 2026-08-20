@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '../api/client';
 import settlementsApi from '../api/settlements';
+import { useSummaryData } from '../hooks/useAppData';
 import { formatCents, parseAmountToCents } from '../utils/money';
 
 import type { PendingApproval } from '../types/models';
@@ -46,6 +47,9 @@ const PendingApprovalBanner = ({ approvals, onResolved }: PendingApprovalBannerP
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Sidebar/Aktivite rozeti icin: bkz. asagidaki `resolve` yorumu.
+  const summary = useSummaryData();
+
   const target = approvals[0];
   const targetId = target?.id;
 
@@ -85,6 +89,19 @@ const PendingApprovalBanner = ({ approvals, onResolved }: PendingApprovalBannerP
         // Bakiye de degistigi icin elde guncelleme yok: dogru olan sunucudan
         // yeniden okumak (BalancesTab'daki `onResolved` ile ayni gerekce).
         onResolved();
+
+        /*
+          Sidebar/Aktivite rozeti AYRI bir kural izliyor: sayfa acilinca degil,
+          yalnizca Onayla/Reddet'e BASILDIGINDA ve yerelde azaliyor — sunucuya
+          gidip tekrar sormuyor. `Math.max(0, ...)`: ayni kayit baska bir
+          sekmede de kapatilmaya calisilirsa sayac eksiye dusmesin. Gerekce:
+          docs/decisions/optimistic-ui-duzeltme.md.
+        */
+        summary.mutate((current) =>
+          current
+            ? { ...current, pendingSettlementsCount: Math.max(0, current.pendingSettlementsCount - 1) }
+            : current
+        );
       })
       .catch((caught: unknown) => {
         setError(getErrorMessage(caught, 'Odeme guncellenemedi'));

@@ -58,6 +58,7 @@ const insertUser = async (input: {
     fcm_token: null,
     is_active: input.is_active ?? true,
     created_at: new Date(),
+    activity_seen_at: new Date(),
   };
 
   usersByEmail.set(row.email, row);
@@ -91,6 +92,7 @@ beforeEach(() => {
       fcm_token: data.fcm_token ?? null,
       is_active: data.is_active ?? true,
       created_at: data.created_at ?? new Date(),
+      activity_seen_at: data.activity_seen_at ?? new Date(),
     };
 
     usersByEmail.set(row.email, row);

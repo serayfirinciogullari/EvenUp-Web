@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import useAuth from '../hooks/useAuth';
 import { useGroupsData, useSummaryData } from '../hooks/useAppData';
 import { colorOfGroup } from '../utils/groupColor';
+import { groupPath } from '../utils/groupPath';
 
 import type { LucideIcon } from 'lucide-react';
 
@@ -135,7 +136,15 @@ const Sidebar = ({ collapsed, onToggleCollapsed, mobileOpen, onNavigate }: Sideb
   */
   const compact = collapsed && !mobileOpen;
 
-  const pending = summary.data?.pendingSettlementsCount ?? 0;
+  /*
+    Iki ayri sayi tek rozette toplaniyor: onay bekleyen odemeler (yalnizca
+    Onayla/Reddet'e basinca azalir) + okunmamis diger aktivite (Aktivite
+    sayfasi acilinca azalir). Kullaniciya tek bir "Aktivite'de bakilacak bir
+    sey var" sayisi olarak gorunuyor — iki ayri rozet acmak ayni bilgiyi iki
+    kez sormak olurdu. Gerekce: docs/decisions/aktivite-okunma-sayaci.md.
+  */
+  const pending =
+    (summary.data?.pendingSettlementsCount ?? 0) + (summary.data?.unseenActivityCount ?? 0);
 
   const items = isAdmin
     ? [...NAV_ITEMS, { to: '/admin', label: 'Admin', icon: ShieldCheck }]
@@ -251,7 +260,7 @@ const Sidebar = ({ collapsed, onToggleCollapsed, mobileOpen, onNavigate }: Sideb
           groups.data?.map((group) => (
             <SidebarLink
               key={group.id}
-              to={`/groups/${group.id}`}
+              to={groupPath(group)}
               label={group.name}
               dotColor={colorOfGroup(group.id)}
               compact={compact}

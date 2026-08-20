@@ -29,6 +29,7 @@ jest.mock('../src/models/user.model', () => ({
     listPublic: jest.fn(),
     updateName: jest.fn(),
     updatePasswordHash: jest.fn(),
+    markActivitySeen: jest.fn(),
   },
 }));
 
@@ -61,6 +62,7 @@ const insertUser = async (input: {
     fcm_token: null,
     is_active: input.is_active ?? true,
     created_at: new Date(),
+    activity_seen_at: new Date(),
   };
 
   usersById.set(row.id, row);
@@ -113,6 +115,17 @@ beforeEach(() => {
       return true;
     }
   );
+
+  mockedUserModel.markActivitySeen.mockImplementation(async (userId: string) => {
+    const row = usersById.get(userId);
+
+    if (!row) {
+      return false;
+    }
+
+    usersById.set(userId, { ...row, activity_seen_at: new Date() });
+    return true;
+  });
 });
 
 /* ========================================================= PUT /users/me */
@@ -427,5 +440,57 @@ describe('PUT /users/me/password', () => {
     expect(body).not.toContain(NEW_PASSWORD);
     expect(body).not.toContain(CURRENT_PASSWORD);
     expect(body).not.toContain('$2b$');
+  });
+});
+
+/* =========================================== POST /users/me/activity-seen */
+
+describe('POST /users/me/activity-seen', () => {
+  it('kullanicinin activity_seen_at degerini simdiye gunceller', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+    // Ayarlanan satirla `now()` arasinda gozle gorulur bir fark olsun diye
+    // gecmis bir tarihe sabitleniyor — aksi halde iki `new Date()` cagrisi
+    // ayni milisaniyeye dusup test kararsizlasabilirdi.
+    const before = new Date('2020-01-01T00:00:00.000Z');
+    usersById.set(user.id, { ...(usersById.get(user.id) as UserRow), activity_seen_at: before });
+
+    const response = await request(app)
+      .post('/users/me/activity-seen')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send();
+
+    expect(response.status).toBe(200);
+    const after = usersById.get(user.id)?.activity_seen_at as Date;
+    expect(after.getTime()).toBeGreaterThan(before.getTime());
+  });
+
+  it('govde gerektirmez', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await request(app)
+      .post('/users/me/activity-seen')
+      .set('Authorization', `Bearer ${tokenFor(user)}`);
+
+    expect(response.status).toBe(200);
+  });
+
+  it('token olmadan 401 doner', async () => {
+    const response = await request(app).post('/users/me/activity-seen').send();
+
+    expect(response.status).toBe(401);
+    expect(mockedUserModel.markActivitySeen).not.toHaveBeenCalled();
+  });
+
+  it('bir kullanicinin tokeni baskasinin gorulme zamanini degistiremez', async () => {
+    const actor = await insertUser({ password: CURRENT_PASSWORD });
+    const other = await insertUser({ password: 'DigerSifre123' });
+    const otherSeenBefore = usersById.get(other.id)?.activity_seen_at as Date;
+
+    await request(app)
+      .post('/users/me/activity-seen')
+      .set('Authorization', `Bearer ${tokenFor(actor)}`)
+      .send({ userId: other.id, id: other.id });
+
+    expect(usersById.get(other.id)?.activity_seen_at).toEqual(otherSeenBefore);
   });
 });

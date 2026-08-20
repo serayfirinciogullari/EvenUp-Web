@@ -5,6 +5,7 @@ import groupController from '../controllers/group.controller';
 import messageController from '../controllers/message.controller';
 import settlementController from '../controllers/settlement.controller';
 import { requireAuth } from '../middlewares/auth.middleware';
+import { resolveGroupParam } from '../middlewares/group.middleware';
 import asyncHandler from '../utils/asyncHandler';
 
 const router = Router();
@@ -13,6 +14,11 @@ const router = Router();
 // yazmak yerine router seviyesinde takiliyor: yeni bir route eklendiginde
 // requireAuth'u unutmak mumkun degil.
 router.use(requireAuth);
+
+// `:id` hem uuid hem adres parcasi (slug) olabilir; slug ise burada uuid'ye
+// cevrilir. Tek yerde durmasinin gerekcesi group.middleware.ts icinde.
+// `/join/:inviteCode` farkli bir parametre adi tasidigi icin bu kapidan gecmez.
+router.param('id', resolveGroupParam);
 
 // DIKKAT: '/join/:inviteCode' , '/:id' kaliplarindan **once** tanimlanmali.
 // Aksi halde Express 'join' kelimesini grup id'si sanar.

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getErrorMessage } from '../api/client';
 import settlementsApi from '../api/settlements';
+import { useSummaryData } from '../hooks/useAppData';
 import { toneOfCents } from '../utils/balance';
 import { formatExpenseDate } from '../utils/datetime';
 import { formatCents, formatCentsAbsolute, parseAmountToCents } from '../utils/money';
@@ -226,6 +227,9 @@ const PendingRow = ({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Sidebar/Aktivite rozeti icin: bkz. asagidaki `resolve` yorumu.
+  const summary = useSummaryData();
+
   const cents = parseAmountToCents(settlement.amount) ?? 0;
   const iAmCreditor = settlement.to_user === currentUserId;
   const iAmDebtor = settlement.from_user === currentUserId;
@@ -249,6 +253,22 @@ const PendingRow = ({
         // elde guncellemek, "sunucuda ne oldu" ile "ekranda ne yaziyor" ayrisma
         // riskini acardi.
         onResolved();
+
+        /*
+          Sidebar/Aktivite rozeti AYRI bir kural izliyor: sayfa acilinca ya da
+          `onResolved` tetiklenince DEGIL, yalnizca kullanici Onayla/Reddet'e
+          BASTIGINDA ve yerel olarak azaliyor — sunucuya gidip tekrar sormuyor.
+          `AppDataProvider` ozeti oturum basina bir kez cekiyor; bu satiri
+          `summary.reload()` ile tazelemek her satirda gereksiz bir istek daha
+          demekti. `Math.max(0, ...)`: birden fazla sekmede ayni kayit
+          kapatilmaya calisilirsa sayac eksiye dusmesin. Gerekce:
+          docs/decisions/optimistic-ui-duzeltme.md.
+        */
+        summary.mutate((current) =>
+          current
+            ? { ...current, pendingSettlementsCount: Math.max(0, current.pendingSettlementsCount - 1) }
+            : current
+        );
       })
       .catch((caught: unknown) => {
         setError(getErrorMessage(caught, 'Odeme guncellenemedi'));

@@ -2,7 +2,7 @@ import { dayKeyOf, formatDayGroup } from './datetime';
 import { formatCents, parseAmountToCents } from './money';
 import { dative } from './turkish';
 
-import type { ActivityEvent, ActivityKind } from '../types/models';
+import type { ActivityEvent, ActivityKind, GroupLastActivity } from '../types/models';
 
 /**
  * Aktivite akisinin gosterim kurallari: rozet, cumle ve gun gruplama.
@@ -169,6 +169,38 @@ export const activitySentence = (event: ActivityEvent, currentUserId: string): s
   }
 };
 
+/**
+ * `GroupLastActivity`i (gruplar listesi karti) `activitySentence`in bekledigi
+ * `ActivityEvent` seklina tasir.
+ *
+ * Kartin cumleyi kendi kelimeleriyle kurmasi yerine bunu kullanmasinin
+ * gerekcesi `activitySentence`inkiyle ayni: cumle tek yerde. `id`, `group_id`,
+ * `group_name`, `previous_*` alanlari kartta yok ve `activitySentence` onlari
+ * hic okumuyor — bos birakilmalari guvenli.
+ */
+export const lastActivitySentence = (
+  activity: GroupLastActivity,
+  currentUserId: string
+): string =>
+  activitySentence(
+    {
+      id: '',
+      kind: activity.kind,
+      occurred_at: activity.occurred_at,
+      group_id: '',
+      group_name: '',
+      actor_id: activity.actor_id,
+      actor_name: activity.actor_name,
+      counterparty_id: activity.counterparty_id,
+      counterparty_name: activity.counterparty_name,
+      amount: activity.amount,
+      previous_amount: null,
+      description: activity.description,
+      previous_description: null,
+    },
+    currentUserId
+  );
+
 export interface ActivityDayGroup {
   /** Yerel takvim gunu — React anahtari. */
   key: string;
@@ -208,4 +240,10 @@ export const groupByDay = (
   return groups;
 };
 
-export default { ACTIVITY_BADGES, ACTIVITY_BADGE_TITLES, activitySentence, groupByDay };
+export default {
+  ACTIVITY_BADGES,
+  ACTIVITY_BADGE_TITLES,
+  activitySentence,
+  lastActivitySentence,
+  groupByDay,
+};

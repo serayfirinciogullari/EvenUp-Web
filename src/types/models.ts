@@ -48,6 +48,8 @@ export interface UserRow {
   fcm_token: string | null;
   is_active: boolean;
   created_at: Date;
+  /** Aktivite akisini en son gordugu an; DB varsayilani `now()` (migration 16). */
+  activity_seen_at: Date;
 }
 
 export interface UserInsert {
@@ -59,6 +61,7 @@ export interface UserInsert {
   fcm_token?: string | null;
   is_active?: boolean;
   created_at?: Date;
+  activity_seen_at?: Date;
 }
 
 export type UserUpdate = Partial<Omit<UserInsert, 'id'>>;
@@ -68,6 +71,12 @@ export type UserUpdate = Partial<Omit<UserInsert, 'id'>>;
 export interface GroupRow {
   id: string;
   name: string;
+  /**
+   * Adres cubugundaki okunabilir kimlik (`/groups/ev-arkadaslari`). Addan
+   * uretilir, yasayan gruplar arasinda tekildir ve ad degisince yeniden
+   * uretilir (bkz. models/group.model -> resolveSlug).
+   */
+  slug: string;
   description: string | null;
   created_by: string;
   /** Soft delete: dolu ise grup silinmis sayilir ve hicbir sorguda gorunmez. */
@@ -78,6 +87,7 @@ export interface GroupRow {
 export interface GroupInsert {
   id?: string;
   name: string;
+  slug?: string;
   description?: string | null;
   created_by: string;
   deleted_at?: Date | null;

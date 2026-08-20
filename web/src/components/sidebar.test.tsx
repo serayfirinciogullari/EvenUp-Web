@@ -113,6 +113,9 @@ const group = (over: Partial<GroupSummary> = {}): GroupSummary => ({
   role: 'owner',
   joined_at: '2026-08-01T10:00:00.000Z',
   member_count: 4,
+  member_preview: [],
+  has_pending_incoming: false,
+  last_activity: null,
   ...over,
 });
 
@@ -154,6 +157,7 @@ beforeEach(() => {
     monthlySpend: '0.00',
     activeGroupsCount: 2,
     pendingSettlementsCount: 0,
+    unseenActivityCount: 0,
   });
 });
 
@@ -244,7 +248,7 @@ describe('Sidebar — grup kisayollari', () => {
   it('sayfalarla ayni veriyi paylasir — grup listesi bir kez istenir', async () => {
     renderApp('/groups');
     await waitForSidebar();
-    await screen.findByRole('heading', { name: 'Gruplar' });
+    await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' });
 
     expect(mockedGroups.listGroups).toHaveBeenCalledTimes(1);
     expect(mockedSummary.getHomeSummary).toHaveBeenCalledTimes(1);
@@ -279,13 +283,14 @@ describe('Sidebar — grup kisayollari', () => {
 
 /* ------------------------------------------------------------------ rozet */
 
-describe('Sidebar — bekleyen odeme rozeti', () => {
+describe('Sidebar — bekleyen odeme + okunmamis aktivite rozeti', () => {
   it('bekleyen odeme varken Aktivite yaninda sayi gosterir', async () => {
     mockedSummary.getHomeSummary.mockResolvedValue({
       totalNetBalance: '0.00',
       monthlySpend: '0.00',
       activeGroupsCount: 2,
       pendingSettlementsCount: 3,
+      unseenActivityCount: 0,
     });
 
     renderApp();
@@ -295,7 +300,43 @@ describe('Sidebar — bekleyen odeme rozeti', () => {
     expect(within(activity).getByText('3')).toBeInTheDocument();
   });
 
-  it('bekleyen odeme yokken rozet cizilmez', async () => {
+  /*
+    Iki sayi TEK rozette toplaniyor (bkz. docs/decisions/aktivite-okunma-sayaci.md):
+    kullaniciya "Aktivite'de bakilacak bir sey var" tek bir sayi olarak gorunuyor.
+  */
+  it('onay bekleyen ve okunmamis aktivite toplanarak tek rozette gosterilir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 2,
+      pendingSettlementsCount: 2,
+      unseenActivityCount: 5,
+    });
+
+    renderApp();
+    const nav = within(await waitForSidebar());
+
+    const activity = await nav.findByRole('link', { name: /Aktivite/ });
+    expect(within(activity).getByText('7')).toBeInTheDocument();
+  });
+
+  it('yalnizca okunmamis aktivite varken (bekleyen onay yok) yine rozet gosterir', async () => {
+    mockedSummary.getHomeSummary.mockResolvedValue({
+      totalNetBalance: '0.00',
+      monthlySpend: '0.00',
+      activeGroupsCount: 2,
+      pendingSettlementsCount: 0,
+      unseenActivityCount: 4,
+    });
+
+    renderApp();
+    const nav = within(await waitForSidebar());
+
+    const activity = await nav.findByRole('link', { name: /Aktivite/ });
+    expect(within(activity).getByText('4')).toBeInTheDocument();
+  });
+
+  it('ikisi de sifirken rozet cizilmez', async () => {
     renderApp();
     const nav = within(await waitForSidebar());
 

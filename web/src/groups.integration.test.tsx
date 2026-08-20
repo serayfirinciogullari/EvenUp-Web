@@ -123,7 +123,7 @@ describe('gruplar ekrani gercek backend ile', () => {
     renderGroups();
 
     const card = await findCard(SEED_GROUP);
-    expect(within(card).getByText(/4 uye/)).toBeInTheDocument();
+    expect(within(card).getByText(/4 kisi/)).toBeInTheDocument();
     expect(within(card).getByText('Sahip')).toBeInTheDocument();
   });
 

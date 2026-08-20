@@ -33,6 +33,20 @@ export interface AsyncResult<T> {
   /** Ilk yukleme **ve** yeniden yukleme sirasinda true. */
   loading: boolean;
   reload: () => void;
+  /**
+   * `data`yi sunucuya gitmeden yerel olarak degistirir (iyimser guncelleme).
+   *
+   * Bu satirin (c) maddesi tam olarak bunun icin acildi: bir aksiyonun sonucu
+   * onceden **biliniyorsa** (ornegin sunucunun donecegi satirin kendisi elimizde),
+   * kullaniciyi bir ag gidis-donusu kadar bekletmenin kazanci yok. `reload` gibi
+   * `loading`i **tetiklemiyor** — ekran skeleton'a donmez, veri yerinde guncellenir.
+   *
+   * Fonksiyon hali `T | null` donebilir (`T` degil): veri henuz gelmemisken
+   * (`current === null`) bir yama uygulamanin genelde dogru cevabi "hicbir sey
+   * yapma" — cagiran taraf `current`i oldugu gibi geri dondurebilsin diye.
+   * Gerekce: docs/decisions/optimistic-ui-duzeltme.md.
+   */
+  mutate: (updater: T | ((current: T | null) => T | null)) => void;
 }
 
 export const useAsync = <T>(
@@ -96,7 +110,18 @@ export const useAsync = <T>(
     void run();
   }, [run]);
 
-  return { data, error, loading, reload: () => void run() };
+  const mutate = useCallback((updater: T | ((current: T | null) => T | null)) => {
+    // Unmount sonrasi yazmayi engelle — `run`daki ayni korumanin karsiligi.
+    if (!mounted.current) {
+      return;
+    }
+
+    setData((current) =>
+      typeof updater === 'function' ? (updater as (current: T | null) => T | null)(current) : updater
+    );
+  }, []);
+
+  return { data, error, loading, reload: () => void run(), mutate };
 };
 
 export default useAsync;

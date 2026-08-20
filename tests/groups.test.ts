@@ -5,6 +5,7 @@ import request from 'supertest';
 
 import app from '../src/app';
 import groupModel from '../src/models/group.model';
+import { slugify } from '../src/utils/slug';
 
 import type { GroupMemberView, GroupSummary, RedeemResult } from '../src/models/group.model';
 import type {
@@ -28,6 +29,7 @@ jest.mock('../src/models/group.model', () => ({
   __esModule: true,
   default: {
     findById: jest.fn(),
+    findBySlug: jest.fn(),
     findMembership: jest.fn(),
     listForUser: jest.fn(),
     listMembers: jest.fn(),
@@ -78,6 +80,29 @@ const makeUser = (name: string): TestUser => {
 
 const auth = (user: TestUser): [string, string] => ['Authorization', `Bearer ${user.token}`];
 
+/**
+ * `resolveSlug`in bellek ici karsiligi: sade slug doluysa `-2`, `-3`...
+ *
+ * Numaralandirma **kismi** unique index gibi yalnizca yasayan gruplara bakiyor
+ * (silinen grup adini rehin almaz) ve `excludeId` ile grubun kendi slug'ini
+ * dolu saymiyor — ikisi de migration 17'deki kurallar.
+ */
+const freeSlug = (name: string, excludeId?: string): string => {
+  const base = slugify(name);
+  const taken = new Set(
+    groups
+      .filter((group) => group.deleted_at === null && group.id !== excludeId)
+      .map((group) => group.slug)
+  );
+
+  let candidate = base;
+  for (let suffix = 2; taken.has(candidate); suffix += 1) {
+    candidate = `${base}-${suffix}`;
+  }
+
+  return candidate;
+};
+
 const isInviteUsable = (invite: GroupInviteRow): boolean =>
   invite.revoked_at === null &&
   invite.expires_at > new Date() &&
@@ -89,6 +114,10 @@ const installInMemoryModel = (): void => {
     groups.find((group) => group.id === groupId && group.deleted_at === null)
   );
 
+  mockedGroupModel.findBySlug.mockImplementation(async (slug: string) =>
+    groups.find((group) => group.slug === slug && group.deleted_at === null)
+  );
+
   mockedGroupModel.findMembership.mockImplementation(async (groupId: string, userId: string) =>
     members.find((member) => member.group_id === groupId && member.user_id === userId)
   );
@@ -97,6 +126,7 @@ const installInMemoryModel = (): void => {
     const group: GroupRow = {
       id: randomUUID(),
       name: input.name,
+      slug: freeSlug(input.name),
       description: input.description,
       created_by: input.created_by,
       deleted_at: null,
@@ -126,12 +156,24 @@ const installInMemoryModel = (): void => {
       .map<GroupSummary>(({ group, member }) => ({
         id: group.id,
         name: group.name,
+        slug: group.slug,
         description: group.description,
         created_by: group.created_by,
         created_at: group.created_at,
         role: member.role,
         joined_at: member.joined_at,
         member_count: members.filter((row) => row.group_id === group.id).length,
+        // Bu dosya `group.model`i tamamen bellek ici bir sahteyle degistiriyor
+        // (yukaridaki jest.mock); gercek LATERAL/EXISTS sorgusu burada yok,
+        // bu yuzden testlerin ihtiyaci olan sabit/turetilmis degerler yeterli.
+        member_preview: members
+          .filter((row) => row.group_id === group.id)
+          .map((row) => ({
+            user_id: row.user_id,
+            name: (users.get(row.user_id) as TestUser).name,
+          })),
+        has_pending_incoming: false,
+        last_activity: null,
       }))
   );
 
@@ -213,6 +255,11 @@ const installInMemoryModel = (): void => {
     }
 
     Object.assign(group, patch);
+
+    if (patch.name !== undefined) {
+      group.slug = freeSlug(patch.name, group.id);
+    }
+
     return group;
   });
 
@@ -423,7 +470,12 @@ describe('GET /groups', () => {
       name: 'Deniz Evi',
       role: 'owner',
       member_count: 1,
+      has_pending_incoming: false,
+      last_activity: null,
     });
+    expect(response.body.groups[0].member_preview).toEqual([
+      { user_id: deniz.id, name: 'Deniz' },
+    ]);
   });
 
   it('hic grubu olmayan kullaniciya bos liste doner', async () => {
@@ -518,6 +570,148 @@ describe('GET /groups/:id (IDOR)', () => {
     const response = await request(app).get(`/groups/${group.id}`);
 
     expect(response.status).toBe(401);
+  });
+});
+
+/* ============================================== slug ile adresleme (3.11) */
+
+describe('grup slug adresleri', () => {
+  it('slug addan uretilir; Turkce harfler latin karsiligina duser', async () => {
+    const deniz = makeUser('Deniz');
+
+    const group = await createGroupFor(deniz, { name: 'Ev Arkadaşları' });
+
+    expect(group.slug).toBe('ev-arkadaslari');
+  });
+
+  it('ayni adla acilan gruplar sirali numara alir', async () => {
+    const deniz = makeUser('Deniz');
+
+    const birinci = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+    const ikinci = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+    const ucuncu = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+
+    expect([birinci.slug, ikinci.slug, ucuncu.slug]).toEqual([
+      'ev-arkadaslari',
+      'ev-arkadaslari-2',
+      'ev-arkadaslari-3',
+    ]);
+  });
+
+  it('grup detayi slug ile de acilir', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+
+    const response = await request(app)
+      .get(`/groups/${group.slug}`)
+      .set(...auth(deniz));
+
+    expect(response.status).toBe(200);
+    expect(response.body.group.id).toBe(group.id);
+  });
+
+  it('alt uc noktalar da slug kabul eder (cozumleme tek kapida)', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+
+    const response = await request(app)
+      .post(`/groups/${group.slug}/invite`)
+      .set(...auth(deniz))
+      .send({});
+
+    expect([200, 201]).toContain(response.status);
+    expect(mockedGroupModel.issueInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ group_id: group.id })
+    );
+  });
+
+  it('uye olmayan kullanici slug ile de 403 alir', async () => {
+    const deniz = makeUser('Deniz');
+    const kerem = makeUser('Kerem');
+    const group = await createGroupFor(deniz, { name: 'Gizli Grup' });
+
+    const response = await request(app)
+      .get(`/groups/${group.slug}`)
+      .set(...auth(kerem));
+
+    expect(response.status).toBe(403);
+    expect(JSON.stringify(response.body)).not.toContain('Gizli Grup');
+  });
+
+  it('cozumlenemeyen slug, uye olunmayan grupla ayni cevabi verir', async () => {
+    const deniz = makeUser('Deniz');
+    const kerem = makeUser('Kerem');
+    const group = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+
+    const olmayan = await request(app)
+      .get('/groups/boyle-bir-grup-yok')
+      .set(...auth(kerem));
+    const baskasinin = await request(app)
+      .get(`/groups/${group.slug}`)
+      .set(...auth(kerem));
+
+    // Ayrisirsa uc nokta "bu adreste bir grup var mi?" sorusunu cevaplayan bir
+    // oracle'a donusur — uuid tarafindaki kararin (yukarida) slug karsiligi.
+    expect(olmayan.status).toBe(403);
+    expect(baskasinin.status).toBe(403);
+    expect(olmayan.body.message).toBe(baskasinin.body.message);
+  });
+
+  it('ad degisince slug yenilenir; uuid adresi calismaya devam eder', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+
+    const updated = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(deniz))
+      .send({ name: 'Tatil 2026' });
+
+    expect(updated.body.group.slug).toBe('tatil-2026');
+
+    const eskiSlug = await request(app)
+      .get(`/groups/${group.slug}`)
+      .set(...auth(deniz));
+    const uuid = await request(app)
+      .get(`/groups/${group.id}`)
+      .set(...auth(deniz));
+
+    expect(eskiSlug.status).toBe(403);
+    expect(uuid.status).toBe(200);
+  });
+
+  it('yalnizca aciklama guncellenirse slug degismez', async () => {
+    const deniz = makeUser('Deniz');
+    const group = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+
+    const response = await request(app)
+      .put(`/groups/${group.id}`)
+      .set(...auth(deniz))
+      .send({ description: 'yeni aciklama' });
+
+    expect(response.body.group.slug).toBe(group.slug);
+  });
+
+  it('silinen grubun slugu serbest kalir', async () => {
+    const deniz = makeUser('Deniz');
+    const silinen = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+
+    await request(app)
+      .delete(`/groups/${silinen.id}`)
+      .set(...auth(deniz));
+
+    const yeni = await createGroupFor(deniz, { name: 'Ev Arkadaslari' });
+
+    // Kismi unique index yalnizca yasayan gruplari kapsiyor (migration 17):
+    // silinmis bir grup adi sonsuza kadar rehin almamali.
+    expect(yeni.slug).toBe('ev-arkadaslari');
+  });
+
+  it('adi tumuyle latin disi olan grup icin yedek slug kullanilir', async () => {
+    const deniz = makeUser('Deniz');
+
+    const group = await createGroupFor(deniz, { name: '🏠🌊' });
+
+    expect(group.slug).toBe('grup');
   });
 });
 

@@ -1,4 +1,5 @@
 import db from '../db/connection';
+import { slugify } from '../utils/slug';
 
 import type {
   GroupInviteRow,
@@ -7,6 +8,8 @@ import type {
   GroupRow,
   MemberNicknameRow,
 } from '../types/models';
+import type { ActivityKind } from './activity.model';
+import type { Knex } from 'knex';
 
 /**
  * groups / group_members / group_invites veri erisim katmani.
@@ -23,17 +26,155 @@ import type {
  *    tek bir cagriyla kullanir.
  */
 
+/** Avatar yiginda gosterilecek ilk birkac uye. */
+export interface GroupMemberPreview {
+  user_id: string;
+  name: string;
+}
+
+/**
+ * Grup listesi kartinin "son hareket" satiri icin malzeme.
+ *
+ * `activity.model.ts` (aktivite akisi) ile AYNI ilkeyi izliyor: backend cumleyi
+ * kurmuyor, malzemeyi (kim, kime, ne kadar, ne) doner. Cumlenin kendisi
+ * `web/src/utils/activity.ts`teki `activitySentence` ile kuruluyor — o
+ * fonksiyonun ikinci bir kopyasi burada **yok**. Gerekce:
+ * docs/decisions/gruplar-kart-tasarimi.md.
+ *
+ * `expense_edited` bilerek disarida: kart tek bir "son hareket" gosteriyor,
+ * bir duzenleme gecmisi degil. Dahil etmek `previous_*` alanlarini da
+ * tasimayi gerektirirdi ki bu kartin ihtiyaci bu degil.
+ */
+export interface GroupLastActivity {
+  kind: Exclude<ActivityKind, 'expense_edited'>;
+  occurred_at: Date;
+  actor_id: string;
+  actor_name: string;
+  counterparty_id: string | null;
+  counterparty_name: string | null;
+  amount: string;
+  description: string | null;
+}
+
 /** Liste ekrani icin grup + istekte bulunan kullanicinin rolu + uye sayisi. */
 export interface GroupSummary {
   id: string;
   name: string;
+  /** Grup detay linkini kuran adres parcasi (bkz. `resolveSlug`). */
+  slug: string;
   description: string | null;
   created_by: string;
   created_at: Date;
   role: GroupMemberRole;
   joined_at: Date;
   member_count: number;
+  /** Avatar yiginini besler; `member_count`ten az olabilir (ilk birkac uye). */
+  member_preview: GroupMemberPreview[];
+  /**
+   * Istekte bulunanin **alacakli** oldugu, onayini bekleyen bir odeme bu
+   * grupta var mi. Netlestirmeyi tekrarlamiyor (1.7 kurali): yalnizca bir
+   * varlik sorgusu, bakiyeye hicbir sekilde karismiyor.
+   */
+  has_pending_incoming: boolean;
+  last_activity: GroupLastActivity | null;
 }
+
+/** `listForUser` sorgusunun ham (surucu seviyesi) satiri. */
+interface RawGroupSummaryRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  created_by: string;
+  created_at: Date;
+  role: GroupMemberRole;
+  joined_at: Date;
+  member_count: string;
+  member_preview: GroupMemberPreview[] | null;
+  has_pending_incoming: boolean;
+  last_activity_kind: GroupLastActivity['kind'] | null;
+  last_activity_at: Date | null;
+  last_activity_actor_id: string | null;
+  last_activity_actor_name: string | null;
+  last_activity_counterparty_id: string | null;
+  last_activity_counterparty_name: string | null;
+  last_activity_amount: string | null;
+  last_activity_description: string | null;
+}
+
+const toGroupSummary = (row: RawGroupSummaryRow): GroupSummary => ({
+  id: row.id,
+  name: row.name,
+  slug: row.slug,
+  description: row.description,
+  created_by: row.created_by,
+  created_at: row.created_at,
+  role: row.role,
+  joined_at: row.joined_at,
+  // pg surucusu COUNT'u string dondurur; API'de sayi olmasi beklenir.
+  member_count: Number(row.member_count),
+  member_preview: row.member_preview ?? [],
+  has_pending_incoming: row.has_pending_incoming,
+  last_activity: row.last_activity_kind
+    ? {
+        kind: row.last_activity_kind,
+        occurred_at: row.last_activity_at as Date,
+        actor_id: row.last_activity_actor_id as string,
+        actor_name: row.last_activity_actor_name as string,
+        counterparty_id: row.last_activity_counterparty_id,
+        counterparty_name: row.last_activity_counterparty_name,
+        amount: row.last_activity_amount as string,
+        description: row.last_activity_description,
+      }
+    : null,
+});
+
+/** Ust ust binen avatar yiginda gosterilecek en fazla uye sayisi. */
+const MEMBER_PREVIEW_LIMIT = 4;
+
+/**
+ * Grubun "son hareket"ini bulan LATERAL alt sorgusu.
+ *
+ * NEDEN LATERAL
+ * -------------
+ * Aktivite akisinin `UNION ALL`i (bkz. activity.model.ts) butun gruplarin
+ * TUM olaylarini getirip disaridan sayfaliyor — burada ihtiyac farkli: grup
+ * basina yalnizca EN SON bir satir. `LATERAL`, birlesimi her grup satiri icin
+ * `g.id`ye baglayip `ORDER BY ... LIMIT 1` ile tek satira indiriyor; N+1'e
+ * dusmeden (sorgu sayisi hala sabit: bir sorgu, PostgreSQL'in kendisi
+ * grup basina calistiriyor), aktivite akisinin butun sayfasini cekip
+ * istemcide "en yenisini bul" yapmaktan cok daha ucuz.
+ */
+const LAST_ACTIVITY_LATERAL = `
+  LEFT JOIN LATERAL (
+    SELECT kind, occurred_at, actor_id, counterparty_id, amount, description FROM (
+      SELECT 'expense_created'::text AS kind, e.created_at AS occurred_at, e.created_by AS actor_id,
+             CAST(NULL AS uuid) AS counterparty_id, e.amount AS amount, e.description::text AS description
+      FROM expenses e
+      WHERE e.group_id = g.id AND e.deleted_at IS NULL
+
+      UNION ALL
+
+      SELECT 'settlement_created'::text, s.created_at, s.from_user, s.to_user, s.amount, CAST(NULL AS text)
+      FROM settlements s
+      WHERE s.group_id = g.id
+
+      UNION ALL
+
+      SELECT 'settlement_confirmed'::text, s.confirmed_at, s.to_user, s.from_user, s.amount, CAST(NULL AS text)
+      FROM settlements s
+      WHERE s.group_id = g.id AND s.status = 'confirmed' AND s.confirmed_at IS NOT NULL
+
+      UNION ALL
+
+      SELECT 'settlement_rejected'::text, s.rejected_at, s.to_user, s.from_user, s.amount, CAST(NULL AS text)
+      FROM settlements s
+      WHERE s.group_id = g.id AND s.status = 'rejected' AND s.rejected_at IS NOT NULL
+    ) events
+    ORDER BY occurred_at DESC
+    LIMIT 1
+  ) la ON true
+`;
 
 /** Grup detayinda donen uye satiri (users tablosundan isim/e-posta ile). */
 export interface GroupMemberView {
@@ -80,6 +221,18 @@ export interface IssueInviteInput {
 const findById = async (groupId: string): Promise<GroupRow | undefined> =>
   db('groups').where({ id: groupId }).whereNull('deleted_at').first();
 
+/**
+ * Adres parcasindan yasayan grubu getirir.
+ *
+ * `findById`in ikizi ve ayni sozlesmeyi tasiyor: silinmis grup `undefined`.
+ * Tekillik yalnizca yasayan gruplar arasinda garanti (kismi unique index,
+ * migration 17), bu yuzden `deleted_at IS NULL` filtresi burada **dogruluk**
+ * meselesi — filtre olmasaydi ayni slug'i tasiyan birden fazla silinmis satir
+ * arasindan rastgele biri donebilirdi.
+ */
+const findBySlug = async (slug: string): Promise<GroupRow | undefined> =>
+  db('groups').where({ slug }).whereNull('deleted_at').first();
+
 /** Uyelik satiri (rol dahil). Grubun silinmis olup olmadigina bakmaz —
  *  cagiran taraf once `findById` ile grubu dogrular. */
 const findMembership = async (
@@ -95,22 +248,50 @@ const listForUser = async (userId: string): Promise<GroupSummary[]> => {
     .join('group_members as gm', 'gm.group_id', 'g.id')
     .where('gm.user_id', userId)
     .whereNull('g.deleted_at')
+    .joinRaw(LAST_ACTIVITY_LATERAL)
+    .leftJoin('users as la_actor', 'la_actor.id', 'la.actor_id')
+    .leftJoin('users as la_cp', 'la_cp.id', 'la.counterparty_id')
     .orderBy('g.created_at', 'desc')
     .select(
       'g.id',
       'g.name',
+      'g.slug',
       'g.description',
       'g.created_by',
       'g.created_at',
       'gm.role',
       'gm.joined_at',
-      db('group_members as c').count('*').whereRaw('c.group_id = g.id').as('member_count')
+      db('group_members as c').count('*').whereRaw('c.group_id = g.id').as('member_count'),
+      // Netlestirme yok, yalnizca varlik sorgusu (bkz. GroupSummary yorumu).
+      db.raw(
+        `EXISTS (
+          SELECT 1 FROM settlements p
+          WHERE p.group_id = g.id AND p.to_user = ? AND p.status = 'pending'
+        ) as has_pending_incoming`,
+        [userId]
+      ),
+      db.raw(`(
+        SELECT COALESCE(json_agg(json_build_object('user_id', mv.user_id, 'name', mv.name)), '[]')
+        FROM (
+          SELECT gm2.user_id, u2.name
+          FROM group_members gm2
+          JOIN users u2 ON u2.id = gm2.user_id
+          WHERE gm2.group_id = g.id
+          ORDER BY gm2.joined_at ASC
+          LIMIT ${MEMBER_PREVIEW_LIMIT}
+        ) mv
+      ) as member_preview`),
+      'la.kind as last_activity_kind',
+      'la.occurred_at as last_activity_at',
+      'la.actor_id as last_activity_actor_id',
+      'la_actor.name as last_activity_actor_name',
+      'la.counterparty_id as last_activity_counterparty_id',
+      'la_cp.name as last_activity_counterparty_name',
+      'la.amount as last_activity_amount',
+      'la.description as last_activity_description'
     );
 
-  // pg surucusu COUNT'u string dondurur; API'de sayi olmasi beklenir.
-  return (rows as unknown as (Omit<GroupSummary, 'member_count'> & { member_count: string })[]).map(
-    (row) => ({ ...row, member_count: Number(row.member_count) })
-  );
+  return (rows as unknown as RawGroupSummaryRow[]).map(toGroupSummary);
 };
 
 /**
@@ -146,49 +327,157 @@ const listMembers = async (groupId: string, viewerId: string): Promise<GroupMemb
       'mn.nickname'
     ) as unknown as Promise<GroupMemberView[]>;
 
+/* ------------------------------------------------------------------ slug */
+
+/** PostgreSQL `unique_violation`. */
+const UNIQUE_VIOLATION = '23505';
+
+/**
+ * Slug carpismasinda kac kez yeniden denenecegi.
+ *
+ * Tek denemede birakilamaz: `resolveSlug` "bos mu" sorusunu sorarken ile
+ * INSERT arasinda **baska bir istek** ayni slug'i almis olabilir (ayni anda
+ * ayni adla iki grup kuran iki kullanici). Sinir da gerekli, cunku sonsuz
+ * dongu bu yarisin patolojik halinde tek bir istegin sunucuyu mesgul etmesi
+ * demek olurdu; ikinci deneme zaten bir sonraki bos numarayi bulur.
+ */
+const SLUG_RETRY_LIMIT = 3;
+
+/**
+ * Cakismanin index tarafindan reddedildigi durum. Kod tek basina yeterli
+ * degil: ayni transaction'da `group_members` yazisi da var ve onun kendi
+ * unique kisiti bir hatayi "slug carpismasi" sanip bosuna yeniden denetirdi.
+ */
+const isSlugConflict = (error: unknown): boolean => {
+  const pgError = error as { code?: string; constraint?: string } | null;
+
+  return pgError?.code === UNIQUE_VIOLATION && pgError.constraint === 'groups_slug_unique';
+};
+
+/**
+ * Ad icin **bos** bir slug bulur: once sade hali, doluysa `-2`, `-3`...
+ *
+ * Numara neden rastgele/hash ek degil: kullanicinin gordugu adres okunabilir
+ * kalmali. `ev-arkadaslari-2` bir insanin telefonda okuyabildigi bir sey;
+ * `ev-arkadaslari-f3a9` degil.
+ *
+ * `excludeId` yeniden adlandirmada gerekli: grubun **kendi** slug'i "dolu"
+ * sayilsaydi, adi degistirmeden aciklamayi guncellemek bile slug'i her
+ * seferinde bir sonraki numaraya kaydirirdi.
+ *
+ * Aday kumesi tek sorguda cekiliyor (`base` ve `base-%`), sonra numara
+ * bellekte araniyor: alternatif, her numara icin ayri bir EXISTS sorgusu
+ * kosturmak olurdu.
+ */
+const resolveSlug = async (
+  trx: Knex.Transaction,
+  name: string,
+  excludeId?: string
+): Promise<string> => {
+  const base = slugify(name);
+
+  const query = trx('groups')
+    .whereNull('deleted_at')
+    .andWhere((builder) => {
+      void builder.where('slug', base).orWhere('slug', 'like', `${base}-%`);
+    })
+    .select('slug');
+
+  if (excludeId) {
+    void query.whereNot('id', excludeId);
+  }
+
+  const taken = new Set((await query).map((row) => row.slug));
+
+  let candidate = base;
+  for (let suffix = 2; taken.has(candidate); suffix += 1) {
+    candidate = `${base}-${suffix}`;
+  }
+
+  return candidate;
+};
+
+/** Slug carpismasinda islemi bastan calistirir (bkz. `SLUG_RETRY_LIMIT`). */
+const withSlugRetry = async <T>(operation: () => Promise<T>): Promise<T> => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= SLUG_RETRY_LIMIT || !isSlugConflict(error)) {
+        throw error;
+      }
+    }
+  }
+};
+
 /* ---------------------------------------------------------------- yazma */
 
 /**
  * Grubu ve kurucunun `owner` uyeligini **tek transaction'da** yazar.
  * Ayri ayri yazilsaydi ikinci INSERT patladiginda sahipsiz (uyesi olmayan,
  * kimsenin erisemedigi) bir grup satiri kalirdi.
+ *
+ * Slug de burada, ayni transaction'da uretiliyor: "bos numarayi bul" ile
+ * INSERT arasina baska bir yazi girerse unique index reddediyor ve islem
+ * bastan calisiyor (`withSlugRetry`).
  */
 const createWithOwner = async (input: CreateGroupInput): Promise<GroupRow> =>
-  db.transaction(async (trx) => {
-    const [group] = await trx('groups')
-      .insert({
-        name: input.name,
-        description: input.description,
-        created_by: input.created_by,
-      })
-      .returning('*');
+  withSlugRetry(() =>
+    db.transaction(async (trx) => {
+      const [group] = await trx('groups')
+        .insert({
+          name: input.name,
+          slug: await resolveSlug(trx, input.name),
+          description: input.description,
+          created_by: input.created_by,
+        })
+        .returning('*');
 
-    await trx('group_members').insert({
-      group_id: group.id,
-      user_id: input.created_by,
-      role: 'owner',
-    });
+      await trx('group_members').insert({
+        group_id: group.id,
+        user_id: input.created_by,
+        role: 'owner',
+      });
 
-    return group;
-  });
+      return group;
+    })
+  );
 
 /**
  * Grubun adini/aciklamasini gunceller. Yalnizca **yasayan** grubu (deleted_at
  * NULL) hedefler; silinmis bir grup icin `undefined` doner (cagiran taraf onu
  * ayni "erisim yok" cevabina cevirir). Yalnizca gonderilen alanlar degisir.
+ *
+ * AD DEGISINCE SLUG DA DEGISIR
+ * ----------------------------
+ * Adres grubun **su anki** adini gostermeli; "Ev Arkadaslari"ni "Tatil 2026"
+ * yapip `/groups/ev-arkadaslari` adresinde kalmak, slug'in cozmeye calistigi
+ * okunabilirlik sorununu geri getirirdi. Bedeli, eski slug linkinin artik
+ * acilmamasi — ama uuid adresi calismaya devam ediyor (ikisini de `GET
+ * /groups/:idOrSlug` cozuyor), yani daha once paylasilmis her link olmuyor.
+ *
+ * Aciklama tek basina guncellenirse slug'a dokunulmuyor: `resolveSlug`
+ * cagrisi yalnizca `patch.name` geldiginde.
  */
 const updateDetails = async (
   groupId: string,
   patch: { name?: string; description?: string | null }
-): Promise<GroupRow | undefined> => {
-  const [updated] = await db('groups')
-    .where({ id: groupId })
-    .whereNull('deleted_at')
-    .update(patch)
-    .returning('*');
+): Promise<GroupRow | undefined> =>
+  withSlugRetry(() =>
+    db.transaction(async (trx) => {
+      const [updated] = await trx('groups')
+        .where({ id: groupId })
+        .whereNull('deleted_at')
+        .update(
+          patch.name === undefined
+            ? patch
+            : { ...patch, slug: await resolveSlug(trx, patch.name, groupId) }
+        )
+        .returning('*');
 
-  return updated;
-};
+      return updated;
+    })
+  );
 
 /** Uyelik satirini siler. Donen sayi 0 ise kullanici zaten uye degildi. */
 const removeMember = async (groupId: string, userId: string): Promise<number> =>
@@ -382,6 +671,7 @@ const redeemInvite = async (code: string, userId: string): Promise<RedeemResult>
 
 export default {
   findById,
+  findBySlug,
   findMembership,
   listForUser,
   listMembershipNames,

@@ -130,6 +130,7 @@ vi.mock('./api/summary', () => ({
       monthlySpend: '0.00',
       activeGroupsCount: 0,
       pendingSettlementsCount: 0,
+      unseenActivityCount: 0,
     }),
   },
 }));
@@ -179,7 +180,9 @@ describe('giris yapilmamis kullanici', () => {
 
     expect(await screen.findByRole('heading', { name: 'Giris yap' })).toBeInTheDocument();
     // Korunan sayfanin icerigi hic render edilmemeli.
-    expect(screen.queryByRole('heading', { name: 'Gruplar' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Ortak hesap tuttugun gruplar' })
+    ).not.toBeInTheDocument();
   });
 
   it('/settings ve /groups/:id de korunur', async () => {
@@ -257,7 +260,7 @@ describe('giris yapmis kullanici', () => {
     signIn();
     renderAt('/groups');
 
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' })).toBeInTheDocument();
     // Kullanici adi Layout basliginda duruyor.
     expect(screen.getByText('Burak')).toBeInTheDocument();
   });
@@ -293,7 +296,7 @@ describe('giris yapmis kullanici', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Gruplarim' }));
 
-    expect(await screen.findByRole('heading', { name: 'Gruplar' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' })).toBeInTheDocument();
   });
 
   it('/groups/:id parametresi okunur', async () => {
@@ -354,7 +357,7 @@ describe('admin rotasi', () => {
   it('normal kullanicinin menusunde Admin baglantisi cikmaz', async () => {
     signIn('user');
     renderAt('/groups');
-    await screen.findByRole('heading', { name: 'Gruplar' });
+    await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' });
 
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Gruplarim' })).toBeInTheDocument();
@@ -363,7 +366,7 @@ describe('admin rotasi', () => {
   it('admin menusunde Admin baglantisi cikar', async () => {
     signIn('admin');
     renderAt('/groups');
-    await screen.findByRole('heading', { name: 'Gruplar' });
+    await screen.findByRole('heading', { name: 'Ortak hesap tuttugun gruplar' });
 
     expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument();
   });

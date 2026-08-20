@@ -41,21 +41,58 @@ export interface User {
 export interface Group {
   id: string;
   name: string;
+  /**
+   * Adres cubugunda uuid'nin yerini alan, addan uretilmis parca
+   * (`/groups/ev-arkadaslari`). Linkler bunun uzerinden kuruluyor
+   * (bkz. utils/groupPath.ts); ad degisince backend yeniden uretiyor.
+   */
+  slug: string;
   description: string | null;
   created_by: string;
   created_at: string;
+}
+
+/** Avatar yiginda gosterilecek ilk birkac uye. */
+export interface GroupMemberPreview {
+  user_id: string;
+  name: string;
+}
+
+/**
+ * Grup listesi kartinin "son hareket" satiri icin malzeme.
+ *
+ * Backend cumleyi kurmuyor, malzemeyi doner — `ActivityEvent` ile ayni ilke
+ * (bkz. asagida). Cumle `utils/activity.ts`teki `activitySentence` ile
+ * kuruluyor; `expense_edited` bilerek yok (kart tek bir son hareket gosterir,
+ * duzenleme gecmisi degil). Gerekce: docs/decisions/gruplar-kart-tasarimi.md.
+ */
+export interface GroupLastActivity {
+  kind: Exclude<ActivityKind, 'expense_edited'>;
+  occurred_at: string;
+  actor_id: string;
+  actor_name: string;
+  counterparty_id: string | null;
+  counterparty_name: string | null;
+  amount: string;
+  description: string | null;
 }
 
 /** `GET /groups` satiri: grup + istekte bulunanin rolu + uye sayisi. */
 export interface GroupSummary {
   id: string;
   name: string;
+  /** Grup detay linkini kuran adres parcasi (bkz. utils/groupPath.ts). */
+  slug: string;
   description: string | null;
   created_by: string;
   created_at: string;
   role: GroupMemberRole;
   joined_at: string;
   member_count: number;
+  member_preview: GroupMemberPreview[];
+  /** Istekte bulunanin alacakli oldugu, onayini bekleyen bir odeme bu grupta var mi. */
+  has_pending_incoming: boolean;
+  last_activity: GroupLastActivity | null;
 }
 
 export interface GroupMember {
@@ -237,6 +274,12 @@ export interface HomeSummary {
   activeGroupsCount: number;
   /** Kullaniciyi ilgilendiren (odedigi ya da onayini bekleyen) bekleyen odemeler. */
   pendingSettlementsCount: number;
+  /**
+   * Onay bekleyenler DISINDA, kullanicinin henuz Aktivite sayfasinda gormedigi
+   * olay sayisi. Aktivite sayfasi acilinca sunucuya "gordum" bildirilir ve bu
+   * yerelde 0'a iner — bkz. docs/decisions/aktivite-okunma-sayaci.md.
+   */
+  unseenActivityCount: number;
 }
 
 /* --------------------------------------------------------------- aktivite */
