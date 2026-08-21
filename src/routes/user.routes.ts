@@ -19,8 +19,18 @@ import asyncHandler from '../utils/asyncHandler';
  * Adres neden `/users/me`, `/auth/me` degil: `/auth/*` oturumla ilgili
  * (register, login, "bu token kimin?"), `/users/*` kullanici **kaydiyla**.
  * `GET /auth/me` yerinde kaldi — oturum acilisinda token'i dogrulayan cagri o.
+ *
+ * TEK ISTISNA: `POST /me/cancel-deletion`
+ * ------------------------------------------
+ * `router.use(requireAuth)`in **ustunde**, bilerek: bu ucun butun amaci
+ * token'i olmayan (silme talebi sonrasi cikartilmis) birinin e-posta+sifreyle
+ * geri donmesi — kimlik dogrulamasi zaten mumkun degil. Yol `/me` tasisa da
+ * (2.6'daki diger uclarla tutarli kalsin diye) hedef **govdeden gelen
+ * e-posta**, token degil. Gerekce: docs/decisions/3.17-hesap-silme.md.
  */
 const router = Router();
+
+router.post('/me/cancel-deletion', asyncHandler(userController.cancelDeletion));
 
 router.use(requireAuth);
 
@@ -41,5 +51,9 @@ router.put('/me', asyncHandler(userController.updateMe));
 // guncellemesiyle ayni govdede tasinmasi, "ismini degistirirken sifreni de
 // yaz" gibi anlamsiz bir sozlesme uretirdi.
 router.put('/me/password', asyncHandler(userController.changeMyPassword));
+
+// Kendi kendine silme talebi. `cancel-deletion`in tersine burasi korumali:
+// hedef zaten oturum acmis kullanici, govdede/adreste bir kimlik yok.
+router.post('/me/delete-request', asyncHandler(userController.requestDeletion));
 
 export default router;

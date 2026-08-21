@@ -55,6 +55,9 @@ export interface UserRow {
   /** Kendi hesap @adi — kucuk harf, benzersiz. Kisi bazli takma isimlerden
    *  (member_nicknames) AYRI bir kavram (migration 18). */
   handle: string | null;
+  /** Kullanicinin kendi baslattigi silme sureci — dolu = 30 gunluk geri alma
+   *  penceresi baslamis (migration 19, bkz. docs/decisions/3.17-hesap-silme.md). */
+  deleted_at: Date | null;
 }
 
 export interface UserInsert {
@@ -69,6 +72,7 @@ export interface UserInsert {
   activity_seen_at?: Date;
   avatar?: string | null;
   handle?: string | null;
+  deleted_at?: Date | null;
 }
 
 export type UserUpdate = Partial<Omit<UserInsert, 'id'>>;

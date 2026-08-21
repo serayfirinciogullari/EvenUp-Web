@@ -96,4 +96,40 @@ const getContacts = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json({ contacts });
 };
 
-export default { updateMe, changeMyPassword, getHomeSummary, markActivitySeen, getContacts };
+/**
+ * POST /users/me/delete-request -> 200 { message }  (requireAuth)
+ *
+ * Gerekce ve "sonra ne olur" akisi: docs/decisions/3.17-hesap-silme.md.
+ */
+const requestDeletion = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    throw ApiError.unauthorized('Kimlik dogrulamasi gerekli');
+  }
+
+  await authService.requestDeletion(req.user.id);
+  res.status(200).json({ message: 'Hesabinizin silinmesi talep edildi' });
+};
+
+/**
+ * POST /users/me/cancel-deletion -> 200 { user, token, expiresIn }
+ *
+ * `requireAuth` **yok** — bu ucun butun amaci token'i olmayan (silme talebi
+ * sonrasi cikartilmis) birinin e-posta+sifreyle geri donmesi. Cevap sekli
+ * `/auth/login`le birebir ayni: basarili olunca frontend'in mevcut
+ * "AuthResult uygula" mantigini (token yaz, kullaniciyi ayarla) aynen
+ * kullanabilmesi icin.
+ */
+const cancelDeletion = async (req: Request, res: Response): Promise<void> => {
+  const result = await authService.cancelDeletion(req.body);
+  res.status(200).json(result);
+};
+
+export default {
+  updateMe,
+  changeMyPassword,
+  getHomeSummary,
+  markActivitySeen,
+  getContacts,
+  requestDeletion,
+  cancelDeletion,
+};

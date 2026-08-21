@@ -128,6 +128,90 @@ const setActive = async (userId: string, isActive: boolean): Promise<PublicUser 
 };
 
 /**
+ * POST /users/me/delete-request — kullanicinin kendi baslattigi silme sureci
+ * (bkz. docs/decisions/3.17-hesap-silme.md).
+ *
+ * `is_active=false` de aynen yazilir: giris denemesini reddeden zaten var olan
+ * mekanizma (1.8) budur, `deleted_at` yalnizca "neden reddedildi ve ne zamana
+ * kadar geri alinabilir" sorusunu cevaplamak icin ayrica tutuluyor.
+ *
+ * Kosulsuz UPDATE — idempotent. Kullanici (token hala geçerliyken) istegi
+ * iki kez atarsa ikinci cagri `deleted_at`i "simdi"ye tazeler; bu 30 gunluk
+ * pencereyi yalnizca uzatir, hicbir guvenlik riski dogurmaz.
+ */
+const requestDeletion = async (userId: string): Promise<boolean> => {
+  const affected = await db('users')
+    .where({ id: userId })
+    .update({ deleted_at: new Date(), is_active: false });
+
+  return affected > 0;
+};
+
+/**
+ * POST /users/me/cancel-deletion — 30 gunluk pencere icinde geri alma.
+ *
+ * Cagiran (`auth.service.cancelDeletion`) `deleted_at`in dolu ve sure
+ * icinde oldugunu **onceden** dogruluyor; bu fonksiyon yalnizca yazmayi
+ * yapiyor. Kosul burada tekrarlanmiyor (`where deleted_at is not null` gibi)
+ * cunku TOCTOU riski yok — servis katmani ayni istek icinde zaten okumus.
+ */
+const cancelDeletion = async (userId: string): Promise<PublicUser | undefined> => {
+  const [updated] = await db('users')
+    .where({ id: userId })
+    .update({ deleted_at: null, is_active: true })
+    .returning(publicColumns);
+
+  return updated as PublicUser | undefined;
+};
+
+/** `anonymizeExpiredDeletions` sonrasi "Silinmis Kullanici" adi — testler ve
+ *  cron gorevi ayni sabiti kullansin diye disariya aciliyor. */
+export const ANONYMIZED_USER_NAME = 'Silinmis Kullanici';
+
+/**
+ * Gunluk cron gorevinin (bkz. `src/jobs/anonymizeDeletedUsers.job.ts`) yazma
+ * ucu: 30 gunu asmis silme taleplerini kalici hale getirir.
+ *
+ * NEDEN SATIR SILINMIYOR, ANONIMLESTIRILIYOR
+ * ---------------------------------------------
+ * Bu dosyanin basindaki gerekce (RESTRICT kisitlari) burada da gecerli — satir
+ * silinemez. Bunun yerine kimliklendirici alanlar (`name`, `email`,
+ * `password_hash`) geri donusumsuz bir degerle degistiriliyor; `deleted_at`
+ * DOLU KALIYOR ve artik "kalici olarak gitti" anlamina geliyor (30 gun
+ * icindeki "geri alinabilir" anlamindan farkli — ikisi ayni alanla
+ * ifade ediliyor cunku ikinci durum birincinin dogal devami).
+ *
+ * NEDEN TEK SQL UPDATE (dongu degil)
+ * -----------------------------------
+ * `email` satir basina benzersiz olmak zorunda (`users.email` UNIQUE);
+ * `db.raw` ile `id` sutunundan turetilen bir ifade her satirda farkli bir
+ * deger ureterek bunu tek bir UPDATE'te (N ayri sorgu degil) saglıyor.
+ *
+ * NEDEN `password_hash` PARAMETRE (servis uretiyor)
+ * ---------------------------------------------------
+ * `updatePasswordHash` ile ayni ilke: bcrypt cagrisi model katmaninda degil,
+ * servis/gorev katmaninda kalsin diye hash disaridan geliyor. Butun
+ * anonimlestirilen satirlar **ayni** hash'i paylasabilir — kimse bu degeri
+ * dogru bir sifreyle eslestiremez cunku e-posta da degisti, giris zaten
+ * imkansiz; paylasilan hash bir zayiflik degil.
+ *
+ * Idempotent: `name != ANONYMIZED_USER_NAME` kosulu, gorev bir onceki gun
+ * hata alip yeniden calistiginda ayni satirlari tekrar islemez.
+ */
+const anonymizeExpiredDeletions = async (cutoff: Date, passwordHash: string): Promise<number> =>
+  db('users')
+    .whereNotNull('deleted_at')
+    .andWhere('deleted_at', '<', cutoff)
+    .andWhere('name', '!=', ANONYMIZED_USER_NAME)
+    .update({
+      name: ANONYMIZED_USER_NAME,
+      // `db.raw` calisma zamaninda knex'in update govdesinde desteklenir;
+      // tip tanimlari bunu bilmiyor, o yuzden burada tek satirlik bir assertion var.
+      email: db.raw("'deleted-' || id || '@evenup.local'") as unknown as string,
+      password_hash: passwordHash,
+    });
+
+/**
  * "Aktivite'yi en son ne zaman gordu" — sidebar rozetindeki okunmamis sayisi
  * bunun ustune hesaplanir (bkz. docs/decisions/aktivite-okunma-sayaci.md).
  * `undefined` yalnizca kullanici satiri hic yoksa doner (silinmis kullanici).
@@ -156,6 +240,9 @@ export default {
   updateProfile,
   updatePasswordHash,
   setActive,
+  requestDeletion,
+  cancelDeletion,
+  anonymizeExpiredDeletions,
   findActivitySeenAt,
   markActivitySeen,
 };

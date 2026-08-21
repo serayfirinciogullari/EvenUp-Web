@@ -27,6 +27,14 @@ export interface AuthContextValue {
   register: (input: RegisterInput) => Promise<User>;
   logout: () => void;
   /**
+   * `login`/`register`in ic kullandigi ayni mantigi (token yaz, kullaniciyi
+   * ayarla, `authenticated`e gec) disariya acar. Hesap-geri-alma akisinin
+   * (`POST /users/me/cancel-deletion`) donen `{user, token}`u ikinci bir
+   * `/auth/login` cagrisi atmadan uygulayabilmesi icin (bkz.
+   * docs/decisions/3.17-hesap-silme.md).
+   */
+  applySession: (result: { user: User; token: string }) => User;
+  /**
    * Kullaniciyi **sunucudan** yeniden okur (`GET /auth/me`) ve context'i
    * tazeler (2.6).
    *

@@ -1,5 +1,6 @@
 import api from './client';
 
+import type { AuthResult } from '../types/api';
 import type { User } from '../types/models';
 
 /**
@@ -46,4 +47,28 @@ export const changePassword = async (input: ChangePasswordInput): Promise<void> 
   await api.put('/users/me/password', input);
 };
 
-export default { updateProfile, changePassword };
+/**
+ * POST /users/me/delete-request — hesabi 30 gunluk silme surecine sokar.
+ * Backend aninda `is_active=false` yapar; oturumu kapatmak (token temizleme +
+ * yonlendirme) cagiran taraftan beklenir (bkz. docs/decisions/3.17-hesap-silme.md).
+ */
+export const requestDeletion = async (): Promise<void> => {
+  await api.post('/users/me/delete-request');
+};
+
+export interface CancelDeletionInput {
+  email: string;
+  password: string;
+}
+
+/**
+ * POST /users/me/cancel-deletion — token GEREKTIRMEZ (silme sonrasi oturum
+ * zaten yok). Basarili olursa `/auth/login` ile ayni sekilde `{user, token}`
+ * doner; cagiran taraf bunu AuthContext'e uygulayarak otomatik giris yapar.
+ */
+export const cancelDeletion = async (input: CancelDeletionInput): Promise<AuthResult> => {
+  const { data } = await api.post<AuthResult>('/users/me/cancel-deletion', input);
+  return data;
+};
+
+export default { updateProfile, changePassword, requestDeletion, cancelDeletion };

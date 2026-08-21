@@ -25,6 +25,12 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 /** `users.handle` (migration 18): kucuk harf, rakam, alt cizgi; 3-20 karakter. */
 const HANDLE_PATTERN = /^[a-z0-9_]{3,20}$/;
 
+/** Silme talebinden sonra geri alma penceresi (migration 19). Cron gorevi de
+ *  (`src/jobs/anonymizeDeletedUsers.job.ts`) ayni sabiti kullanir — iki yerde
+ *  "30" yazsaydik bir gun biri degisip digeri unutulurdu. */
+export const DELETION_GRACE_DAYS = 30;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 /** Yalnizca JPG/PNG kabul edilir; grup 2 base64 govdesidir. */
 const AVATAR_PATTERN = /^data:image\/(png|jpe?g);base64,([A-Za-z0-9+/]+=*)$/;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB — Profil sekmesindeki metinle ayni sinir
@@ -223,6 +229,29 @@ const validateLoginInput = (input: Partial<LoginInput>): LoginInput => {
   return { email, password };
 };
 
+/** `POST /users/me/cancel-deletion` govdesi — `LoginInput` ile ayni sekil,
+ *  ama ayri bir tip: ikisinin ayni gorunmesi tesadufi, kastli birlestirilirse
+ *  "cancel-deletion normal girisin bir varyanti" yanlis izlenimini verirdi. */
+export interface CancelDeletionInput {
+  email: string;
+  password: string;
+}
+
+const validateCancelDeletionInput = (input: Partial<CancelDeletionInput>): CancelDeletionInput => {
+  const email = normalizeEmail(input.email);
+  const password = asString(input.password);
+
+  if (!email || !password) {
+    throw ApiError.badRequest('E-posta ve sifre zorunlu');
+  }
+
+  return { email, password };
+};
+
+/** Silme talebinden bu yana gecen tam gun sayisi. */
+const daysSinceDeleted = (deletedAt: Date): number =>
+  Math.floor((Date.now() - deletedAt.getTime()) / MS_PER_DAY);
+
 /* ------------------------------------------------------------------ token */
 
 const signToken = (user: AuthUser): string => {
@@ -296,12 +325,43 @@ const login = async (input: Partial<LoginInput>): Promise<AuthResult> => {
 
   // "Kullanici yok" ile "sifre yanlis" ayni mesaji doner: aksi halde endpoint
   // hangi e-postalarin kayitli oldugunu sizdirir.
-  if (!user || !user.is_active) {
+  if (!user) {
     throw ApiError.unauthorized('E-posta veya sifre hatali');
   }
 
   const passwordMatches = await bcrypt.compare(password, user.password_hash);
   if (!passwordMatches) {
+    throw ApiError.unauthorized('E-posta veya sifre hatali');
+  }
+
+  /*
+    Sifre burada, `is_active`/`deleted_at` kontrolunden ONCE dogrulaniyor —
+    onceki siralamada (`!user || !user.is_active` en basta) yanlis sifreyle
+    bile "hesap pasif" bilgisine bcrypt hic calismadan ulasilabiliyordu.
+    Silme surecindeki bir hesap icin asagida ayrica **ozel bir mesaj**
+    donuyoruz (docs/decisions/3.17-hesap-silme.md); bu bilgiyi yalnizca
+    gercekten sifreyi bilen kisiye acmak dogru — parolayi bilmeyen biri
+    bir hesabin "silme surecinde" oldugunu bu yoldan ogrenemez.
+  */
+  if (user.deleted_at) {
+    const elapsed = daysSinceDeleted(user.deleted_at);
+
+    if (elapsed < DELETION_GRACE_DAYS) {
+      const remaining = DELETION_GRACE_DAYS - elapsed;
+      throw ApiError.forbidden(
+        `Hesabin silme surecinde, ${remaining} gun kaldi. Geri almak icin e-posta ve sifreni "Hesabini geri al" ekraninda tekrar gir.`,
+        { deletionPending: true, daysRemaining: remaining }
+      );
+    }
+
+    // Sure gecmis ama gunluk anonimlestirme gorevi henuz calismamis olabilir
+    // (bkz. jobs/anonymizeDeletedUsers.job.ts) — bu kisa aralikta hesap
+    // "hic yokmus" gibi davraniyoruz, "silindi ama simdilik girebilirsin"
+    // gibi tutarsiz bir ara durum gostermek yerine.
+    throw ApiError.unauthorized('E-posta veya sifre hatali');
+  }
+
+  if (!user.is_active) {
     throw ApiError.unauthorized('E-posta veya sifre hatali');
   }
 
@@ -441,6 +501,77 @@ const markActivitySeen = async (userId: string): Promise<void> => {
   }
 };
 
+/**
+ * POST /users/me/delete-request — kullanicinin kendi baslattigi silme sureci.
+ *
+ * Bu cagridan sonra istemci **kendi** token'ini temizleyip kullaniciyi
+ * cikartir (bkz. web/src/components/AccountTab.tsx) — sunucu tarafinda
+ * JWT'yi "iptal etmek" gibi bir mekanizma yok (durumsuz token, kara liste
+ * tutulmuyor). `is_active=false` bunun **yerine gecmiyor**: aksine, artik var
+ * olan token'la baska bir uc noktaya gidilse bile o uclarin hicbiri
+ * `is_active`i tekrar kontrol etmiyor (yalnizca `login` eder) — bu bilinen
+ * bir sinir, gerekcesi docs/decisions/3.17-hesap-silme.md'de.
+ */
+const requestDeletion = async (userId: string): Promise<void> => {
+  const changed = await userModel.requestDeletion(userId);
+
+  if (!changed) {
+    throw ApiError.unauthorized('Kullanici bulunamadi');
+  }
+};
+
+/**
+ * POST /users/me/cancel-deletion — 30 gunluk pencere icinde geri alma.
+ *
+ * NEDEN AYRI BIR DOGRULAMA, `login`IN BIR VARYANTI DEGIL
+ * -----------------------------------------------------------
+ * `login` `is_active=false` bir hesabi **her zaman** reddeder (1.8'deki
+ * yonetici-devre-disi-birakma davranisiyla ayni) — bu uc noktanin butun
+ * amaci tam olarak o red'i, yalnizca "kendi kendine silinmis ve sifresini
+ * bilen" kisi icin asmak. Bu yuzden `login`i cagirmiyor, kendi kimlik
+ * dogrulamasini yapiyor.
+ *
+ * Kimlik dogrulanmamis (token yok) bir uc nokta oldugu icin `user.routes.ts`
+ * icinde `requireAuth`in **disinda** kayitli.
+ */
+const cancelDeletion = async (input: Partial<CancelDeletionInput>): Promise<AuthResult> => {
+  const { email, password } = validateCancelDeletionInput(input);
+
+  const user = await userModel.findByEmail(email);
+
+  if (!user) {
+    throw ApiError.unauthorized('E-posta veya sifre hatali');
+  }
+
+  const passwordMatches = await bcrypt.compare(password, user.password_hash);
+  if (!passwordMatches) {
+    throw ApiError.unauthorized('E-posta veya sifre hatali');
+  }
+
+  if (!user.deleted_at) {
+    throw ApiError.badRequest('Bu hesap silme surecinde degil');
+  }
+
+  if (daysSinceDeleted(user.deleted_at) >= DELETION_GRACE_DAYS) {
+    // Normalde bu dala hic girilmez: sure dolunca gunluk gorev hesabi
+    // anonimlestirir ve e-posta artik eslesmez (yukaridaki `!user` dalina
+    // duser). Gorev henuz calismamissa diye savunma amacli.
+    throw ApiError.forbidden('Bu hesap artik geri alinamiyor');
+  }
+
+  const updated = await userModel.cancelDeletion(user.id);
+
+  if (!updated) {
+    throw ApiError.unauthorized('Kullanici bulunamadi');
+  }
+
+  return {
+    user: updated,
+    token: signToken({ id: updated.id, role: updated.role }),
+    expiresIn: config.jwtExpiresIn,
+  };
+};
+
 export default {
   register,
   login,
@@ -448,6 +579,8 @@ export default {
   updateProfile,
   changePassword,
   markActivitySeen,
+  requestDeletion,
+  cancelDeletion,
   signToken,
   verifyToken,
 };

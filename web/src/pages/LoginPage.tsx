@@ -1,10 +1,12 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import AuthShell from '@/components/AuthShell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { getDeletionPendingInfo, getErrorMessage } from '../api/client';
+import usersApi from '../api/users';
 import useAuth from '../hooks/useAuth';
 import useAuthForm from '../hooks/useAuthForm';
 import { afterAuthPath } from '../utils/afterAuth';
@@ -23,13 +25,42 @@ import type { LoginFormValues } from '../utils/validation';
  * `utils/validation.ts` icinde.
  */
 const LoginPage = () => {
-  const { login } = useAuth();
+  const { login, applySession } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
+  /**
+   * "Hesabin silme surecinde" 403'u genel `formError` degil, ayri bir kutu:
+   * kullaniciya sadece hata degil bir **eylem** (geri alma) sunuyoruz. Bilgiler
+   * (e-posta/sifre) formdan degil buradan tasiniyor cunku `useAuthForm` basarili
+   * `onSubmit` sonrasi degerleri sifirlamiyor ama garanti de etmiyor.
+   */
+  const [recovery, setRecovery] = useState<{
+    email: string;
+    password: string;
+    daysRemaining: number;
+  } | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+
   const handleLogin = useCallback(
     async (values: LoginFormValues) => {
-      await login(values);
+      setRecovery(null);
+
+      try {
+        await login(values);
+      } catch (caught) {
+        const pending = getDeletionPendingInfo(caught);
+
+        if (pending) {
+          // Genel hata kutusuna dusmesin diye burada yutuluyor; formError
+          // bilerek bos kaliyor, asagidaki ozel kutu gosteriliyor.
+          setRecovery({ email: values.email, password: values.password, ...pending });
+          return;
+        }
+
+        throw caught;
+      }
 
       /*
         Korunan bir sayfadan yonlendirilmisse oraya don, bekleyen bir davet
@@ -45,6 +76,27 @@ const LoginPage = () => {
     },
     [location.state, login, navigate]
   );
+
+  const handleRecover = useCallback(async () => {
+    if (!recovery) {
+      return;
+    }
+
+    setRecovering(true);
+    setRecoverError(null);
+
+    try {
+      const result = await usersApi.cancelDeletion({
+        email: recovery.email,
+        password: recovery.password,
+      });
+      applySession(result);
+      navigate(afterAuthPath(location.state, '/home'), { replace: true });
+    } catch (caught) {
+      setRecoverError(getErrorMessage(caught, 'Hesap geri alinamadi'));
+      setRecovering(false);
+    }
+  }, [applySession, location.state, navigate, recovery]);
 
   const { values, setField, fieldErrors, formError, pending, handleSubmit } =
     useAuthForm<LoginFormValues>({
@@ -133,6 +185,28 @@ const LoginPage = () => {
           >
             {formError}
           </p>
+        )}
+
+        {recovery && (
+          <div
+            className="flex flex-col gap-2 rounded-md border border-destructive/25 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+            role="alert"
+          >
+            <p>
+              Hesabin silme surecinde, {recovery.daysRemaining} gun kaldi. Silme talebini geri
+              alip devam edebilirsin.
+            </p>
+            {recoverError && <p className="font-medium">{recoverError}</p>}
+            <Button
+              type="button"
+              variant="outline"
+              className="self-start"
+              disabled={recovering}
+              onClick={() => void handleRecover()}
+            >
+              {recovering ? 'Geri aliniyor...' : 'Hesabini geri al'}
+            </Button>
+          </div>
         )}
 
         <Button type="submit" disabled={pending} className="mt-1 w-full">

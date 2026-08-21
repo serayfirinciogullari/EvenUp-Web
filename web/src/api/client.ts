@@ -68,8 +68,12 @@ export const setUnauthorizedHandler = (listener: UnauthorizedListener | null): v
  * sifre hatali" demektir. Bunlari global logout'tan muaf tutmazsak, yanlis
  * sifre giren kullanici formda hata gormek yerine sessizce login sayfasina
  * yeniden yonlendirilirdi.
+ *
+ * `cancel-deletion` ayni gerekceyle burada: token gerektirmeyen, e-posta+sifre
+ * ile calisan bir uc (bkz. api/users.ts). Yanlis sifre 401 doner ama bu
+ * "oturum gecersiz" anlamina gelmiyor — formda hata gosterilmeli.
  */
-const AUTH_ENDPOINTS = ['/auth/login', '/auth/register'];
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/register', '/users/me/cancel-deletion'];
 
 const isAuthEndpoint = (url?: string): boolean =>
   !!url && AUTH_ENDPOINTS.some((endpoint) => url.endsWith(endpoint));
@@ -130,6 +134,28 @@ export const getErrorDetails = (error: unknown): Record<string, string> => {
   }
 
   return {};
+};
+
+/**
+ * `POST /auth/login`in "hesap silme surecinde" 403'unu digerlerinden ayirir
+ * (bkz. docs/decisions/3.17-hesap-silme.md). `getErrorDetails` bunun icin
+ * uygun degil: donus tipi `Record<string, string>`, oysa backend `daysRemaining`i
+ * sayi olarak gonderiyor — burada gercek tiple okunuyor.
+ */
+export const getDeletionPendingInfo = (error: unknown): { daysRemaining: number } | null => {
+  if (!axios.isAxiosError<ApiErrorBody>(error) || error.response?.status !== 403) {
+    return null;
+  }
+
+  const details = error.response.data?.details as
+    | { deletionPending?: boolean; daysRemaining?: number }
+    | undefined;
+
+  if (!details?.deletionPending || typeof details.daysRemaining !== 'number') {
+    return null;
+  }
+
+  return { daysRemaining: details.daysRemaining };
 };
 
 export default api;

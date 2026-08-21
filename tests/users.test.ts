@@ -30,6 +30,7 @@ jest.mock('../src/models/user.model', () => ({
     updateProfile: jest.fn(),
     updatePasswordHash: jest.fn(),
     markActivitySeen: jest.fn(),
+    requestDeletion: jest.fn(),
   },
 }));
 
@@ -65,6 +66,7 @@ const insertUser = async (input: {
     activity_seen_at: new Date(),
     avatar: null,
     handle: null,
+    deleted_at: null,
   };
 
   usersById.set(row.id, row);
@@ -136,6 +138,17 @@ beforeEach(() => {
     }
 
     usersById.set(userId, { ...row, activity_seen_at: new Date() });
+    return true;
+  });
+
+  mockedUserModel.requestDeletion.mockImplementation(async (userId: string) => {
+    const row = usersById.get(userId);
+
+    if (!row) {
+      return false;
+    }
+
+    usersById.set(userId, { ...row, deleted_at: new Date(), is_active: false });
     return true;
   });
 });
@@ -508,5 +521,47 @@ describe('POST /users/me/activity-seen', () => {
       .send({ userId: other.id, id: other.id });
 
     expect(usersById.get(other.id)?.activity_seen_at).toEqual(otherSeenBefore);
+  });
+});
+
+describe('POST /users/me/delete-request', () => {
+  it('kullaniciyi silme surecine sokar (deleted_at dolar, is_active false olur)', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await request(app)
+      .post('/users/me/delete-request')
+      .set('Authorization', `Bearer ${tokenFor(user)}`);
+
+    expect(response.status).toBe(200);
+
+    const stored = usersById.get(user.id) as UserRow;
+    expect(stored.deleted_at).not.toBeNull();
+    expect(stored.is_active).toBe(false);
+  });
+
+  it('idempotent: iki kez atilinca hata vermez, deleted_at yenilenir', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+    const token = tokenFor(user);
+
+    const first = await request(app)
+      .post('/users/me/delete-request')
+      .set('Authorization', `Bearer ${token}`);
+    const firstDeletedAt = (usersById.get(user.id) as UserRow).deleted_at;
+
+    const second = await request(app)
+      .post('/users/me/delete-request')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect((usersById.get(user.id) as UserRow).deleted_at).not.toBeNull();
+    expect(firstDeletedAt).not.toBeNull();
+  });
+
+  it('token olmadan 401 doner', async () => {
+    const response = await request(app).post('/users/me/delete-request');
+
+    expect(response.status).toBe(401);
+    expect(mockedUserModel.requestDeletion).not.toHaveBeenCalled();
   });
 });

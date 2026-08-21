@@ -31,7 +31,12 @@ vi.mock('../api/auth', () => ({
 
 vi.mock('../api/users', () => ({
   __esModule: true,
-  default: { updateProfile: vi.fn(), changePassword: vi.fn() },
+  default: {
+    updateProfile: vi.fn(),
+    changePassword: vi.fn(),
+    requestDeletion: vi.fn(),
+    cancelDeletion: vi.fn(),
+  },
 }));
 
 /*
@@ -196,12 +201,12 @@ describe('Ayarlar > sekmeler', () => {
     expect(await screen.findByRole('heading', { name: 'Gorunum' })).toBeInTheDocument();
   });
 
-  it('Hesap sekmesine tiklayinca Hesap acilir', async () => {
+  it('Hesap sekmesine tiklayinca Oturumu kapat acilir', async () => {
     renderSettings('/settings/profile');
     await waitForShell();
 
     fireEvent.click(screen.getByRole('link', { name: /Hesap/ }));
-    expect(await screen.findByRole('heading', { name: 'Hesap' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Oturumu kapat' })).toBeInTheDocument();
   });
 
   it('aktif sekme isaretlenir', async () => {
@@ -750,12 +755,87 @@ describe('Ayarlar > tercihler > yakinda gelecek', () => {
 /* =================================================================== hesap */
 
 describe('Ayarlar > hesap', () => {
-  it('tamamen bir yer tutucu gosterir', async () => {
+  it('oturumu kapat ve hesabi sil kartlarini gosterir', async () => {
     renderSettings('/settings/account');
     await waitForShell();
 
-    expect(screen.getByRole('heading', { name: 'Hesap' })).toBeInTheDocument();
-    expect(screen.getByText('Yakinda gelecek.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Oturumu kapat' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Bu cihazdaki oturum kapanir, verilerin silinmez.')
+    ).toBeInTheDocument();
+
+    expect(screen.getByRole('heading', { name: 'Hesabi sil' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Silme talebi 30 gun icinde geri alinabilir\./)
+    ).toBeInTheDocument();
+  });
+
+  it('oturumu kapat tiklaninca cikis yapilir ve giris ekranina yonlendirilir', async () => {
+    renderSettings('/settings/account');
+    await waitForShell();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Oturumu kapat' }));
+
+    expect(await screen.findByRole('heading', { name: 'Giris yap' })).toBeInTheDocument();
+    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
+  });
+
+  it('hesabi sil butonu once onay sorar, istek atmaz', async () => {
+    renderSettings('/settings/account');
+    await waitForShell();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hesabi sil' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText(/Silme talebi 30 gun icinde geri alinabilir\./)
+    ).toBeInTheDocument();
+    expect(mockedUsers.requestDeletion).not.toHaveBeenCalled();
+  });
+
+  it('vazgecince istek atilmaz, modal kapanir', async () => {
+    renderSettings('/settings/account');
+    await waitForShell();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hesabi sil' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Vazgec' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(mockedUsers.requestDeletion).not.toHaveBeenCalled();
+  });
+
+  it('onaylayinca silme istegi atilir, oturum kapatilir ve giris ekranina yonlendirilir', async () => {
+    mockedUsers.requestDeletion.mockResolvedValue(undefined);
+
+    renderSettings('/settings/account');
+    await waitForShell();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hesabi sil' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hesabi sil' }));
+
+    await waitFor(() => expect(mockedUsers.requestDeletion).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('heading', { name: 'Giris yap' })).toBeInTheDocument();
+    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
+  });
+
+  it('hata durumunda modal kapanmaz ve mesaj icinde gosterilir', async () => {
+    mockedUsers.requestDeletion.mockRejectedValue(apiError(500, 'Silme talebi gonderilemedi'));
+
+    renderSettings('/settings/account');
+    await waitForShell();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hesabi sil' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hesabi sil' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Silme talebi gonderilemedi'
+    );
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // Oturum ayakta kalmali: basarisiz istekte kullanici cikartilmamali.
+    expect(window.localStorage.getItem(TOKEN_KEY)).not.toBeNull();
   });
 });
 

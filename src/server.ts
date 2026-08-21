@@ -1,11 +1,16 @@
 import app from './app';
 import config from './config/env';
+import { scheduleAnonymizeExpiredDeletions } from './jobs/anonymizeDeletedUsers.job';
 import logger from './utils/logger';
 
 const server = app.listen(config.port, () => {
   logger.info(`EvenUp API calisiyor -> http://localhost:${config.port} (${config.env})`);
   logger.info(`Health check      -> http://localhost:${config.port}/health`);
 });
+
+// `app.ts` degil burada: testler `app.ts`i dogrudan import eder, gercek bir
+// surec olmadigi icin zamanlayicinin test calismalarinda tetiklenmemesi gerekir.
+scheduleAnonymizeExpiredDeletions();
 
 const shutdown = (signal: string): void => {
   logger.info(`${signal} alindi, server kapatiliyor...`);

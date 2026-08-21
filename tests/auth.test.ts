@@ -25,6 +25,8 @@ jest.mock('../src/models/user.model', () => ({
     findPublicById: jest.fn(),
     create: jest.fn(),
     listPublic: jest.fn(),
+    requestDeletion: jest.fn(),
+    cancelDeletion: jest.fn(),
   },
 }));
 
@@ -48,6 +50,7 @@ const insertUser = async (input: {
   name?: string;
   role?: UserRole;
   is_active?: boolean;
+  deleted_at?: Date | null;
 }): Promise<UserRow> => {
   const row: UserRow = {
     id: randomUUID(),
@@ -61,6 +64,7 @@ const insertUser = async (input: {
     activity_seen_at: new Date(),
     avatar: null,
     handle: null,
+    deleted_at: input.deleted_at ?? null,
   };
 
   usersByEmail.set(row.email, row);
@@ -97,6 +101,7 @@ beforeEach(() => {
       activity_seen_at: data.activity_seen_at ?? new Date(),
       avatar: data.avatar ?? null,
       handle: data.handle ?? null,
+      deleted_at: data.deleted_at ?? null,
     };
 
     usersByEmail.set(row.email, row);
@@ -110,6 +115,22 @@ beforeEach(() => {
   mockedUserModel.listPublic.mockImplementation(async () =>
     [...usersByEmail.values()].map(toPublic)
   );
+
+  mockedUserModel.requestDeletion.mockImplementation(async (userId: string) => {
+    const row = [...usersByEmail.values()].find((user) => user.id === userId);
+    if (!row) return false;
+    row.deleted_at = new Date();
+    row.is_active = false;
+    return true;
+  });
+
+  mockedUserModel.cancelDeletion.mockImplementation(async (userId: string) => {
+    const row = [...usersByEmail.values()].find((user) => user.id === userId);
+    if (!row) return undefined;
+    row.deleted_at = null;
+    row.is_active = true;
+    return toPublic(row);
+  });
 });
 
 /* ==================================================== POST /auth/register */
@@ -277,6 +298,142 @@ describe('POST /auth/login', () => {
 
     expect(response.body.user).not.toHaveProperty('password_hash');
     expect(JSON.stringify(response.body)).not.toContain('$2b$');
+  });
+
+  it('silme surecindeki (30 gun icinde) kullanici 403 doner ve kalan gunu soyler', async () => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    await insertUser({ email, password, is_active: false, deleted_at: fiveDaysAgo });
+
+    const response = await request(app).post('/auth/login').send({ email, password });
+
+    expect(response.status).toBe(403);
+    expect(response.body.details).toMatchObject({ deletionPending: true, daysRemaining: 25 });
+  });
+
+  it('yanlis sifreyle silme surecindeki hesap icin bile "e-posta veya sifre hatali" doner', async () => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    await insertUser({ email, password, is_active: false, deleted_at: fiveDaysAgo });
+
+    const response = await request(app)
+      .post('/auth/login')
+      .send({ email, password: 'YanlisSifre123' });
+
+    expect(response.status).toBe(401);
+    expect(response.body).not.toHaveProperty('details');
+  });
+
+  it('silme suresi (30 gun) dolmus kullanici icin 401 doner (403 degil)', async () => {
+    const fortyDaysAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+    await insertUser({ email, password, is_active: false, deleted_at: fortyDaysAgo });
+
+    const response = await request(app).post('/auth/login').send({ email, password });
+
+    expect(response.status).toBe(401);
+  });
+});
+
+/* =================================== POST /users/me/delete-request */
+
+describe('POST /users/me/delete-request', () => {
+  const email = 'silinecek@evenup.dev';
+  const password = 'DogruSifre123';
+
+  it('gecerli token ile hesabi silme surecine sokar ve is_active false yapar', async () => {
+    const user = await insertUser({ email, password });
+    const token = await loginFor(email, password);
+
+    const response = await request(app)
+      .post('/users/me/delete-request')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+
+    const stored = usersByEmail.get(user.email) as UserRow;
+    expect(stored.deleted_at).not.toBeNull();
+    expect(stored.is_active).toBe(false);
+  });
+
+  it('token olmadan 401 doner', async () => {
+    const response = await request(app).post('/users/me/delete-request');
+
+    expect(response.status).toBe(401);
+  });
+
+  it('istek atildiktan sonra ayni token ile giris denemesi artik gecerli sifreyle bile basarisiz olur', async () => {
+    await insertUser({ email, password });
+    const token = await loginFor(email, password);
+
+    await request(app).post('/users/me/delete-request').set('Authorization', `Bearer ${token}`);
+
+    const loginAttempt = await request(app).post('/auth/login').send({ email, password });
+
+    expect(loginAttempt.status).toBe(403);
+    expect(loginAttempt.body.details).toMatchObject({ deletionPending: true });
+  });
+});
+
+/* =================================== POST /users/me/cancel-deletion */
+
+describe('POST /users/me/cancel-deletion', () => {
+  const email = 'gerialinacak@evenup.dev';
+  const password = 'DogruSifre123';
+
+  it('30 gun icinde dogru sifreyle geri alir ve yeni token doner (otomatik giris)', async () => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    const user = await insertUser({ email, password, is_active: false, deleted_at: fiveDaysAgo });
+
+    const response = await request(app).post('/users/me/cancel-deletion').send({ email, password });
+
+    expect(response.status).toBe(200);
+    expect(response.body.token).toBeDefined();
+    expect(response.body.user.id).toBe(user.id);
+
+    const stored = usersByEmail.get(email) as UserRow;
+    expect(stored.deleted_at).toBeNull();
+    expect(stored.is_active).toBe(true);
+
+    // Donen token gercekten kullanilabilir mi (otomatik giris ile ayni sozlesme).
+    const payload = jwt.verify(response.body.token, TEST_JWT_SECRET) as jwt.JwtPayload;
+    expect(payload.userId).toBe(user.id);
+  });
+
+  it('yanlis sifre 401 doner', async () => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    await insertUser({ email, password, is_active: false, deleted_at: fiveDaysAgo });
+
+    const response = await request(app)
+      .post('/users/me/cancel-deletion')
+      .send({ email, password: 'YanlisSifre123' });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('silme surecinde olmayan hesap icin 400 doner', async () => {
+    await insertUser({ email, password });
+
+    const response = await request(app).post('/users/me/cancel-deletion').send({ email, password });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('30 gunu asmis silme talebi icin artik geri alinamaz hatasi doner', async () => {
+    const fortyDaysAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+    await insertUser({ email, password, is_active: false, deleted_at: fortyDaysAgo });
+
+    const response = await request(app).post('/users/me/cancel-deletion').send({ email, password });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('token gerektirmez (silme sonrasi token yok varsayimiyla)', async () => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    await insertUser({ email, password, is_active: false, deleted_at: fiveDaysAgo });
+
+    const response = await request(app)
+      .post('/users/me/cancel-deletion')
+      .send({ email, password });
+
+    expect(response.status).not.toBe(401);
   });
 });
 
