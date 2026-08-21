@@ -500,25 +500,35 @@ describe('Sidebar — yukseklik ve kaydirma', () => {
     expect(screen.getByRole('link', { name: 'Ana Sayfa' })).not.toHaveAttribute('title');
   });
 
-  it('bloklar arasinda itme yok — kullanici menusu grup listesinin hemen altinda', async () => {
+  it('nav bloklarinda esneme yok — yalnizca kullanici karti dibe sabit', async () => {
     renderApp();
     const aside = await waitForSidebar();
 
     /*
-      Kabin **dogrudan** cocuklarinda esneme/itme yok: `flex-1` bir blogu
-      buyutur, `mt-auto` digerini dibe yapistirir. Ikisi de az grubu olan
-      kullanicida sidebar'in ortasinda kocaman bir bosluk birakirdi.
-      (Satir icindeki `flex-1`ler serbest — onlar metni tasiyor.)
+      `flex-1` HICBIR blokta olmamali: onceki surumde grup listesine
+      verilince az grubu olan kullanicida sidebar'in ortasinda kocaman bir
+      bosluk birakiyordu (Satir icindeki `flex-1`ler serbest — onlar metni
+      tasiyor, burada kontrol edilen yalnizca `aside`in DOGRUDAN cocuklari).
+      `mt-auto` ise tam tersine yalnizca **son** blokta (kullanici karti)
+      bekleniyor — kart her zaman dipte kalsin diye kasitli.
     */
-    Array.from(aside.children).forEach((block) => {
+    const blocks = Array.from(aside.children);
+    const userCardBlock = blocks[blocks.length - 1];
+
+    blocks.slice(0, -1).forEach((block) => {
       expect(block.className).not.toMatch(/flex-1|mt-auto/);
     });
+
+    expect(userCardBlock.className).toMatch(/mt-auto/);
+    expect(userCardBlock.className).toMatch(/sticky/);
+    expect(userCardBlock.className).toMatch(/bottom-0/);
 
     const groupNav = screen.getByRole('navigation', { name: 'Grup kisayollari' });
     const trigger = screen.getByRole('button', { name: 'Hesap menusu' });
 
-    // Menu, grup listesinden **sonra** ve onun kardesi: araya yayilan bir
-    // bosluk ogesi girmiyor.
+    // Kart, grup listesinden **sonra** ve onun kardesi: araya yayilan bir
+    // bosluk ogesi girmiyor — dibe sabitleme `mt-auto`/`sticky` ile, DOM
+    // sirasi hala dogal akista.
     expect(groupNav.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     );

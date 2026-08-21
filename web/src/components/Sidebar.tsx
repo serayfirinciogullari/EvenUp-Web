@@ -75,10 +75,15 @@ import type { LucideIcon } from 'lucide-react';
  * `title` ile veriliyor (asagida) ve `clip` de ayni hatanin tekrarina karsi
  * duruyor. `hidden` degil `clip`: `clip` programatik kaydirmayi da kapatir.
  *
- * Bloklar arasinda `mt-auto` gibi bir itme de yok: kullanici blogu grup
- * listesinin hemen altinda, icerigin dogal devami olarak duruyor. Onceki
- * surumde `flex-1` + `mt-auto` ikilisi az grubu olan kullanicida sidebar'in
- * ortasinda kocaman bir bosluk birakiyordu.
+ * KULLANICI KARTI HER ZAMAN EN ALTTA
+ * ------------------------------------
+ * Kart konteyneri `mt-auto` + `sticky bottom-0` ikilisini tasiyor (`flex-1`
+ * DEGIL — onceki surumde `flex-1` grup listesine verilince az grubu olan
+ * kullanicida sidebar'in ortasinda kocaman bir bosluk birakiyordu). `mt-auto`
+ * icerik kisaysa karti asagi iter (bosluk nav ile kart arasinda kalir, nav
+ * kendi dogal yuksekliginde durur); `sticky bottom-0` ise icerik tasip
+ * `aside` kaydiginda karti gorunur alanin dibinde tutar. Ikisi birlikte: kart
+ * ne olursa olsun ekranin en altinda, kaydirma sirasinda da kaybolmuyor.
  *
  * VERI NEREDEN
  * ------------
@@ -281,10 +286,17 @@ const Sidebar = ({ collapsed, onToggleCollapsed, mobileOpen, onNavigate }: Sideb
       </nav>
 
       {/*
-        Kullanici menusu listenin **hemen altinda**, sidebar'in dibine yapisik
-        degil. `pb-4` yalnizca son ogenin kenara degmemesi icin.
+        Kullanici karti sidebar'in dibine sabit (bkz. yukaridaki "KULLANICI
+        KARTI HER ZAMAN EN ALTTA"). `border-t` yalnizca icerik altindan
+        kaydiginda gorunur bir ayrac birakmak icin — `bg-cream` olmadan
+        kayan satirlar seffaf zeminin ardindan gorunurdu.
       */}
-      <div className={cn('mt-4 pb-4', compact ? 'px-2' : 'px-3')}>
+      <div
+        className={cn(
+          'mt-auto sticky bottom-0 z-10 border-t border-ink/10 bg-cream pt-4 pb-4',
+          compact ? 'px-2' : 'px-3'
+        )}
+      >
         <UserMenu compact={compact} onNavigate={onNavigate} />
       </div>
     </aside>
@@ -376,9 +388,18 @@ const UserMenu = ({ compact, onNavigate }: { compact: boolean; onNavigate: () =>
         )}
       </DropdownMenuTrigger>
 
-      {/* `side="top"`: menu sidebar'in altina degil ustune aciliyor — tetikleyici
-          zaten sayfanin alt yarisinda olabiliyor ve asagida yer kalmayabilir. */}
-      <DropdownMenuContent align="start" side="top" className="w-56">
+      {/*
+        `side="right"`: kart artik her zaman sidebar'in EN dibinde (yukaridaki
+        "KULLANICI KARTI HER ZAMAN EN ALTTA"), yani altta hicbir zaman yer yok
+        — `side="bottom"` Radix'in kendi carpisma-onleme mantigi yuzunden zaten
+        otomatik olarak yukari donerdi, tam da onlemek istedigimiz "nav
+        ogelerinin ustune biniyor" durumunu. Saga acmak sidebar'in disina,
+        ana icerik alanina tasiyor — nav'a hic dokunmuyor.
+        `align="end"`: menunun ALT kenari tetikleyicinin alt kenariyla
+        hizalanir, yani menu tetikleyiciden **yukari** dogru acilir — ekranda
+        gercekten bos olan taraf orasi (tetikleyicinin altinda degil).
+      */}
+      <DropdownMenuContent align="end" side="right" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <p className="truncate text-sm font-medium text-ink">{user?.name}</p>
           <p className="truncate text-xs text-ink-muted">{secondLine}</p>
