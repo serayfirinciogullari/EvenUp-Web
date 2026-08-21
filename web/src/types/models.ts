@@ -27,6 +27,18 @@ export type ExpenseSplitType = 'equal' | 'exact';
 
 export type SettlementStatus = 'pending' | 'confirmed' | 'rejected';
 
+/**
+ * `GET`/`PUT /users/me/preferences` cevabi (3.18). `User`in disinda:
+ * `User` hem kendi profilinde hem admin listesinde donuyor, bu tercihler
+ * yalnizca sahibini ilgilendiriyor. Yalnizca bir TERCIH kaydi — gercek
+ * e-posta/push gonderimi bu degeri henuz okumuyor (Hafta 4, ayri is).
+ */
+export interface NotificationPrefs {
+  email_enabled: boolean;
+  push_enabled: boolean;
+  weekly_digest_enabled: boolean;
+}
+
 /** `PublicUser` — `password_hash` backend'de zaten hicbir cevaba girmez. */
 export interface User {
   id: string;

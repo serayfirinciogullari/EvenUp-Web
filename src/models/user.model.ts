@@ -1,6 +1,6 @@
 import db from '../db/connection';
 
-import type { UserInsert, UserRow } from '../types/models';
+import type { NotificationPrefs, UserInsert, UserRow } from '../types/models';
 
 /**
  * users tablosu icin veri erisim katmani. Is mantigi yok, sadece sorgu.
@@ -164,6 +164,35 @@ const cancelDeletion = async (userId: string): Promise<PublicUser | undefined> =
   return updated as PublicUser | undefined;
 };
 
+/**
+ * GET /users/me/preferences — bildirim tercihleri (migration 20, bkz.
+ * docs/decisions/3.18-tercihler-sayfasi.md). `PublicUser`'in disinda tutuluyor:
+ * `PUBLIC_USER_COLUMNS` hem kendi profilinde hem admin listesinde
+ * (`listPublic`) kullaniliyor, tercihler admin'i ilgilendirmiyor —
+ * `activity_seen_at` icin gecerli olan ayrim burada da gecerli.
+ */
+const findNotificationPrefs = async (userId: string): Promise<NotificationPrefs | undefined> => {
+  const row = await db('users').select('notification_prefs').where({ id: userId }).first();
+
+  return row?.notification_prefs;
+};
+
+/**
+ * PUT /users/me/preferences yazma ucu. Govde dogrulamasi servis katmaninda
+ * (`auth.service.ts`) yapiliyor; bu fonksiyon govdeyi oldugu gibi yaziyor.
+ */
+const updateNotificationPrefs = async (
+  userId: string,
+  prefs: NotificationPrefs
+): Promise<NotificationPrefs | undefined> => {
+  const [updated] = await db('users')
+    .where({ id: userId })
+    .update({ notification_prefs: prefs })
+    .returning(['notification_prefs']);
+
+  return updated?.notification_prefs;
+};
+
 /** `anonymizeExpiredDeletions` sonrasi "Silinmis Kullanici" adi — testler ve
  *  cron gorevi ayni sabiti kullansin diye disariya aciliyor. */
 export const ANONYMIZED_USER_NAME = 'Silinmis Kullanici';
@@ -243,6 +272,8 @@ export default {
   requestDeletion,
   cancelDeletion,
   anonymizeExpiredDeletions,
+  findNotificationPrefs,
+  updateNotificationPrefs,
   findActivitySeenAt,
   markActivitySeen,
 };

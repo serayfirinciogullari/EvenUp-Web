@@ -8,7 +8,14 @@ import app from '../src/app';
 import userModel from '../src/models/user.model';
 
 import type { PublicUser } from '../src/models/user.model';
-import type { UserRole, UserRow } from '../src/types/models';
+import type { NotificationPrefs, UserRole, UserRow } from '../src/types/models';
+
+/** Migration 20'deki DB varsayilaniyla ayni. */
+const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  email_enabled: true,
+  push_enabled: true,
+  weekly_digest_enabled: false,
+};
 
 /**
  * `/users/me` uctan uca testleri (2.6 — Hafta 1'e geriye donuk eklenen uclar).
@@ -31,6 +38,8 @@ jest.mock('../src/models/user.model', () => ({
     updatePasswordHash: jest.fn(),
     markActivitySeen: jest.fn(),
     requestDeletion: jest.fn(),
+    findNotificationPrefs: jest.fn(),
+    updateNotificationPrefs: jest.fn(),
   },
 }));
 
@@ -67,6 +76,7 @@ const insertUser = async (input: {
     avatar: null,
     handle: null,
     deleted_at: null,
+    notification_prefs: { ...DEFAULT_NOTIFICATION_PREFS },
   };
 
   usersById.set(row.id, row);
@@ -151,6 +161,23 @@ beforeEach(() => {
     usersById.set(userId, { ...row, deleted_at: new Date(), is_active: false });
     return true;
   });
+
+  mockedUserModel.findNotificationPrefs.mockImplementation(async (userId: string) =>
+    usersById.get(userId)?.notification_prefs
+  );
+
+  mockedUserModel.updateNotificationPrefs.mockImplementation(
+    async (userId: string, prefs: NotificationPrefs) => {
+      const row = usersById.get(userId);
+
+      if (!row) {
+        return undefined;
+      }
+
+      usersById.set(userId, { ...row, notification_prefs: prefs });
+      return prefs;
+    }
+  );
 });
 
 /* ========================================================= PUT /users/me */
@@ -563,5 +590,112 @@ describe('POST /users/me/delete-request', () => {
 
     expect(response.status).toBe(401);
     expect(mockedUserModel.requestDeletion).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /users/me/preferences', () => {
+  it('DB varsayilanini doner', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await request(app)
+      .get('/users/me/preferences')
+      .set('Authorization', `Bearer ${tokenFor(user)}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.preferences).toEqual(DEFAULT_NOTIFICATION_PREFS);
+  });
+
+  it('token olmadan 401 doner', async () => {
+    const response = await request(app).get('/users/me/preferences');
+
+    expect(response.status).toBe(401);
+  });
+});
+
+describe('PUT /users/me/preferences', () => {
+  it('gecerli govdeyi kaydeder ve geri doner', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const next = { email_enabled: false, push_enabled: true, weekly_digest_enabled: true };
+
+    const response = await request(app)
+      .put('/users/me/preferences')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send(next);
+
+    expect(response.status).toBe(200);
+    expect(response.body.preferences).toEqual(next);
+
+    const stored = usersById.get(user.id) as UserRow;
+    expect(stored.notification_prefs).toEqual(next);
+  });
+
+  it('degisiklik gercekten saklanir: sonraki GET ayni degeri doner', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+    const token = tokenFor(user);
+
+    await request(app)
+      .put('/users/me/preferences')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ email_enabled: false, push_enabled: false, weekly_digest_enabled: true });
+
+    const response = await request(app)
+      .get('/users/me/preferences')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.body.preferences).toEqual({
+      email_enabled: false,
+      push_enabled: false,
+      weekly_digest_enabled: true,
+    });
+  });
+
+  it('boolean olmayan bir alan 400 doner, hicbir sey degismez', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await request(app)
+      .put('/users/me/preferences')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ email_enabled: 'evet', push_enabled: true, weekly_digest_enabled: false });
+
+    expect(response.status).toBe(400);
+    expect(mockedUserModel.updateNotificationPrefs).not.toHaveBeenCalled();
+    expect((usersById.get(user.id) as UserRow).notification_prefs).toEqual(
+      DEFAULT_NOTIFICATION_PREFS
+    );
+  });
+
+  it('eksik alanda 400 doner', async () => {
+    const user = await insertUser({ password: CURRENT_PASSWORD });
+
+    const response = await request(app)
+      .put('/users/me/preferences')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .send({ email_enabled: true, push_enabled: true });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('token olmadan 401 doner', async () => {
+    const response = await request(app)
+      .put('/users/me/preferences')
+      .send({ email_enabled: true, push_enabled: true, weekly_digest_enabled: false });
+
+    expect(response.status).toBe(401);
+    expect(mockedUserModel.updateNotificationPrefs).not.toHaveBeenCalled();
+  });
+
+  it('bir kullanicinin tokeni baskasinin tercihini degistiremez', async () => {
+    const actor = await insertUser({ password: CURRENT_PASSWORD });
+    const other = await insertUser({ password: 'DigerSifre123' });
+
+    await request(app)
+      .put('/users/me/preferences')
+      .set('Authorization', `Bearer ${tokenFor(actor)}`)
+      .send({ email_enabled: false, push_enabled: false, weekly_digest_enabled: false });
+
+    expect((usersById.get(other.id) as UserRow).notification_prefs).toEqual(
+      DEFAULT_NOTIFICATION_PREFS
+    );
   });
 });

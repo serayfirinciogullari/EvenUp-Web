@@ -45,6 +45,11 @@ router.post('/me/activity-seen', asyncHandler(userController.markActivitySeen));
 // Kisiler sayfasi: kullanicinin ortak grubu oldugu herkes + toplam bakiye.
 router.get('/me/contacts', asyncHandler(userController.getContacts));
 
+// Ayarlar > Tercihler > Bildirimler (3.18). Sadece tercih kaydi — gercek
+// gonderim burada yok (bkz. docs/decisions/3.18-tercihler-sayfasi.md).
+router.get('/me/preferences', asyncHandler(userController.getPreferences));
+router.put('/me/preferences', asyncHandler(userController.updatePreferences));
+
 router.put('/me', asyncHandler(userController.updateMe));
 
 // Ayri uc nokta: sifre degisikligi mevcut sifreyi de ister ve profil

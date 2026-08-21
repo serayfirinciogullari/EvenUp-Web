@@ -1,7 +1,7 @@
 import api from './client';
 
 import type { AuthResult } from '../types/api';
-import type { User } from '../types/models';
+import type { NotificationPrefs, User } from '../types/models';
 
 /**
  * Kullanicinin **kendi** hesabina dokunan uc noktalar (2.6).
@@ -71,4 +71,30 @@ export const cancelDeletion = async (input: CancelDeletionInput): Promise<AuthRe
   return data;
 };
 
-export default { updateProfile, changePassword, requestDeletion, cancelDeletion };
+/**
+ * GET/PUT /users/me/preferences — Ayarlar > Tercihler > Bildirimler
+ * (3.18). Yalnizca bir TERCIH: gercek e-posta/push gonderimi bu degeri
+ * henuz okumuyor (Hafta 4, ayri is).
+ */
+export const getPreferences = async (): Promise<NotificationPrefs> => {
+  const { data } = await api.get<{ preferences: NotificationPrefs }>('/users/me/preferences');
+  return data.preferences;
+};
+
+/** `input` **tam durum** tasir (PUT'un anlami budur), tek alanlik yama degil. */
+export const updatePreferences = async (input: NotificationPrefs): Promise<NotificationPrefs> => {
+  const { data } = await api.put<{ preferences: NotificationPrefs }>(
+    '/users/me/preferences',
+    input
+  );
+  return data.preferences;
+};
+
+export default {
+  updateProfile,
+  changePassword,
+  requestDeletion,
+  cancelDeletion,
+  getPreferences,
+  updatePreferences,
+};

@@ -97,6 +97,30 @@ const getContacts = async (req: Request, res: Response): Promise<void> => {
 };
 
 /**
+ * GET /users/me/preferences -> 200 { preferences }  (requireAuth)
+ */
+const getPreferences = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    throw ApiError.unauthorized('Kimlik dogrulamasi gerekli');
+  }
+
+  const preferences = await authService.getNotificationPrefs(req.user.id);
+  res.status(200).json({ preferences });
+};
+
+/**
+ * PUT /users/me/preferences -> 200 { preferences }  (requireAuth)
+ */
+const updatePreferences = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    throw ApiError.unauthorized('Kimlik dogrulamasi gerekli');
+  }
+
+  const preferences = await authService.updateNotificationPrefs(req.user.id, req.body);
+  res.status(200).json({ preferences });
+};
+
+/**
  * POST /users/me/delete-request -> 200 { message }  (requireAuth)
  *
  * Gerekce ve "sonra ne olur" akisi: docs/decisions/3.17-hesap-silme.md.
@@ -130,6 +154,8 @@ export default {
   getHomeSummary,
   markActivitySeen,
   getContacts,
+  getPreferences,
+  updatePreferences,
   requestDeletion,
   cancelDeletion,
 };

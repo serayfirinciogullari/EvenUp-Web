@@ -39,6 +39,20 @@ export type GroupMessageType =
 
 /* ------------------------------------------------------------------ users */
 
+/**
+ * Ayarlar > Tercihler > Bildirimler (migration 20, bkz.
+ * docs/decisions/3.18-tercihler-sayfasi.md). Yalnizca bir TERCIH kaydi —
+ * gercek e-posta/push gonderimi bu degeri henuz okumuyor (Hafta 4, ayri is).
+ */
+export interface NotificationPrefs {
+  /** "Yeni harcama ve odeme istegi" e-postasi. */
+  email_enabled: boolean;
+  /** "Onay bekleyen odemeler" anlik bildirimi. */
+  push_enabled: boolean;
+  /** "Pazar aksami tek e-posta" haftalik ozet. */
+  weekly_digest_enabled: boolean;
+}
+
 export interface UserRow {
   id: string;
   email: string;
@@ -58,6 +72,7 @@ export interface UserRow {
   /** Kullanicinin kendi baslattigi silme sureci — dolu = 30 gunluk geri alma
    *  penceresi baslamis (migration 19, bkz. docs/decisions/3.17-hesap-silme.md). */
   deleted_at: Date | null;
+  notification_prefs: NotificationPrefs;
 }
 
 export interface UserInsert {
@@ -73,6 +88,7 @@ export interface UserInsert {
   avatar?: string | null;
   handle?: string | null;
   deleted_at?: Date | null;
+  notification_prefs?: NotificationPrefs;
 }
 
 export type UserUpdate = Partial<Omit<UserInsert, 'id'>>;

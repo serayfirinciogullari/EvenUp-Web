@@ -36,6 +36,8 @@ vi.mock('../api/users', () => ({
     changePassword: vi.fn(),
     requestDeletion: vi.fn(),
     cancelDeletion: vi.fn(),
+    getPreferences: vi.fn(),
+    updatePreferences: vi.fn(),
   },
 }));
 
@@ -156,6 +158,11 @@ beforeEach(() => {
 
   mockedUsers.updateProfile.mockResolvedValue({ ...deniz, name: 'Deniz Yilmaz' });
   mockedUsers.changePassword.mockResolvedValue(undefined);
+  mockedUsers.getPreferences.mockResolvedValue({
+    email_enabled: true,
+    push_enabled: true,
+    weekly_digest_enabled: false,
+  });
 });
 
 /* ============================================================== sekmeler */
@@ -740,15 +747,112 @@ describe('Ayarlar > tercihler > tema', () => {
   });
 });
 
-describe('Ayarlar > tercihler > yakinda gelecek', () => {
-  it('dil, para birimi ve bildirimler icin bir yer tutucu gosterilir', async () => {
+describe('Ayarlar > tercihler > dil ve para birimi', () => {
+  it('Turkce ve Turk lirasi secili, alternatifler tiklanamaz etiketli gorunur', async () => {
     renderSettings('/settings/preferences');
     await waitForShell();
 
-    expect(
-      screen.getByRole('heading', { name: 'Dil, para birimi ve bildirimler' })
-    ).toBeInTheDocument();
-    expect(screen.getByText('Yakinda gelecek.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dil' })).toBeInTheDocument();
+    expect(screen.getByText('Turkce')).toBeInTheDocument();
+    expect(screen.getByText('English')).toBeInTheDocument();
+    expect(screen.getByText('ceviri hazir degil')).toBeInTheDocument();
+
+    expect(screen.getByRole('heading', { name: 'Para birimi' })).toBeInTheDocument();
+    expect(screen.getByText('Turk lirasi')).toBeInTheDocument();
+    expect(screen.getByText('₺')).toBeInTheDocument();
+    expect(screen.getByText('Dolar / Euro')).toBeInTheDocument();
+    expect(screen.getByText('desteklenmiyor')).toBeInTheDocument();
+  });
+
+  it('devre disi secenekler icin hicbir tiklanabilir kontrol yok', async () => {
+    renderSettings('/settings/preferences');
+    await waitForShell();
+
+    expect(screen.queryByRole('button', { name: /English/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Dolar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /English/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('Ayarlar > tercihler > bildirimler', () => {
+  const notificationsSection = () => section('Bildirimler');
+
+  it('kayitli tercihleri sunucudan okuyup toggle olarak gosterir', async () => {
+    mockedUsers.getPreferences.mockResolvedValue({
+      email_enabled: false,
+      push_enabled: true,
+      weekly_digest_enabled: true,
+    });
+
+    renderSettings('/settings/preferences');
+    await waitForShell();
+
+    const scope = notificationsSection();
+    expect(await within(scope).findByLabelText('E-posta bildirimi')).not.toBeChecked();
+    expect(within(scope).getByLabelText('Anlik bildirim')).toBeChecked();
+    expect(within(scope).getByLabelText('Haftalik ozet')).toBeChecked();
+  });
+
+  it('toggle tiklaninca guncel govdeyi PUT eder ve sunucu cevabini gosterir', async () => {
+    mockedUsers.updatePreferences.mockResolvedValue({
+      email_enabled: false,
+      push_enabled: true,
+      weekly_digest_enabled: false,
+    });
+
+    renderSettings('/settings/preferences');
+    await waitForShell();
+
+    const scope = notificationsSection();
+    const emailToggle = await within(scope).findByLabelText('E-posta bildirimi');
+    expect(emailToggle).toBeChecked();
+
+    fireEvent.click(emailToggle);
+
+    await waitFor(() =>
+      expect(mockedUsers.updatePreferences).toHaveBeenCalledWith({
+        email_enabled: false,
+        push_enabled: true,
+        weekly_digest_enabled: false,
+      })
+    );
+    await waitFor(() => expect(within(scope).getByLabelText('E-posta bildirimi')).not.toBeChecked());
+  });
+
+  it('hata durumunda toggle eski haline doner ve hata gosterilir', async () => {
+    mockedUsers.updatePreferences.mockRejectedValue(apiError(500, 'Tercih kaydedilemedi'));
+
+    renderSettings('/settings/preferences');
+    await waitForShell();
+
+    const scope = notificationsSection();
+    const pushToggle = await within(scope).findByLabelText('Anlik bildirim');
+    expect(pushToggle).toBeChecked();
+
+    fireEvent.click(pushToggle);
+
+    expect(await within(scope).findByRole('alert')).toHaveTextContent('Tercih kaydedilemedi');
+    // Sunucu reddettigi icin ekrandaki durum degismemis olmali (iyimser degil).
+    expect(within(scope).getByLabelText('Anlik bildirim')).toBeChecked();
+  });
+
+  it('okuma hatasinda tekrar dene ile yeniden denenir', async () => {
+    mockedUsers.getPreferences.mockRejectedValueOnce(apiError(500, 'Bildirim tercihleri alinamadi'));
+    mockedUsers.getPreferences.mockResolvedValueOnce({
+      email_enabled: true,
+      push_enabled: true,
+      weekly_digest_enabled: false,
+    });
+
+    renderSettings('/settings/preferences');
+    await waitForShell();
+
+    const scope = notificationsSection();
+    expect(await within(scope).findByText('Bildirim tercihleri alinamadi')).toBeInTheDocument();
+
+    fireEvent.click(within(scope).getByRole('button', { name: 'Tekrar dene' }));
+
+    expect(await within(scope).findByLabelText('E-posta bildirimi')).toBeInTheDocument();
   });
 });
 

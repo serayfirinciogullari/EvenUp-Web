@@ -8,7 +8,14 @@ import app from '../src/app';
 import userModel from '../src/models/user.model';
 
 import type { PublicUser } from '../src/models/user.model';
-import type { UserInsert, UserRole, UserRow } from '../src/types/models';
+import type { NotificationPrefs, UserInsert, UserRole, UserRow } from '../src/types/models';
+
+/** Migration 20'deki DB varsayilaniyla ayni. */
+const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  email_enabled: true,
+  push_enabled: true,
+  weekly_digest_enabled: false,
+};
 
 /**
  * Auth uctan uca testleri.
@@ -65,6 +72,7 @@ const insertUser = async (input: {
     avatar: null,
     handle: null,
     deleted_at: input.deleted_at ?? null,
+    notification_prefs: { ...DEFAULT_NOTIFICATION_PREFS },
   };
 
   usersByEmail.set(row.email, row);
@@ -102,6 +110,7 @@ beforeEach(() => {
       avatar: data.avatar ?? null,
       handle: data.handle ?? null,
       deleted_at: data.deleted_at ?? null,
+      notification_prefs: data.notification_prefs ?? { ...DEFAULT_NOTIFICATION_PREFS },
     };
 
     usersByEmail.set(row.email, row);

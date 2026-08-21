@@ -7,6 +7,7 @@ import ApiError from '../utils/ApiError';
 
 import type { AuthUser, JwtPayload } from '../types/auth';
 import type { PublicUser } from '../models/user.model';
+import type { NotificationPrefs } from '../types/models';
 import type { SignOptions } from 'jsonwebtoken';
 
 /**
@@ -74,6 +75,14 @@ export interface ChangePasswordInput {
   currentPassword: string;
   newPassword: string;
 }
+
+/**
+ * PUT /users/me/preferences govdesi (3.18). `UpdateProfileInput`teki gibi
+ * **tam durum**: istemci ucunun tamamini gonderir, kismi yama degil — tek bir
+ * anahtari degistirmek isteyen bir tiklama bile diger ikisini oldugu gibi
+ * geri yollar (bkz. web/src/components/PreferencesTab.tsx).
+ */
+export type NotificationPrefsInput = NotificationPrefs;
 
 /** Secret'i koda gomme yasagi: yoksa uygulama token uretmez, 500 doner. */
 const getJwtSecret = (): string => {
@@ -216,6 +225,38 @@ const validateChangePasswordInput = (input: Partial<ChangePasswordInput>): Chang
   }
 
   return { currentPassword, newPassword };
+};
+
+/**
+ * Govdedeki uc alanin da **kesinlikle boolean** oldugunu dogruluyor.
+ * `Boolean(input.x)` gibi zorlama bilerek yok: `{"email_enabled":"evet"}`
+ * gonderen bir istemci sessizce `true`ya donusmesindense acik bir 400 almali —
+ * jsonb kolonuna yazilacak sekil, dogrulamadan gecen sekille birebir ayni
+ * olmali.
+ */
+const validateNotificationPrefsInput = (
+  input: Partial<NotificationPrefsInput>
+): NotificationPrefsInput => {
+  const errors: Record<string, string> = {};
+
+  const checkBoolean = (key: keyof NotificationPrefsInput, label: string): boolean => {
+    const value = input[key];
+    if (typeof value !== 'boolean') {
+      errors[key] = `${label} true/false olmali`;
+      return false;
+    }
+    return value;
+  };
+
+  const email_enabled = checkBoolean('email_enabled', 'E-posta bildirimi');
+  const push_enabled = checkBoolean('push_enabled', 'Anlik bildirim');
+  const weekly_digest_enabled = checkBoolean('weekly_digest_enabled', 'Haftalik ozet');
+
+  if (Object.keys(errors).length > 0) {
+    throw ApiError.badRequest('Gecersiz bildirim tercihleri', errors);
+  }
+
+  return { email_enabled, push_enabled, weekly_digest_enabled };
 };
 
 const validateLoginInput = (input: Partial<LoginInput>): LoginInput => {
@@ -489,6 +530,40 @@ const changePassword = async (
 };
 
 /**
+ * GET /users/me/preferences (3.18). `changePassword` ile ayni gerekce:
+ * `userId` token'dan geliyor, govdede/adreste bir hedef ID yok.
+ */
+const getNotificationPrefs = async (userId: string): Promise<NotificationPrefs> => {
+  const prefs = await userModel.findNotificationPrefs(userId);
+
+  // Token gecerli ama kullanici silinmis olabilir (getProfile ile ayni durum).
+  if (!prefs) {
+    throw ApiError.unauthorized('Kullanici bulunamadi');
+  }
+
+  return prefs;
+};
+
+/**
+ * PUT /users/me/preferences (3.18). Yalnizca bir TERCIH kaydediyor — gercek
+ * e-posta/push gonderimi bu degeri henuz okumuyor (Hafta 4, ayri is).
+ */
+const updateNotificationPrefs = async (
+  userId: string,
+  input: Partial<NotificationPrefsInput>
+): Promise<NotificationPrefs> => {
+  const prefs = validateNotificationPrefsInput(input);
+
+  const updated = await userModel.updateNotificationPrefs(userId, prefs);
+
+  if (!updated) {
+    throw ApiError.unauthorized('Kullanici bulunamadi');
+  }
+
+  return updated;
+};
+
+/**
  * POST /users/me/activity-seen — kullanicinin Aktivite akisini en son ne
  * zaman gordugunu simdiki zamana gunceller. Govde yok, govdeye de gerek yok:
  * "simdi" tek anlamli deger. Gerekce: docs/decisions/aktivite-okunma-sayaci.md.
@@ -578,6 +653,8 @@ export default {
   getProfile,
   updateProfile,
   changePassword,
+  getNotificationPrefs,
+  updateNotificationPrefs,
   markActivitySeen,
   requestDeletion,
   cancelDeletion,
