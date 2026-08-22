@@ -290,6 +290,68 @@ const sumPaidByUserBetween = async (userId: string, from: Date, to: Date): Promi
   return row?.total ?? '0';
 };
 
+/**
+ * Grubun bu tarih araligindaki toplam harcamasi — "Bu ay" ozet kartinin
+ * "toplam harcama" satiri (bkz. expense.service.ts -> getMonthlySummary).
+ * `sumPaidByUserBetween` ile ayni `[from, to)` kurali, grup filtresi eklenmis.
+ */
+const sumGroupAmountBetween = async (groupId: string, from: Date, to: Date): Promise<string> => {
+  const [row] = (await aliveExpenses()
+    .where('expenses.group_id', groupId)
+    .where('expenses.created_at', '>=', from)
+    .where('expenses.created_at', '<', to)
+    .sum('expenses.amount as total')) as unknown as { total: string | null }[];
+
+  return row?.total ?? '0';
+};
+
+/**
+ * Kullanicinin bu grupta, bu tarih araliginda **odedigi** toplam —
+ * `sumPaidByUserBetween`in grup filtreli hali.
+ */
+const sumGroupPaidByUserBetween = async (
+  groupId: string,
+  userId: string,
+  from: Date,
+  to: Date
+): Promise<string> => {
+  const [row] = (await aliveExpenses()
+    .where('expenses.group_id', groupId)
+    .where('expenses.paid_by', userId)
+    .where('expenses.created_at', '>=', from)
+    .where('expenses.created_at', '<', to)
+    .sum('expenses.amount as total')) as unknown as { total: string | null }[];
+
+  return row?.total ?? '0';
+};
+
+/**
+ * Kullanicinin bu grupta, bu tarih araliginda **payina dusen** toplam.
+ *
+ * `expense_shares`in kendi tarihi yok (bkz. summary.service.ts'teki ayni notun
+ * gerekcesi) — tarih filtresi `expenses` uzerinden uygulaniyor, `expense_shares`
+ * yalnizca join'leniyor.
+ */
+const sumGroupShareForUserBetween = async (
+  groupId: string,
+  userId: string,
+  from: Date,
+  to: Date
+): Promise<string> => {
+  const [row] = (await db('expense_shares')
+    .join('expenses', 'expenses.id', 'expense_shares.expense_id')
+    .join('groups', 'groups.id', 'expenses.group_id')
+    .whereNull('expenses.deleted_at')
+    .whereNull('groups.deleted_at')
+    .where('expenses.group_id', groupId)
+    .where('expense_shares.user_id', userId)
+    .where('expenses.created_at', '>=', from)
+    .where('expenses.created_at', '<', to)
+    .sum('expense_shares.share_amount as total')) as unknown as { total: string | null }[];
+
+  return row?.total ?? '0';
+};
+
 /* ------------------------------------------------------------------ yazma */
 
 /**
@@ -428,6 +490,9 @@ export default {
   listForNetting,
   listForNettingByGroups,
   sumPaidByUserBetween,
+  sumGroupAmountBetween,
+  sumGroupPaidByUserBetween,
+  sumGroupShareForUserBetween,
   create,
   update,
   softDelete,

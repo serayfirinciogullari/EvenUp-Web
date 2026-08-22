@@ -272,7 +272,7 @@ describe('KRITIK akis: harcama -> bakiye -> odeme -> onay -> sifir', () => {
     expect(await screen.findByText("Sen Ece Demir'e 60,00 ₺ borclusun")).toBeInTheDocument();
 
     /* ------------------------------------------------ 4. arayuzden "Odedim" */
-    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Odedim olarak isaretle' }));
 
     const settleModal = await screen.findByRole('dialog');
     expect(within(settleModal).getByLabelText('Tutar (₺)')).toHaveValue('60.00');

@@ -44,6 +44,10 @@ router.put('/:id/members/:userId/nickname', asyncHandler(groupController.setMemb
 router.post('/:id/expenses', asyncHandler(expenseController.create));
 router.get('/:id/expenses', asyncHandler(expenseController.listByGroup));
 
+// Grup detay sayfasindaki "Bu ay" ozet karti (bkz. expense.service.ts ->
+// getMonthlySummary). `HomeSummary.monthlySpend`ten AYRI: bu tek bir grup.
+router.get('/:id/monthly-summary', asyncHandler(expenseController.monthlySummary));
+
 // Sohbet feed'i: dogal dil harcama ekleme ve birlesik mesaj akisi. Grup
 // baglaminda anlamli oldugu icin harcamalarla ayni yerde (bkz. 3.5 sohbet karari).
 router.post('/:id/messages', asyncHandler(messageController.create));

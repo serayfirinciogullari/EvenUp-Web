@@ -78,8 +78,11 @@ export interface HomeSummary {
  * ucu parametreli hale getirir ve ozet degeri **onbelleklenemez** kilardi.
  * Gercekten gerekirse dogru cozum, kullanicinin saat dilimini profilde tutup
  * araligi ona gore uretmek — o zaman tek yerde, burada degisir.
+ *
+ * `expense.service.ts`teki grup-bazli "Bu ay" ozeti (`getMonthlySummary`) de
+ * ayni araligi kullaniyor — "ay" tanimi tek yerde kalsin diye disariya aciliyor.
  */
-const currentMonthRange = (now: Date = new Date()): { from: Date; to: Date } => ({
+export const currentMonthRange = (now: Date = new Date()): { from: Date; to: Date } => ({
   from: new Date(now.getFullYear(), now.getMonth(), 1),
   // Ay 11 iken 12 vermek Date icinde dogru sekilde sonraki yilin Ocak'ina tasar.
   to: new Date(now.getFullYear(), now.getMonth() + 1, 1),

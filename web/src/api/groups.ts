@@ -4,6 +4,7 @@ import type {
   BalanceResult,
   Group,
   GroupDetail,
+  GroupMonthlySummary,
   GroupSummary,
   InviteResult,
   JoinResult,
@@ -90,6 +91,17 @@ export const getGroupBalances = async (groupId: string): Promise<BalanceResult> 
 };
 
 /**
+ * `GET /groups/:id/monthly-summary` — bu grubun "Bu ay" ozeti. `HomeSummary`
+ * ile karistirilmamali: bu tek bir grup, o tum gruplarin toplami.
+ */
+export const getGroupMonthlySummary = async (groupId: string): Promise<GroupMonthlySummary> => {
+  const { data } = await api.get<{ summary: GroupMonthlySummary }>(
+    `/groups/${groupId}/monthly-summary`
+  );
+  return data.summary;
+};
+
+/**
  * `PUT /groups/:id/members/:userId/nickname` — takma isim atar ya da kaldirir.
  *
  * `null` (ya da bos metin) **kaldirir**; ayri bir silme cagrisi yok. Arayuzde
@@ -152,6 +164,7 @@ export default {
   createInvite,
   joinGroup,
   getGroupBalances,
+  getGroupMonthlySummary,
   setMemberNickname,
   updateGroup,
   deleteGroup,

@@ -1,9 +1,8 @@
 import { Receipt } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatExpenseDate, formatFullDate } from '../utils/datetime';
+import { dayKeyOf, formatDayGroup, formatFullDate } from '../utils/datetime';
 import { formatCents, parseAmountToCents } from '../utils/money';
 
 import type { ExpenseFeed } from '../hooks/useExpenseFeed';
@@ -18,6 +17,14 @@ import type { Expense, ExpenseSplitType } from '../types/models';
  *
  * Dort durum yine ayri ayri: yukleniyor / hata / bos / dolu. 2.3'teki ile ayni
  * gerekce — "harcama yok" ile "harcamalar alinamadi" ayni ekran olamaz.
+ *
+ * GUNE GORE GRUPLANMIS LISTE
+ * --------------------------
+ * `groupByDay` Aktivite akisindaki `groupByDay` ile ayni ilkeyi tasiyor
+ * (`dayKeyOf`/`formatDayGroup`, `utils/datetime.ts`) ama ayri bir fonksiyon:
+ * burada ayrica **gun toplami** birikiyor, aktivite olaylarinin toplanacak bir
+ * tutari yok. Tarih artik satirda degil, yalnizca grup basliginda yaziyor —
+ * ikisi ayni bilgiyi tekrarlamasin diye (bkz. docs/decisions/3.19-grup-detay-ust-blok.md).
  */
 
 /*
@@ -27,8 +34,64 @@ import type { Expense, ExpenseSplitType } from '../types/models';
   kalici bir ozelligi degil (docs/decisions/bolusum-basitlestirme.md).
 */
 const SPLIT_LABELS: Record<ExpenseSplitType, string> = {
-  equal: 'Esit',
-  exact: 'Ozel tutar',
+  equal: 'esit',
+  exact: 'ozel tutar',
+};
+
+/**
+ * Kategori rozetindeki uc harf: once unsuzler ("market" -> "mrkt" -> "MRK",
+ * "fatura" -> "ftr" -> "FTR"), unsuz sayisi 3'ten azsa (orn. "kira") baştan
+ * ilk uc harfe duser. Kategori backend'de serbest metin oldugu icin
+ * (bkz. AddExpenseModal.tsx) sabit bir esleme tablosu her zaman eksik kalirdi;
+ * bu kural herhangi bir metin icin calisiyor.
+ */
+const categoryBadgeText = (category: string): string => {
+  const trimmed = category.trim().replace(/\s+/g, '');
+
+  if (!trimmed) {
+    return '???';
+  }
+
+  const consonants = trimmed.replace(/[aeıioöuüAEIİOÖUÜ]/g, '');
+  const source = consonants.length >= 3 ? consonants : trimmed;
+
+  return source.slice(0, 3).toUpperCase();
+};
+
+interface ExpenseDayGroup {
+  key: string;
+  label: string;
+  totalCents: number;
+  expenses: Expense[];
+}
+
+/** Harcamalar zaten `created_at DESC` sirali geliyor (bkz. expense.model.ts),
+ *  yani ayni gunun kayitlari her zaman ardisik — tek gecisli gruplama yeterli. */
+const groupExpensesByDay = (
+  expenses: readonly Expense[],
+  now: Date = new Date()
+): ExpenseDayGroup[] => {
+  const groups: ExpenseDayGroup[] = [];
+
+  for (const expense of expenses) {
+    const key = dayKeyOf(expense.created_at);
+    const cents = parseAmountToCents(expense.amount) ?? 0;
+    const last = groups[groups.length - 1];
+
+    if (last && last.key === key) {
+      last.expenses.push(expense);
+      last.totalCents += cents;
+    } else {
+      groups.push({
+        key,
+        label: formatDayGroup(expense.created_at, now),
+        totalCents: cents,
+        expenses: [expense],
+      });
+    }
+  }
+
+  return groups;
 };
 
 interface ExpensesTabProps {
@@ -71,13 +134,26 @@ const ExpensesTab = ({ feed, currentUserId, onAddExpense }: ExpensesTabProps) =>
     );
   }
 
+  const dayGroups = groupExpensesByDay(feed.expenses);
+
   return (
-    <div className="expense-list flex flex-col gap-2">
-      <ul className="flex flex-col gap-2">
-        {feed.expenses.map((expense) => (
-          <ExpenseRow key={expense.id} expense={expense} currentUserId={currentUserId} />
-        ))}
-      </ul>
+    <div className="expense-list flex flex-col gap-4">
+      {dayGroups.map((group) => (
+        <div key={group.key} className="expense-day-group flex flex-col gap-2">
+          <div className="flex items-baseline justify-between gap-3 px-1">
+            <p className="text-xs font-medium tracking-[0.12em] text-ink-muted uppercase">
+              {group.label}
+            </p>
+            <p className="text-xs font-medium text-ink-muted">{formatCents(group.totalCents)}</p>
+          </div>
+
+          <ul className="flex flex-col gap-2">
+            {group.expenses.map((expense) => (
+              <ExpenseRow key={expense.id} expense={expense} currentUserId={currentUserId} />
+            ))}
+          </ul>
+        </div>
+      ))}
 
       {/* "Daha fazla" istegi patlarsa liste ekranda kalir, hata altta gorunur. */}
       {feed.error && (
@@ -92,10 +168,11 @@ const ExpensesTab = ({ feed, currentUserId, onAddExpense }: ExpensesTabProps) =>
 };
 
 /**
- * Tek harcama satiri. Gorevde istenen uc bilgi her satirda yazili: **kim odedi**,
- * **ne zaman**, **ne kadar**. Dorduncu satir (senin payin) opsiyonel: kullanici
- * harcamaya dahil degilse hic gosterilmiyor — "0,00 ₺" yazmak, dahil olup sifir
- * pay almak gibi okunurdu.
+ * Tek harcama satiri. Gorevde istenen bilgiler her satirda yazili: **kim
+ * odedi**, **kac kisi arasinda ve nasil bolundugu**, **ne kadar**. Tarih artik
+ * burada degil, grup basliginda (yukarida). Dorduncu satir (senin payin)
+ * opsiyonel: kullanici harcamaya dahil degilse hic gosterilmiyor — "0,00 ₺"
+ * yazmak, dahil olup sifir pay almak gibi okunurdu.
  */
 const ExpenseRow = ({ expense, currentUserId }: { expense: Expense; currentUserId: string }) => {
   const amountCents = parseAmountToCents(expense.amount);
@@ -105,28 +182,31 @@ const ExpenseRow = ({ expense, currentUserId }: { expense: Expense; currentUserI
 
   return (
     <li className="expense-row card-solid flex items-start justify-between gap-3 p-4">
-      <div className="min-w-0">
-        <p className="expense-row__description font-medium text-ink">{expense.description}</p>
+      <div className="flex min-w-0 items-start gap-3">
+        {/* Kategori rozeti: renkli degil (kullanici avatarlariyla karismasin
+            diye), notr bir kare — bilgi harfin kendisinde, renkte degil. */}
+        <span
+          className="expense-row__category flex size-9 shrink-0 items-center justify-center rounded-lg bg-ink/8 text-[0.6rem] font-semibold tracking-wide text-ink-muted"
+          aria-hidden
+        >
+          {categoryBadgeText(expense.category)}
+        </span>
 
-        <p className="expense-row__meta mt-0.5 text-sm text-ink-muted">
-          {paidByMe ? 'Sen odedin' : `${expense.payer_name} odedi`}
-          {' · '}
-          <time dateTime={expense.created_at} title={formatFullDate(expense.created_at)}>
-            {formatExpenseDate(expense.created_at)}
+        <div className="min-w-0">
+          <p className="expense-row__description font-medium text-ink">{expense.description}</p>
+
+          <p className="expense-row__meta mt-0.5 text-sm text-ink-muted">
+            {paidByMe ? 'Sen odedin' : `${expense.payer_name} odedi`}
+            {' · '}
+            {expense.shares.length} kisi {SPLIT_LABELS[expense.split_type]}
+          </p>
+
+          {/* Tarih artik gun basliginda; ekran okuyucu icin tam zaman burada
+              gizli kaliyor, gorsel bicim degisti diye bilgi kaybolmasin. */}
+          <time dateTime={expense.created_at} className="sr-only">
+            {formatFullDate(expense.created_at)}
           </time>
-        </p>
-
-        <p className="expense-row__tags mt-1.5 flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className="border-blush bg-surface/60 text-ink-muted">
-            {expense.category}
-          </Badge>
-          <Badge variant="outline" className="border-blush bg-surface/60 text-ink-muted">
-            {SPLIT_LABELS[expense.split_type]}
-          </Badge>
-          <span className="text-xs text-ink-muted">
-            {expense.shares.length} kisi arasinda bolundu
-          </span>
-        </p>
+        </div>
       </div>
 
       <div className="shrink-0 text-right">

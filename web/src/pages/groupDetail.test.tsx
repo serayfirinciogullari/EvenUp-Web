@@ -44,6 +44,7 @@ vi.mock('../api/groups', () => ({
     createInvite: vi.fn(),
     joinGroup: vi.fn(),
     getGroupBalances: vi.fn(),
+    getGroupMonthlySummary: vi.fn(),
     setMemberNickname: vi.fn(),
     updateGroup: vi.fn(),
     deleteGroup: vi.fn(),
@@ -318,6 +319,11 @@ beforeEach(() => {
 
   mockedGroups.getGroup.mockResolvedValue(groupDetail);
   mockedGroups.getGroupBalances.mockResolvedValue(owingBalances);
+  mockedGroups.getGroupMonthlySummary.mockResolvedValue({
+    totalSpend: '90.00',
+    myShare: '30.00',
+    myPaid: '0.00',
+  });
   mockedExpenses.listExpenses.mockResolvedValue(expensePage([expense()]));
   mockedSettlements.listSettlements.mockResolvedValue(settlementPage([]));
 });
@@ -359,6 +365,122 @@ describe('sekmeli gorunum', () => {
     renderDetail();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Bu gruba erisim yetkiniz yok');
+  });
+});
+
+/* ============================================ ust blok: net durum + bu ay */
+
+/** Net durum karosu: eyebrow metninden `<article>` kapsamina cikar — "Bu ay"
+ *  kartiyla ayni tutarlar (0,00 ₺, 30,00 ₺ gibi) sayfada tekrar edebiliyor. */
+const netStatusCard = () =>
+  screen.getByText('Bu gruptaki net durumun').closest('article') as HTMLElement;
+
+describe('ust blok — net durum', () => {
+  it('borclu oldugunda isaretli tutar, kirmizi rozet ve odeme onerisi gorunur', async () => {
+    renderDetail();
+    await waitForPage();
+
+    const card = within(netStatusCard());
+
+    expect(card.getByText('-30,00 ₺')).toBeInTheDocument();
+    expect(card.getByText('Borcun var')).toBeInTheDocument();
+    expect(
+      card.getByText("Ece'ye 30,00 ₺ odeyerek bu grubu kapatabilirsin.")
+    ).toBeInTheDocument();
+  });
+
+  it('alacakli oldugunda yesil rozet ve tersi oneri gorunur', async () => {
+    mockedGroups.getGroupBalances.mockResolvedValue({
+      ...owingBalances,
+      balances: [
+        { user_id: ECE_ID, name: 'Ece', net_balance: '-30.00' },
+        { user_id: ME_ID, name: 'Deniz', net_balance: '30.00' },
+      ],
+      transfers: [{ from_user: ECE_ID, to_user: ME_ID, amount: '30.00' }],
+    });
+
+    renderDetail();
+    await waitForPage();
+
+    const card = within(netStatusCard());
+
+    expect(card.getByText('30,00 ₺')).toBeInTheDocument();
+    // `PILL_LABEL` Home ile paylasilan sabit (bkz. utils/homeCards.ts) —
+    // grup detayinda ayri bir metin uydurulmadi.
+    expect(card.getByText('Sana borclular')).toBeInTheDocument();
+    expect(card.getByText('Ece sana 30,00 ₺ odeyince bu grup kapanir.')).toBeInTheDocument();
+  });
+
+  it('hesap kapaliyken notr durum gosterilir', async () => {
+    mockedGroups.getGroupBalances.mockResolvedValue(settledBalances);
+
+    renderDetail();
+    await waitForPage();
+
+    const card = within(netStatusCard());
+
+    expect(card.getByText('0,00 ₺')).toBeInTheDocument();
+    expect(card.getByText('Hesabin kapali')).toBeInTheDocument();
+    expect(card.getByText('Bu grupta acik bir hesap yok.')).toBeInTheDocument();
+  });
+
+  it('sekme degistirince ust blok yerinde kalir', async () => {
+    renderDetail();
+    await waitForPage();
+
+    expect(screen.getByText('Bu gruptaki net durumun')).toBeInTheDocument();
+
+    selectTab(/Odemeler/);
+    expect(await screen.findByText('Bu gruptaki net durumun')).toBeInTheDocument();
+
+    selectTab('Kisiler');
+    expect(await screen.findByText('Bu gruptaki net durumun')).toBeInTheDocument();
+  });
+});
+
+describe('ust blok — Bu ay ozeti', () => {
+  it('toplam harcama, senin payin ve senin odedigin gosterilir', async () => {
+    renderDetail();
+    await waitForPage();
+
+    const card = screen.getByText('Bu ay').closest('div') as HTMLElement;
+
+    expect(within(card).getByText('Toplam harcama')).toBeInTheDocument();
+    expect(within(card).getByText('90,00 ₺')).toBeInTheDocument();
+    expect(within(card).getByText('Senin payin')).toBeInTheDocument();
+    expect(within(card).getByText('30,00 ₺')).toBeInTheDocument();
+    expect(within(card).getByText('Senin odedigin')).toBeInTheDocument();
+    expect(within(card).getByText('0,00 ₺')).toBeInTheDocument();
+  });
+
+  it('hata durumunda ayri bir hata kutusu gorunur, sayfanin geri kalani cokmez', async () => {
+    mockedGroups.getGroupMonthlySummary.mockRejectedValue(apiError(500, 'Bu ayki ozet alinamadi'));
+
+    renderDetail();
+    await waitForPage();
+
+    expect(await screen.findByText('Market alisverisi')).toBeInTheDocument();
+  });
+});
+
+describe('ust blok — onayin bekleniyor karti', () => {
+  it('herhangi bir sekmede (Harcamalar dahil) onay bekleyen kayit varsa gorunur', async () => {
+    mockedSettlements.listSettlements.mockResolvedValue(settlementPage([settlement()]));
+
+    renderDetail();
+    await waitForPage();
+
+    // Varsayilan sekme Harcamalar; hicbir Odemeler sekmesine gecilmedi.
+    expect(screen.getByRole('tab', { name: 'Harcamalar' })).toHaveAttribute('data-state', 'active');
+    expect(await screen.findByText('Onayin bekleniyor')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Onayla' })).toBeInTheDocument();
+  });
+
+  it('bekleyen kayit yoksa karti hic cizilmez', async () => {
+    renderDetail();
+    await waitForPage();
+
+    expect(screen.queryByText('Onayin bekleniyor')).not.toBeInTheDocument();
   });
 });
 
@@ -606,16 +728,56 @@ describe('kisiler sekmesi — takma isimler', () => {
 /* ====================================================== harcama listesi */
 
 describe('harcamalar sekmesi', () => {
-  it('satirda kim odedi, ne kadar ve senin payin yazili', async () => {
+  it('satirda kim odedi, kac kisi arasinda bolundugu, ne kadar ve senin payin yazili', async () => {
     renderDetail();
     await waitForPage();
 
     const row = screen.getByText('Market alisverisi').closest('li') as HTMLElement;
 
     expect(within(row).getByText(/Ece odedi/)).toBeInTheDocument();
+    expect(within(row).getByText(/3 kisi esit/)).toBeInTheDocument();
     expect(within(row).getByText('90,00 ₺')).toBeInTheDocument();
     expect(within(row).getByText('Senin payin 30,00 ₺')).toBeInTheDocument();
-    expect(within(row).getByText('market')).toBeInTheDocument();
+    // Kategori rozeti: "market" -> unsuzler -> "MRK" (bkz. ExpensesTab.tsx).
+    expect(within(row).getByText('MRK')).toBeInTheDocument();
+  });
+
+  it('ayni gunun harcamalari tek baslik altinda toplanir, gunun toplami baslikta yazar', async () => {
+    mockedExpenses.listExpenses.mockResolvedValue(
+      expensePage([
+        expense({ id: 'e-1', description: 'Aksam marketi', amount: '90.00' }),
+        expense({ id: 'e-2', description: 'Elektrik faturasi', amount: '60.00' }),
+        expense({
+          id: 'e-3',
+          description: 'Temizlik malzemesi',
+          amount: '40.00',
+          category: 'temizlik',
+          created_at: '2026-08-10T09:00:00.000Z',
+        }),
+      ])
+    );
+
+    renderDetail();
+    await waitForPage();
+
+    // Yil eki yalnizca "su anki yil" farkliysa eklendigi icin (bkz. formatDayGroup)
+    // testin gercek calisma tarihinden bagimsiz kalmasi icin kismi eslesme yeterli.
+    const augustGroup = screen.getByText(/14 AGUSTOS/).closest('.expense-day-group') as HTMLElement;
+    // Baslik satiri, tek bir gunde (10 Agustos) tesadufen tek harcamanin tutariyla
+    // ayni olabiliyor; toplam bu yuzden `li` disindaki baslik satirindan okunuyor.
+    const augustHeader = screen.getByText(/14 AGUSTOS/).closest('div') as HTMLElement;
+    expect(augustHeader).toHaveTextContent('150,00 ₺');
+    expect(within(augustGroup).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(augustGroup).getByText('Aksam marketi')).toBeInTheDocument();
+    expect(within(augustGroup).getByText('Elektrik faturasi')).toBeInTheDocument();
+
+    const separateGroup = screen.getByText(/10 AGUSTOS/).closest('.expense-day-group') as HTMLElement;
+    const separateHeader = screen.getByText(/10 AGUSTOS/).closest('div') as HTMLElement;
+    expect(separateHeader).toHaveTextContent('40,00 ₺');
+    expect(within(separateGroup).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(separateGroup).getByText('Temizlik malzemesi')).toBeInTheDocument();
+    // Kategori "temizlik" -> unsuzler -> "TMZ".
+    expect(within(separateGroup).getByText('TMZ')).toBeInTheDocument();
   });
 
   it('kendi odedigin harcamada "Sen odedin" yazar', async () => {
@@ -1128,7 +1290,7 @@ describe('bakiyeler sekmesi', () => {
     expect(screen.getByText("Sen Ece'ye 30,00 ₺ borclusun")).toBeInTheDocument();
   });
 
-  it('alacakli oldugun satirda "sana borclu" yazar ve Ode butonu cikmaz', async () => {
+  it('alacakli oldugun satirda "sana borclu" yazar, Odedim butonu yerine Hatirlat cikar', async () => {
     mockedGroups.getGroupBalances.mockResolvedValue({
       ...owingBalances,
       transfers: [{ from_user: ECE_ID, to_user: ME_ID, amount: '30.00' }],
@@ -1138,11 +1300,38 @@ describe('bakiyeler sekmesi', () => {
     await openBalances();
 
     expect(screen.getByText('Ece sana 30,00 ₺ borclu')).toBeInTheDocument();
-    // Kaydi yalnizca borclu acabilir; alacakliya buton gosterilmez.
-    expect(screen.queryByRole('button', { name: 'Ode' })).not.toBeInTheDocument();
+    // Kaydi yalnizca borclu acabilir; alacakliya "Odedim" butonu gosterilmez,
+    // onun yerine "Hatirlat" cikar.
+    expect(screen.queryByRole('button', { name: 'Odedim olarak isaretle' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hatirlat' })).toBeInTheDocument();
   });
 
-  it('taraf olmadigin transfer ucuncu sahis cumlesi olur', async () => {
+  it('Hatirlat gercek bir istek atmaz — gonderim ozelligi henuz yok', async () => {
+    mockedGroups.getGroupBalances.mockResolvedValue({
+      ...owingBalances,
+      transfers: [{ from_user: ECE_ID, to_user: ME_ID, amount: '30.00' }],
+    });
+
+    renderDetail();
+    await openBalances();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hatirlat' }));
+
+    // Bilgilendirici bir mesaj disinda hicbir yan etkisi yok.
+    expect(mockedSettlements.createSettlement).not.toHaveBeenCalled();
+    expect(await screen.findByText(/ozelligi henuz yok/)).toBeInTheDocument();
+  });
+
+  it('borclu oldugun satirda Sen -> isim yazar, Odedim butonu cikar', async () => {
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByText('Sen → Ece')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Odedim olarak isaretle' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hatirlat' })).not.toBeInTheDocument();
+  });
+
+  it('taraf olmadigin transfer ucuncu sahis cumlesi olur, buton cikmaz', async () => {
     mockedGroups.getGroupBalances.mockResolvedValue({
       ...owingBalances,
       transfers: [{ from_user: ALI_ID, to_user: ECE_ID, amount: '12.50' }],
@@ -1152,6 +1341,9 @@ describe('bakiyeler sekmesi', () => {
     await openBalances();
 
     expect(screen.getByText("Ali, Ece'ye 12,50 ₺ borclu")).toBeInTheDocument();
+    expect(screen.getByText('Ali → Ece')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Odedim olarak isaretle' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hatirlat' })).not.toBeInTheDocument();
   });
 
   it('borc yoksa hesabin kapali oldugu yazilir', async () => {
@@ -1174,6 +1366,50 @@ describe('bakiyeler sekmesi', () => {
   });
 });
 
+/* ========================================== kisi bazinda bakiye */
+
+describe('kisi bazinda bakiye', () => {
+  /**
+   * "Kim kime odeyecek" listesinden AYRI: orasi netlestirilmis transferleri
+   * gosterir, burasi herkesin kendi net durumunu.
+   */
+  const section = () => screen.getByText('Kisi bazinda bakiye').closest('section') as HTMLElement;
+
+  it('her uye icin ad, durum etiketi ve tutar gosterilir', async () => {
+    renderDetail();
+    await openBalances();
+
+    const scope = within(section());
+
+    expect(scope.getByText('Sen')).toBeInTheDocument();
+    expect(scope.getByText('borclu')).toBeInTheDocument();
+    expect(scope.getByText('Ece')).toBeInTheDocument();
+    expect(scope.getByText('alacakli')).toBeInTheDocument();
+    // Iki satirda da ayni tutar (30,00 ₺): biri borclu biri alacakli tarafinda.
+    expect(scope.getAllByText('30,00 ₺')).toHaveLength(2);
+  });
+
+  it('dengede olan uyede tutar yazilmaz, yalnizca etiket gorunur', async () => {
+    mockedGroups.getGroupBalances.mockResolvedValue(settledBalances);
+
+    renderDetail();
+    await openBalances();
+
+    const scope = within(section());
+
+    expect(scope.getAllByText('dengede')).toHaveLength(2);
+    expect(scope.queryByText(/₺/)).not.toBeInTheDocument();
+  });
+
+  it('"Kim kime odeyecek" listesiyle ayni bolum degil — ikisi birlikte gorunur', async () => {
+    renderDetail();
+    await openBalances();
+
+    expect(screen.getByRole('heading', { name: 'Kim kime odeyecek' })).toBeInTheDocument();
+    expect(screen.getByText('Kisi bazinda bakiye')).toBeInTheDocument();
+  });
+});
+
 /* ================================================= odeme isaretleme */
 
 describe('odeme isaretleme', () => {
@@ -1185,7 +1421,7 @@ describe('odeme isaretleme', () => {
     renderDetail();
     await openBalances();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Odedim olarak isaretle' }));
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByLabelText('Tutar (₺)')).toHaveValue('30.00');
@@ -1207,7 +1443,7 @@ describe('odeme isaretleme', () => {
     renderDetail();
     await openBalances();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Odedim olarak isaretle' }));
 
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText('Tutar (₺)'), { target: { value: '10' } });
@@ -1229,7 +1465,7 @@ describe('odeme isaretleme', () => {
     renderDetail();
     await openBalances();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Odedim olarak isaretle' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Odedim' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('bekleyen bir odeme kaydiniz');
@@ -1456,7 +1692,7 @@ describe('KRITIK akis: harcama -> bakiye -> odeme -> onay', () => {
     const balanceCallsBefore = mockedGroups.getGroupBalances.mock.calls.length;
     const settlementListCallsBefore = mockedSettlements.listSettlements.mock.calls.length;
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Odedim olarak isaretle' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Odedim' }));
 
     // Bekleyen odemeler listesine sunucuya sormadan, ANINDA ekleniyor

@@ -32,6 +32,12 @@ const listByGroup = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json(result);
 };
 
+/** GET /groups/:id/monthly-summary -> 200 { summary } */
+const monthlySummary = async (req: Request, res: Response): Promise<void> => {
+  const summary = await expenseService.getMonthlySummary(req.params.id, currentUserId(req));
+  res.status(200).json({ summary });
+};
+
 /** GET /expenses/:id -> 200 { expense } (grubun her uyesi) */
 const detail = async (req: Request, res: Response): Promise<void> => {
   const expense = await expenseService.getExpense(req.params.id, currentUserId(req));
@@ -54,4 +60,4 @@ const remove = async (req: Request, res: Response): Promise<void> => {
   res.status(200).json({ expense });
 };
 
-export default { create, listByGroup, detail, update, remove };
+export default { create, listByGroup, monthlySummary, detail, update, remove };

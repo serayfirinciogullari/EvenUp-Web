@@ -132,6 +132,22 @@ export interface NicknameResult {
   nickname: string | null;
 }
 
+/**
+ * `GET /groups/:id/monthly-summary` cevabinin `summary` alani.
+ *
+ * `HomeSummary.monthlySpend` ile KARISTIRILMAMALI — o **tum gruplarin**
+ * toplami, bu ise tek bir grubun icinde. Backend'de de ayri bir uc
+ * (bkz. src/services/expense.service.ts -> getMonthlySummary).
+ */
+export interface GroupMonthlySummary {
+  /** Grubun bu ayki toplam harcamasi. */
+  totalSpend: string;
+  /** Senin bu ayki payina dusen toplam. */
+  myShare: string;
+  /** Senin bu ay **odedigin** toplam. */
+  myPaid: string;
+}
+
 /** `GET /groups/:id` cevabi. */
 export interface GroupDetail {
   group: Group;

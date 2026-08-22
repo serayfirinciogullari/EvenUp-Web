@@ -1,19 +1,17 @@
-import { Check, HandCoins, X } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowRight } from 'lucide-react';
+import { toast } from 'sonner';
 
 import GlassCard from '@/components/GlassCard';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getErrorMessage } from '../api/client';
-import settlementsApi from '../api/settlements';
-import { useSummaryData } from '../hooks/useAppData';
 import { toneOfCents } from '../utils/balance';
-import { formatExpenseDate } from '../utils/datetime';
+import colorOfGroup from '../utils/groupColor';
 import { formatCents, formatCentsAbsolute, parseAmountToCents } from '../utils/money';
 import { dative } from '../utils/turkish';
 
 import type { AsyncResult } from '../hooks/useAsync';
-import type { BalanceResult, SettlementListResult, SettlementView } from '../types/models';
+import type { BalanceResult } from '../types/models';
 import type { SettleTarget } from './SettleUpModal';
 
 /**
@@ -32,33 +30,30 @@ import type { SettleTarget } from './SettleUpModal';
  *
  * AKSIYONLAR TARAFA GORE
  * ----------------------
- *   "Ode"             -> yalnizca **borclu** tarafa gorunur (kaydi o acabilir)
- *   "Onayla / Reddet" -> yalnizca **alacakli** tarafa gorunur (kaydi o kapatir)
+ *   "Odedim olarak isaretle" -> yalnizca **borclu** tarafa gorunur (kaydi o acabilir)
+ *   "Hatirlat"               -> yalnizca **alacakli** tarafa gorunur (gercek gonderim yok)
  *
  * Butonu gizlemek bir guvenlik onlemi degil (backend her iki kurali da 403 ile
  * uyguluyor); calismayacak bir aksiyonu gostermemek — 2.3'teki davet butonuyla
  * ayni ayrim.
+ *
+ * "ONAYIN BEKLENIYOR" KARTI BURADA DEGIL
+ * -----------------------------------------
+ * Eskiden bu sekmenin en ustundeydi; artik grup detay sayfasinin **uc sekmede
+ * ortak** ust blogunda (`GroupDetailPage.tsx` -> `PendingSettlementsCard`) —
+ * yalnizca bu sekmeye girildiginde degil, onay bekleyen bir kayit varken her
+ * zaman gorunmeli (bkz. docs/decisions/3.19-grup-detay-ust-blok.md).
  */
 
 interface BalancesTabProps {
   balances: AsyncResult<BalanceResult>;
-  settlements: AsyncResult<SettlementListResult>;
   currentUserId: string;
   /** Uye adlari: bakiye satirinda `name` null olabilir (gruptan cikarilmis uye). */
   nameOf: (userId: string) => string;
   onSettle: (target: SettleTarget) => void;
-  /** Onay/red sonrasi bakiyeleri ve listeyi tazelemek icin. */
-  onResolved: () => void;
 }
 
-const BalancesTab = ({
-  balances,
-  settlements,
-  currentUserId,
-  nameOf,
-  onSettle,
-  onResolved,
-}: BalancesTabProps) => {
+const BalancesTab = ({ balances, currentUserId, nameOf, onSettle }: BalancesTabProps) => {
   if (balances.loading) {
     return <BalancesSkeleton />;
   }
@@ -74,19 +69,8 @@ const BalancesTab = ({
     );
   }
 
-  const pending = (settlements.data?.settlements ?? []).filter(
-    (settlement) => settlement.status === 'pending'
-  );
-
   return (
     <div className="balances flex flex-col gap-4">
-      <PendingSettlements
-        settlements={pending}
-        currentUserId={currentUserId}
-        error={settlements.error}
-        onResolved={onResolved}
-      />
-
       <Transfers
         result={balances.data}
         currentUserId={currentUserId}
@@ -100,6 +84,31 @@ const BalancesTab = ({
 };
 
 /* ------------------------------------------------------------- transferler */
+
+/**
+ * Tek harflik, renkli baslangic — `MembersTab.tsx`teki `MemberRow` ile ayni
+ * desen (ayni `colorOfGroup` karma fonksiyonu, ayni tek-harf kurali).
+ * Burada ve `MemberBalances`te paylasiliyor ki bir kullanicinin rengi bu
+ * sekmenin her yerinde ayni kalsin.
+ */
+const MemberAvatar = ({
+  userId,
+  name,
+  size = 'default',
+}: {
+  userId: string;
+  name: string;
+  size?: 'default' | 'sm';
+}) => (
+  <Avatar size={size} className="shrink-0">
+    <AvatarFallback
+      style={{ backgroundColor: colorOfGroup(userId), color: '#fff' }}
+      className="font-medium"
+    >
+      {name.trim().charAt(0).toUpperCase() || '?'}
+    </AvatarFallback>
+  </Avatar>
+);
 
 const Transfers = ({
   result,
@@ -132,32 +141,78 @@ const Transfers = ({
           const fromName = nameOf(transfer.from_user);
           const toName = nameOf(transfer.to_user);
 
+          /*
+            Gorsel satir avatar + ok + isim/tutar bloguna bolunuyor; tek bir
+            cumle olarak okunmuyor. Ekran okuyucu icin eskiden gorunen sey
+            (tam bir Turkce cumle) `sr-only` olarak korunuyor — bilgi kaybı
+            olmasin diye, gorsel bicim degisti diye erisilebilirlik dusmesin.
+          */
+          const sentence = iAmDebtor
+            ? `Sen ${dative(toName)} ${formatCents(cents)} borclusun`
+            : iAmCreditor
+              ? `${fromName} sana ${formatCents(cents)} borclu`
+              : `${fromName}, ${dative(toName)} ${formatCents(cents)} borclu`;
+
           return (
             <li
               key={`${transfer.from_user}-${transfer.to_user}`}
               className={`transfer-row balance--${
                 iAmDebtor ? 'debt' : iAmCreditor ? 'credit' : 'settled'
-              } flex flex-wrap items-center justify-between gap-2 rounded-lg border-l-4 px-3 py-2.5`}
+              } flex flex-wrap items-center justify-between gap-3 rounded-lg border-l-4 px-3 py-2.5`}
             >
-              <p className="transfer-row__sentence text-sm">
-                {iAmDebtor
-                  ? `Sen ${dative(toName)} ${formatCents(cents)} borclusun`
-                  : iAmCreditor
-                    ? `${fromName} sana ${formatCents(cents)} borclu`
-                    : `${fromName}, ${dative(toName)} ${formatCents(cents)} borclu`}
-              </p>
+              <span className="sr-only">{sentence}</span>
+
+              <div className="flex min-w-0 items-center gap-3" aria-hidden="true">
+                <span className="flex shrink-0 items-center gap-1">
+                  <MemberAvatar userId={transfer.from_user} name={fromName} size="sm" />
+                  <ArrowRight className="size-3.5 shrink-0 text-ink-muted" />
+                  <MemberAvatar userId={transfer.to_user} name={toName} size="sm" />
+                </span>
+
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-ink">
+                    {iAmDebtor ? 'Sen' : fromName} → {iAmCreditor ? 'Sen' : toName}
+                  </span>
+                  <span className="block text-sm font-semibold text-ink">
+                    {formatCents(cents)}
+                  </span>
+                </span>
+              </div>
 
               {/* Kaydi yalnizca borclu acabilir (backend: ONLY_DEBTOR). */}
               {iAmDebtor && (
                 <Button
                   type="button"
                   size="sm"
+                  className="shrink-0"
                   onClick={() =>
                     onSettle({ userId: transfer.to_user, name: toName, suggestedCents: cents })
                   }
                 >
-                  <HandCoins className="size-4" aria-hidden />
-                  Ode
+                  Odedim olarak isaretle
+                </Button>
+              )}
+
+              {/*
+                Alacakli tarafa "Hatirlat": gercek bir bildirim/e-posta gonderimi
+                yok (1.7'nin acik biraktigi madde, bkz. CloseAccountDialog.tsx
+                "sana borclu" satiri ile ayni sinir) — bu yuzden butonun tek
+                islevi durumu acikca soylemek, sessizce "gonderildi" gibi
+                davranmiyor.
+              */}
+              {iAmCreditor && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() =>
+                    toast.info(
+                      `${fromName} icin hatirlatma gonderme ozelligi henuz yok, kendin ulasabilirsin`
+                    )
+                  }
+                >
+                  Hatirlat
                 </Button>
               )}
             </li>
@@ -168,164 +223,15 @@ const Transfers = ({
   </GlassCard>
 );
 
-/* -------------------------------------------------------- bekleyen odemeler */
-
-const PendingSettlements = ({
-  settlements,
-  currentUserId,
-  error,
-  onResolved,
-}: {
-  settlements: SettlementView[];
-  currentUserId: string;
-  error: string | null;
-  onResolved: () => void;
-}) => {
-  if (error) {
-    return (
-      <p className="field-error card-solid p-4 text-sm text-destructive" role="alert">
-        Bekleyen odemeler alinamadi: {error}
-      </p>
-    );
-  }
-
-  if (settlements.length === 0) {
-    return null;
-  }
-
-  return (
-    <section className="balances__pending card-solid p-5">
-      <h2 className="text-lg">Bekleyen odemeler</h2>
-      <p className="mt-0.5 text-sm text-ink-muted">
-        {/* 1.7'nin kurali burada gorunur hale geliyor. */}
-        Onaylanana kadar bakiyeye islenmez.
-      </p>
-
-      <ul className="mt-4 flex flex-col gap-2">
-        {settlements.map((settlement) => (
-          <PendingRow
-            key={settlement.id}
-            settlement={settlement}
-            currentUserId={currentUserId}
-            onResolved={onResolved}
-          />
-        ))}
-      </ul>
-    </section>
-  );
-};
-
-const PendingRow = ({
-  settlement,
-  currentUserId,
-  onResolved,
-}: {
-  settlement: SettlementView;
-  currentUserId: string;
-  onResolved: () => void;
-}) => {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Sidebar/Aktivite rozeti icin: bkz. asagidaki `resolve` yorumu.
-  const summary = useSummaryData();
-
-  const cents = parseAmountToCents(settlement.amount) ?? 0;
-  const iAmCreditor = settlement.to_user === currentUserId;
-  const iAmDebtor = settlement.from_user === currentUserId;
-
-  const resolve = (action: 'confirm' | 'reject') => {
-    if (pending) {
-      return;
-    }
-
-    setPending(true);
-    setError(null);
-
-    const request =
-      action === 'confirm'
-        ? settlementsApi.confirmSettlement(settlement.id)
-        : settlementsApi.rejectSettlement(settlement.id);
-
-    void request
-      .then(() => {
-        // Bakiye ve liste yeniden isteniyor: onaydan sonra net bakiye degisir ve
-        // elde guncellemek, "sunucuda ne oldu" ile "ekranda ne yaziyor" ayrisma
-        // riskini acardi.
-        onResolved();
-
-        /*
-          Sidebar/Aktivite rozeti AYRI bir kural izliyor: sayfa acilinca ya da
-          `onResolved` tetiklenince DEGIL, yalnizca kullanici Onayla/Reddet'e
-          BASTIGINDA ve yerel olarak azaliyor — sunucuya gidip tekrar sormuyor.
-          `AppDataProvider` ozeti oturum basina bir kez cekiyor; bu satiri
-          `summary.reload()` ile tazelemek her satirda gereksiz bir istek daha
-          demekti. `Math.max(0, ...)`: birden fazla sekmede ayni kayit
-          kapatilmaya calisilirsa sayac eksiye dusmesin. Gerekce:
-          docs/decisions/optimistic-ui-duzeltme.md.
-        */
-        summary.mutate((current) =>
-          current
-            ? { ...current, pendingSettlementsCount: Math.max(0, current.pendingSettlementsCount - 1) }
-            : current
-        );
-      })
-      .catch((caught: unknown) => {
-        setError(getErrorMessage(caught, 'Odeme guncellenemedi'));
-        setPending(false);
-      });
-  };
-
-  return (
-    <li className="pending-row rounded-lg border border-blush/70 px-3 py-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="pending-row__sentence text-sm">
-          {iAmCreditor
-            ? `${settlement.from_name} sana ${formatCents(cents)} odedigini bildirdi`
-            : iAmDebtor
-              ? `${dative(settlement.to_name)} ${formatCents(cents)} odedigini bildirdin`
-              : `${settlement.from_name} ${dative(settlement.to_name)} ${formatCents(cents)} odedigini bildirdi`}
-          <span className="ml-1 text-xs text-ink-muted">
-            · {formatExpenseDate(settlement.created_at)}
-          </span>
-        </p>
-
-        {/* Onay/red yalnizca alacakliya ait (backend: ONLY_CREDITOR). */}
-        {iAmCreditor ? (
-          <span className="flex shrink-0 gap-2">
-            <Button type="button" size="sm" disabled={pending} onClick={() => resolve('confirm')}>
-              <Check className="size-4" aria-hidden />
-              Onayla
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={pending}
-              onClick={() => resolve('reject')}
-            >
-              <X className="size-4" aria-hidden />
-              Reddet
-            </Button>
-          </span>
-        ) : (
-          <span className="shrink-0 text-xs text-ink-muted" role="status">
-            Onay bekleniyor
-          </span>
-        )}
-      </div>
-
-      {error && (
-        <p className="field-error mt-1.5 text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      )}
-    </li>
-  );
-};
-
 /* --------------------------------------------------------- uye bakiyeleri */
 
+/**
+ * "Kim kime odeyecek" listesinden BILEREK farkli: orasi netlestirilmis
+ * transferleri (en az sayida odemeyle hesabi kapatan yol) gosterir, burasi
+ * **herkesin kendi net durumunu** — netlestirme algoritmasinin transfer
+ * onerisiyle karistirilmamali, ikisi ayni veriden (`BalanceResult.balances`
+ * vs `.transfers`) farkli birer gorunum.
+ */
 const MemberBalances = ({
   result,
   currentUserId,
@@ -336,27 +242,42 @@ const MemberBalances = ({
   nameOf: (userId: string) => string;
 }) => (
   <section className="balances__members card-solid p-5">
-    <h2 className="text-lg">Uye bakiyeleri</h2>
+    <p className="text-xs font-medium tracking-[0.12em] text-ink-muted uppercase">
+      Kisi bazinda bakiye
+    </p>
 
     <ul className="mt-3 flex flex-col gap-1.5">
       {result.balances.map((balance) => {
         const cents = parseAmountToCents(balance.net_balance) ?? 0;
         const tone = toneOfCents(cents);
         const isMe = balance.user_id === currentUserId;
+        const name = balance.name ?? nameOf(balance.user_id);
 
         return (
           <li
             key={balance.user_id}
             className={`member-balance balance--${tone} flex items-center justify-between gap-3 rounded-lg border-l-4 px-3 py-2`}
           >
-            <span className="text-sm">
-              {isMe ? 'Sen' : (balance.name ?? nameOf(balance.user_id))}
-            </span>
-            <span className="text-sm">
-              {/* Yon metinle yaziliyor, tutar isaretsiz (2.3'teki kural). */}
-              <span className="text-ink-muted">
-                {tone === 'credit' ? 'alacakli ' : tone === 'debt' ? 'borclu ' : 'dengede '}
+            <span className="flex min-w-0 items-center gap-2.5">
+              <MemberAvatar userId={balance.user_id} name={name} size="sm" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm text-ink">{isMe ? 'Sen' : name}</span>
+                {/* Renk burada da bilgiyi tasimiyor, metin her zaman yazili (2.3'teki kural). */}
+                <span
+                  className={`block text-xs ${
+                    tone === 'credit'
+                      ? 'text-signal-positive'
+                      : tone === 'debt'
+                        ? 'text-destructive'
+                        : 'text-ink-muted'
+                  }`}
+                >
+                  {tone === 'credit' ? 'alacakli' : tone === 'debt' ? 'borclu' : 'dengede'}
+                </span>
               </span>
+            </span>
+
+            <span className="shrink-0 text-sm text-ink">
               {tone === 'settled' ? '' : formatCentsAbsolute(cents)}
             </span>
           </li>

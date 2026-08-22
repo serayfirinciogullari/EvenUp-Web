@@ -44,7 +44,22 @@ const TONE: Record<HomeNetStatus['tone'], ToneConfig> = {
   settled: { tile: '', pill: 'home-net__pill--settled', icon: Check },
 };
 
-const HomeNetStatusCard = ({ status }: { status: HomeNetStatus }) => {
+const HomeNetStatusCard = ({
+  status,
+  /**
+   * "Tum gruplarda net durumun" varsayilan — Home'un kendi baglami. Grup
+   * detay sayfasi ayni bileseni **tek bir grubun** net durumu icin, farkli
+   * bir etiketle ("Bu gruptaki net durumun") yeniden kullaniyor; gorsel dil
+   * (buyuk isaretli sayi + yonlu rozet + cumle) ikisinde de ayni kalsin diye
+   * ikinci bir kopya yazilmadi.
+   */
+  label = 'Tum gruplarda net durumun',
+  className,
+}: {
+  status: HomeNetStatus;
+  label?: string;
+  className?: string;
+}) => {
   const tone = TONE[status.tone];
   const PillIcon = tone.icon;
 
@@ -52,14 +67,13 @@ const HomeNetStatusCard = ({ status }: { status: HomeNetStatus }) => {
     <article
       className={cn(
         'home-tile home-tile--balance flex min-h-36 flex-col justify-between gap-3 p-5 sm:p-6',
-        tone.tile
+        tone.tile,
+        className
       )}
     >
       {/* uppercase + harf araligi: sol taraftaki referans format ("TUM
           GRUPLARDA NET DURUMUN") — etiket bir baslik degil, ust bilgi. */}
-      <p className="home-tile__label text-xs font-medium tracking-[0.14em] uppercase">
-        Tum gruplarda net durumun
-      </p>
+      <p className="home-tile__label text-xs font-medium tracking-[0.14em] uppercase">{label}</p>
 
       <div className="flex flex-wrap items-center gap-3">
         {/* Buyuk, isaretli deger: borcta eksi isareti yonu ayrica pekistiriyor. */}

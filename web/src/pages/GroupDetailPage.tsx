@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus, Settings, Users } from 'lucide-react';
+import { ArrowLeft, Check, Plus, Settings, Users, X } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
@@ -7,29 +7,37 @@ import BalancesTab from '@/components/BalancesTab';
 import ExpensesTab from '@/components/ExpensesTab';
 import GlassCard from '@/components/GlassCard';
 import GroupSettingsModal from '@/components/GroupSettingsModal';
+import HomeNetStatusCard from '@/components/HomeNetStatusCard';
 import MembersTab from '@/components/MembersTab';
 import SettleUpModal from '@/components/SettleUpModal';
 import { Button } from '@/components/ui/button';
-import { NumberTicker } from '@/components/ui/number-ticker';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import groupsApi from '../api/groups';
 import settlementsApi from '../api/settlements';
-import { useGroupsData } from '../hooks/useAppData';
+import { useGroupsData, useSummaryData } from '../hooks/useAppData';
 import useAsync from '../hooks/useAsync';
 import useAuth from '../hooks/useAuth';
 import useExpenseFeed from '../hooks/useExpenseFeed';
+import { getErrorMessage } from '../api/client';
 import { viewForUser } from '../utils/balance';
+import { formatExpenseDate } from '../utils/datetime';
 import { groupPath } from '../utils/groupPath';
-import { formatCentsAbsolute } from '../utils/money';
+import { PILL_LABEL } from '../utils/homeCards';
+import { formatCents, formatCentsAbsolute, parseAmountToCents } from '../utils/money';
+import { dative } from '../utils/turkish';
 
 import type { SettleTarget } from '@/components/SettleUpModal';
+import type { BalanceTone } from '../utils/balance';
+import type { HomeNetStatus } from '../utils/homeCards';
 import type {
   BalanceResult,
   GroupDetail,
+  GroupMonthlySummary,
   Settlement,
   SettlementListResult,
   SettlementView,
+  Transfer,
 } from '../types/models';
 
 /**
@@ -92,6 +100,20 @@ const GroupDetailPage = () => {
     'Bekleyen odemeler alinamadi'
   );
 
+  /**
+   * "Bu ay" ozet karti. `HomeSummary.monthlySpend` ile KARISTIRILMAMALI — o
+   * kullanicinin **tum** gruplarinin toplami, bu tek bir grubun icinde
+   * (bkz. docs/decisions/3.19-grup-detay-ust-blok.md).
+   */
+  const fetchMonthlySummary = useCallback(
+    () => groupsApi.getGroupMonthlySummary(groupKey),
+    [groupKey]
+  );
+  const monthlySummary = useAsync<GroupMonthlySummary>(
+    fetchMonthlySummary,
+    'Bu ayki ozet alinamadi'
+  );
+
   const feed = useExpenseFeed(groupKey);
 
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
@@ -140,6 +162,9 @@ const GroupDetailPage = () => {
     feed.reload();
     balances.reload();
     settlements.reload();
+    // Yeni harcama "Bu ay" toplamini da degistiriyor; odeme kaydi degistirmiyor
+    // (odeme bir harcama degil) ama tek kapidan gectigi icin ayrica dallanmiyoruz.
+    monthlySummary.reload();
   };
 
   const refreshAll = useCallback(() => refresh.current(), []);
@@ -237,6 +262,12 @@ const GroupDetailPage = () => {
 
   const { group, role } = detail.data;
   const myBalance = balances.data ? viewForUser(balances.data.balances, currentUserId) : null;
+  const netStatus = balances.data && myBalance
+    ? buildGroupNetStatus(myBalance, currentUserId, balances.data.transfers, nameOf)
+    : null;
+  const pendingSettlements = (settlements.data?.settlements ?? []).filter(
+    (settlement) => settlement.status === 'pending'
+  );
 
   return (
     <section className="group-detail flex flex-col gap-4">
@@ -251,20 +282,6 @@ const GroupDetailPage = () => {
             {group.description ? ` · ${group.description}` : ''}
           </p>
         </div>
-
-        {/* Kendi net durumu baslikta: kullanicinin ilk sordugu soru bu. */}
-        {myBalance && (
-          <p
-            className={`group-detail__balance balance--${myBalance.tone} flex flex-col gap-0.5 rounded-lg border-l-4 px-3 py-2`}
-          >
-            <NumberTicker
-              value={myBalance.cents}
-              format={formatCentsAbsolute}
-              className="group-card__amount text-xl font-semibold"
-            />
-            <span className="text-xs text-ink-muted">{myBalance.label}</span>
-          </p>
-        )}
 
         <div className="flex items-start gap-2">
           {/* Ayarlar yalnizca owner'a gorunur — uye acsa backend zaten 403
@@ -286,6 +303,36 @@ const GroupDetailPage = () => {
           </Button>
         </div>
       </GlassCard>
+
+      {/*
+        Net durum + bekleyen onay + "Bu ay" ozeti: uc sekmede de ORTAK, `Tabs`in
+        DISINDA duruyor — sekme degisince kaybolmuyor, yalnizca altindaki icerik
+        degisiyor (bkz. docs/decisions/3.19-grup-detay-ust-blok.md).
+      */}
+      <div className="group-detail__overview flex flex-wrap items-stretch gap-4">
+        {netStatus && (
+          <HomeNetStatusCard
+            status={netStatus}
+            label="Bu gruptaki net durumun"
+            className="min-w-64 flex-[2]"
+          />
+        )}
+
+        {(pendingSettlements.length > 0 || monthlySummary.data) && (
+          <div className="flex min-w-64 flex-[3] flex-wrap gap-4">
+            {pendingSettlements.length > 0 && (
+              <PendingSettlementsCard
+                settlements={pendingSettlements}
+                currentUserId={currentUserId}
+                onResolved={refreshAll}
+                className="min-w-64 flex-1"
+              />
+            )}
+
+            <MonthlySummaryCard summary={monthlySummary} className="min-w-56 flex-1" />
+          </div>
+        )}
+      </div>
 
       <Tabs defaultValue="expenses" className="group-detail__tabs">
         <TabsList>
@@ -317,11 +364,9 @@ const GroupDetailPage = () => {
         <TabsContent value="balances">
           <BalancesTab
             balances={balances}
-            settlements={settlements}
             currentUserId={currentUserId}
             nameOf={nameOf}
             onSettle={setSettleTarget}
-            onResolved={refreshAll}
           />
         </TabsContent>
 
@@ -413,6 +458,258 @@ const pendingForMe = (data: SettlementListResult | null, userId: string): number
   (data?.settlements ?? []).filter(
     (settlement) => settlement.status === 'pending' && settlement.to_user === userId
   ).length;
+
+/**
+ * Ust bloktaki net durum karosunun altinda cikan oneri cumlesi
+ * ("Serenad'a 135,00 ₺ odeyerek bu grubu kapatabilirsin.").
+ *
+ * `balances.data.transfers` netlestirmenin urettigi **minimal** transfer
+ * kumesi (1.6); "borcun var" durumunda genelde tek bir hedefe tek bir transfer
+ * dusuyor. Uc veya daha fazla uyeli karisik bir grupta ayni kisinin birden
+ * fazla transferi olabilir — o durumda isim vermeden genel bir cumleye
+ * duşuyoruz, cunku "kime once" sorusunun tek bir dogru cevabi yok.
+ */
+const groupSuggestionSentence = (
+  tone: BalanceTone,
+  currentUserId: string,
+  transfers: readonly Transfer[],
+  nameOf: (userId: string) => string
+): string => {
+  if (tone === 'debt') {
+    const mine = transfers.filter((transfer) => transfer.from_user === currentUserId);
+
+    if (mine.length === 1) {
+      const amount = formatCentsAbsolute(parseAmountToCents(mine[0].amount) ?? 0);
+      return `${dative(nameOf(mine[0].to_user))} ${amount} odeyerek bu grubu kapatabilirsin.`;
+    }
+
+    return 'Borcunu odeyerek bu grubu kapatabilirsin.';
+  }
+
+  if (tone === 'credit') {
+    const mine = transfers.filter((transfer) => transfer.to_user === currentUserId);
+
+    if (mine.length === 1) {
+      const amount = formatCentsAbsolute(parseAmountToCents(mine[0].amount) ?? 0);
+      return `${nameOf(mine[0].from_user)} sana ${amount} odeyince bu grup kapanir.`;
+    }
+
+    return 'Sana borclu olanlar odeyince bu grup kapanir.';
+  }
+
+  return 'Bu grupta acik bir hesap yok.';
+};
+
+/**
+ * `HomeNetStatusCard`in bekledigi sekle donusum. Home'daki `buildNetStatus`
+ * ile ayni gorsel dili paylasiyor (`PILL_LABEL`, isaretli tutar) ama farkli
+ * girdiden besleniyor: `HomeSummary` degil, tek bir grubun bakiye satiri +
+ * transfer listesi.
+ */
+const buildGroupNetStatus = (
+  balance: { tone: BalanceTone; cents: number },
+  currentUserId: string,
+  transfers: readonly Transfer[],
+  nameOf: (userId: string) => string
+): HomeNetStatus => ({
+  tone: balance.tone,
+  value: formatCents(balance.cents),
+  pillLabel: PILL_LABEL[balance.tone],
+  sentence: groupSuggestionSentence(balance.tone, currentUserId, transfers, nameOf),
+});
+
+/**
+ * "Onayin bekleniyor" karti — eskiden `BalancesTab` icindeydi (yalnizca
+ * Odemeler sekmesinde gorunuyordu), simdi ust ortak blokta: onay bekleyen bir
+ * kayit varken hangi sekmede olursan ol gorunmeli, yalnizca Odemeler'e
+ * girildiginde degil (bkz. docs/decisions/3.19-grup-detay-ust-blok.md).
+ *
+ * Icerik ve davranis TASINMADAN ONCEKIYLE AYNI — yalnizca konum ve zemin
+ * degisti (amber vurgusu, `GroupCard`teki bekleyen rozetiyle ayni renk
+ * dili: `border-amber/25 bg-amber-surface text-amber`).
+ */
+const PendingSettlementsCard = ({
+  settlements,
+  currentUserId,
+  onResolved,
+  className,
+}: {
+  settlements: SettlementView[];
+  currentUserId: string;
+  onResolved: () => void;
+  className?: string;
+}) => (
+  <section
+    className={`balances__pending rounded-xl border border-amber/25 bg-amber-surface p-5 ${className ?? ''}`}
+  >
+    <p className="text-xs font-medium tracking-[0.12em] text-amber uppercase">Onayin bekleniyor</p>
+
+    <ul className="mt-3 flex flex-col gap-2">
+      {settlements.map((settlement) => (
+        <PendingSettlementRow
+          key={settlement.id}
+          settlement={settlement}
+          currentUserId={currentUserId}
+          onResolved={onResolved}
+        />
+      ))}
+    </ul>
+  </section>
+);
+
+const PendingSettlementRow = ({
+  settlement,
+  currentUserId,
+  onResolved,
+}: {
+  settlement: SettlementView;
+  currentUserId: string;
+  onResolved: () => void;
+}) => {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sidebar/Aktivite rozeti icin: bkz. asagidaki `resolve` yorumu.
+  const summary = useSummaryData();
+
+  const cents = parseAmountToCents(settlement.amount) ?? 0;
+  const iAmCreditor = settlement.to_user === currentUserId;
+  const iAmDebtor = settlement.from_user === currentUserId;
+
+  const resolve = (action: 'confirm' | 'reject') => {
+    if (pending) {
+      return;
+    }
+
+    setPending(true);
+    setError(null);
+
+    const request =
+      action === 'confirm'
+        ? settlementsApi.confirmSettlement(settlement.id)
+        : settlementsApi.rejectSettlement(settlement.id);
+
+    void request
+      .then(() => {
+        // Bakiye ve liste yeniden isteniyor: onaydan sonra net bakiye degisir ve
+        // elde guncellemek, "sunucuda ne oldu" ile "ekranda ne yaziyor" ayrisma
+        // riskini acardi.
+        onResolved();
+
+        /*
+          Sidebar/Aktivite rozeti AYRI bir kural izliyor: sayfa acilinca ya da
+          `onResolved` tetiklenince DEGIL, yalnizca kullanici Onayla/Reddet'e
+          BASTIGINDA ve yerel olarak azaliyor — sunucuya gidip tekrar sormuyor.
+          `Math.max(0, ...)`: birden fazla sekmede ayni kayit kapatilmaya
+          calisilirsa sayac eksiye dusmesin. Gerekce:
+          docs/decisions/optimistic-ui-duzeltme.md.
+        */
+        summary.mutate((current) =>
+          current
+            ? { ...current, pendingSettlementsCount: Math.max(0, current.pendingSettlementsCount - 1) }
+            : current
+        );
+      })
+      .catch((caught: unknown) => {
+        setError(getErrorMessage(caught, 'Odeme guncellenemedi'));
+        setPending(false);
+      });
+  };
+
+  return (
+    <li className="pending-row rounded-lg border border-amber/20 bg-cream/40 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="pending-row__sentence text-sm">
+          {iAmCreditor
+            ? `${settlement.from_name} sana ${formatCents(cents)} odedigini bildirdi`
+            : iAmDebtor
+              ? `${dative(settlement.to_name)} ${formatCents(cents)} odedigini bildirdin`
+              : `${settlement.from_name} ${dative(settlement.to_name)} ${formatCents(cents)} odedigini bildirdi`}
+          <span className="ml-1 text-xs text-ink-muted">
+            · {formatExpenseDate(settlement.created_at)}
+          </span>
+        </p>
+
+        {/* Onay/red yalnizca alacakliya ait (backend: ONLY_CREDITOR). */}
+        {iAmCreditor ? (
+          <span className="flex shrink-0 gap-2">
+            <Button type="button" size="sm" disabled={pending} onClick={() => resolve('confirm')}>
+              <Check className="size-4" aria-hidden />
+              Onayla
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() => resolve('reject')}
+            >
+              <X className="size-4" aria-hidden />
+              Reddet
+            </Button>
+          </span>
+        ) : (
+          <span className="shrink-0 text-xs text-ink-muted" role="status">
+            Onay bekleniyor
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <p className="field-error mt-1.5 text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+    </li>
+  );
+};
+
+/**
+ * "Bu ay" ozet karti: toplam harcama, senin payin, senin odedigin.
+ * `HomeStatTile`/`HomeNetStatusCard`den bilerek ayri bir bicim — burasi
+ * yonlu bir durum degil, uc satirlik duz bir dokum.
+ */
+const MonthlySummaryCard = ({
+  summary,
+  className,
+}: {
+  summary: { data: GroupMonthlySummary | null; loading: boolean; error: string | null };
+  className?: string;
+}) => {
+  if (summary.loading && !summary.data) {
+    return (
+      <div className={`card-solid flex flex-col gap-2 p-5 ${className ?? ''}`} aria-busy="true">
+        <Skeleton className="skeleton-line h-3 w-16" />
+        <Skeleton className="skeleton-line h-4 w-full" />
+        <Skeleton className="skeleton-line h-4 w-full" />
+        <Skeleton className="skeleton-line h-4 w-full" />
+      </div>
+    );
+  }
+
+  if (!summary.data) {
+    return null;
+  }
+
+  const rows: { label: string; cents: number }[] = [
+    { label: 'Toplam harcama', cents: parseAmountToCents(summary.data.totalSpend) ?? 0 },
+    { label: 'Senin payin', cents: parseAmountToCents(summary.data.myShare) ?? 0 },
+    { label: 'Senin odedigin', cents: parseAmountToCents(summary.data.myPaid) ?? 0 },
+  ];
+
+  return (
+    <div className={`card-solid flex flex-col gap-2 p-5 ${className ?? ''}`}>
+      <p className="text-xs font-medium tracking-[0.12em] text-ink-muted uppercase">Bu ay</p>
+
+      {rows.map((row) => (
+        <p key={row.label} className="flex items-center justify-between gap-3 text-sm">
+          <span className="text-ink-muted">{row.label}</span>
+          <span className="font-semibold text-ink">{formatCents(row.cents)}</span>
+        </p>
+      ))}
+    </div>
+  );
+};
 
 const BackLink = () => (
   <Link

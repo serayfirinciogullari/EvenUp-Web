@@ -58,6 +58,9 @@ jest.mock('../src/models/expense.model', () => ({
     create: jest.fn(),
     update: jest.fn(),
     softDelete: jest.fn(),
+    sumGroupAmountBetween: jest.fn(),
+    sumGroupPaidByUserBetween: jest.fn(),
+    sumGroupShareForUserBetween: jest.fn(),
   },
 }));
 
@@ -151,7 +154,9 @@ const addExpense = (
   groupId: string,
   paidBy: TestUser,
   amount: string,
-  split: readonly [TestUser, string][]
+  split: readonly [TestUser, string][],
+  /** "Bu ay"/"gecen ay" filtresini test edebilmek icin (bkz. "Bu ay ozeti"). */
+  createdAt: Date = new Date()
 ): ExpenseRow => {
   const expense: ExpenseRow = {
     id: randomUUID(),
@@ -162,8 +167,8 @@ const addExpense = (
     description: 'Test harcamasi',
     category: 'genel',
     split_type: 'equal',
-    created_at: new Date(),
-    updated_at: new Date(),
+    created_at: createdAt,
+    updated_at: createdAt,
     deleted_at: null,
   };
 
@@ -366,6 +371,44 @@ const installInMemoryModel = (): void => {
       return settlement;
     }
   );
+
+  /*
+    Uc yeni sorgu da ayni "canli harcama, [from,to) araligi" suzgecini
+    paylasiyor; gercek SQL'in yaptigi filtreyi burada tekrarliyoruz (SUM'in
+    kendisi degil, WHERE kosullari — bkz. homeSummary.test.ts'teki ayni desen).
+  */
+  const aliveExpensesBetween = (groupId: string, from: Date, to: Date): ExpenseRow[] =>
+    expenses.filter(
+      (expense) =>
+        expense.group_id === groupId &&
+        expense.deleted_at === null &&
+        expense.created_at >= from &&
+        expense.created_at < to &&
+        groups.some((group) => group.id === expense.group_id && group.deleted_at === null)
+    );
+
+  const sumCents = (rows: readonly { amount: string }[]): number =>
+    rows.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
+
+  mockedExpenseModel.sumGroupAmountBetween.mockImplementation(async (groupId, from, to) =>
+    (sumCents(aliveExpensesBetween(groupId, from, to)) / 100).toFixed(2)
+  );
+
+  mockedExpenseModel.sumGroupPaidByUserBetween.mockImplementation(async (groupId, userId, from, to) =>
+    (
+      sumCents(aliveExpensesBetween(groupId, from, to).filter((expense) => expense.paid_by === userId)) /
+      100
+    ).toFixed(2)
+  );
+
+  mockedExpenseModel.sumGroupShareForUserBetween.mockImplementation(
+    async (groupId, userId, from, to) => {
+      const ids = new Set(aliveExpensesBetween(groupId, from, to).map((expense) => expense.id));
+      const rows = shares.filter((share) => ids.has(share.expense_id) && share.user_id === userId);
+
+      return (sumCents(rows.map((share) => ({ amount: share.share_amount }))) / 100).toFixed(2);
+    }
+  );
 };
 
 /* -------------------------------------------------------------- yardimcilar */
@@ -472,6 +515,84 @@ describe('GET /groups/:id/balances', () => {
 
   it('token olmadan 403 degil 401 doner', async () => {
     const response = await request(app).get(`/groups/${group.id}/balances`);
+
+    expect(response.status).toBe(401);
+  });
+});
+
+/* ==================================================== Bu ay ozeti */
+
+describe('GET /groups/:id/monthly-summary', () => {
+  it('grubun bu ayki toplamini, senin payini ve senin odedigini doner', async () => {
+    const response = await request(app)
+      .get(`/groups/${group.id}/monthly-summary`)
+      .set(...auth(ali));
+
+    expect(response.status).toBe(200);
+    expect(response.body.summary).toEqual({
+      totalSpend: '300.00',
+      myShare: '100.00',
+      myPaid: '300.00',
+    });
+  });
+
+  it('hic odemeyen bir uyede myPaid sifir, myShare yine de dolu', async () => {
+    const response = await request(app)
+      .get(`/groups/${group.id}/monthly-summary`)
+      .set(...auth(burak));
+
+    expect(response.status).toBe(200);
+    expect(response.body.summary).toEqual({
+      totalSpend: '300.00',
+      myShare: '100.00',
+      myPaid: '0.00',
+    });
+  });
+
+  it('gecen aya ait harcama toplama girmez', async () => {
+    const now = new Date();
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+
+    // Bu ay, Burak odedi -> toplama ve Ali'nin payina girer.
+    addExpense(group.id, burak, '90.00', [
+      [ali, '30.00'],
+      [burak, '30.00'],
+      [cem, '30.00'],
+    ]);
+    // Gecen ay, Ali odedi -> uc alanin hicbirine girmez.
+    addExpense(
+      group.id,
+      ali,
+      '1000.00',
+      [
+        [ali, '500.00'],
+        [burak, '500.00'],
+      ],
+      lastMonth
+    );
+
+    const response = await request(app)
+      .get(`/groups/${group.id}/monthly-summary`)
+      .set(...auth(ali));
+
+    expect(response.body.summary).toEqual({
+      totalSpend: '390.00',
+      myShare: '130.00',
+      myPaid: '300.00',
+    });
+  });
+
+  it('uye olmayan kullanici goremez', async () => {
+    const response = await request(app)
+      .get(`/groups/${group.id}/monthly-summary`)
+      .set(...auth(disaridaki));
+
+    expect(response.status).toBe(403);
+    expect(response.body.message).toBe('Bu gruba erisim yetkiniz yok');
+  });
+
+  it('token olmadan 403 degil 401 doner', async () => {
+    const response = await request(app).get(`/groups/${group.id}/monthly-summary`);
 
     expect(response.status).toBe(401);
   });

@@ -12,6 +12,7 @@ import {
 import { isUuid } from '../utils/uuid';
 import { ACCESS_DENIED, requireMembership } from './group.service';
 import { computeShares, SplitError, SPLIT_TYPES } from './split.service';
+import { currentMonthRange } from './summary.service';
 
 import type { ExpenseWithShares } from '../models/expense.model';
 import type { GroupMemberRow } from '../types/models';
@@ -505,12 +506,47 @@ const deleteExpense = async (
   return { id: deleted.id, deleted_at: deleted.deleted_at };
 };
 
+/** Grup detay sayfasindaki "Bu ay" ozet kartinin cevap sekli. */
+export interface GroupMonthlySummary {
+  /** Grubun bu aydaki toplam harcamasi. */
+  totalSpend: string;
+  /** Istekte bulunanin bu aydaki payina dusen toplam. */
+  myShare: string;
+  /** Istekte bulunanin bu ay **odedigi** toplam. */
+  myPaid: string;
+}
+
+/**
+ * GET /groups/:id/monthly-summary
+ *
+ * `HomeSummary.monthlySpend` ile KARISTIRILMAMALI — o tum gruplarin toplami,
+ * bu tek bir grubun icinde. Ayni "ay" tanimini (`currentMonthRange`)
+ * paylasiyorlar ki "bu ay" iki ekranda farkli bir seye isaret etmesin.
+ *
+ * Uc sorgu birbirinden bagimsiz oldugu icin paralel: grup buyudukce sorgu
+ * sayisi degismiyor, hicbiri digerinin sonucuna bagli degil.
+ */
+const getMonthlySummary = async (groupId: string, userId: string): Promise<GroupMonthlySummary> => {
+  await requireMembership(groupId, userId);
+
+  const { from, to } = currentMonthRange();
+
+  const [totalSpend, myShare, myPaid] = await Promise.all([
+    expenseModel.sumGroupAmountBetween(groupId, from, to),
+    expenseModel.sumGroupShareForUserBetween(groupId, userId, from, to),
+    expenseModel.sumGroupPaidByUserBetween(groupId, userId, from, to),
+  ]);
+
+  return { totalSpend, myShare, myPaid };
+};
+
 export default {
   createExpense,
   listExpenses,
   getExpense,
   updateExpense,
   deleteExpense,
+  getMonthlySummary,
 };
 
 export {
