@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import CurrencyInput from './CurrencyInput';
 import { getErrorDetails, getErrorMessage } from '../api/client';
 import expensesApi from '../api/expenses';
 import { centsToApiAmount, formatCents, parseInputToCents } from '../utils/money';
@@ -327,17 +328,17 @@ const AddExpenseModal = ({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label htmlFor="expense-amount">Tutar (₺)</Label>
-              <Input
+              {/*
+                type="number" degil: tarayici sayi alani ondalik ayraci ve
+                kaydirma tekerlegi davranisini kendi belirler; "12,50" yazan
+                bir kullanicinin degeri sessizce bosalirdi. Metin olarak alinip
+                `utils/money` icinde ayristiriliyor. Harf/gecersiz karakter
+                yazilamasin diye `CurrencyInput` (bkz. CurrencyInput.tsx).
+              */}
+              <CurrencyInput
                 id="expense-amount"
-                /*
-                  type="number" degil: tarayici sayi alani ondalik ayraci ve
-                  kaydirma tekerlegi davranisini kendi belirler; "12,50" yazan
-                  bir kullanicinin degeri sessizce bosalirdi. Metin olarak alinip
-                  `utils/money` icinde ayristiriliyor.
-                */
-                inputMode="decimal"
                 value={amount}
-                onChange={(event) => setAmount(event.target.value)}
+                onValueChange={setAmount}
                 aria-invalid={fieldErrors.amount ? true : undefined}
                 disabled={pending}
                 placeholder="0,00"
@@ -483,11 +484,10 @@ const AddExpenseModal = ({
 
                   {splitMode === 'exact' ? (
                     <span className="flex shrink-0 items-center gap-1">
-                      <Input
+                      <CurrencyInput
                         className="h-8 w-24 text-right"
-                        inputMode="decimal"
                         value={row.value}
-                        onChange={(event) => updateRow(row.userId, { value: event.target.value })}
+                        onValueChange={(value) => updateRow(row.userId, { value })}
                         disabled={pending || !row.included}
                         aria-label={`${name} tutari`}
                         aria-invalid={

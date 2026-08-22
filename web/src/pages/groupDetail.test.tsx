@@ -1028,6 +1028,53 @@ describe('harcama formu alan dogrulamasi', () => {
     expect(mockedExpenses.createExpense).not.toHaveBeenCalled();
   });
 
+  it('Tutar alanina harf yazilamaz — deger degismez', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    const field = screen.getByLabelText('Tutar (₺)');
+
+    fireEvent.change(field, { target: { value: 'abc' } });
+    expect(field).toHaveValue('');
+
+    fireEvent.change(field, { target: { value: '12' } });
+    expect(field).toHaveValue('12');
+
+    // Browser'in ureteceği "sonraki deger": mevcut '12'nin arasina bir harf
+    // girmis hali. `CurrencyInput` bu tam degeri reddetmeli, '12' kalmali.
+    fireEvent.change(field, { target: { value: '1a2' } });
+    expect(field).toHaveValue('12');
+  });
+
+  it('Tutar alaninda virgul kabul edilir, ikinci ondalik ayiraci reddedilir', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    const field = screen.getByLabelText('Tutar (₺)');
+
+    fireEvent.change(field, { target: { value: '12,50' } });
+    expect(field).toHaveValue('12,50');
+
+    fireEvent.change(field, { target: { value: '12,5,0' } });
+    expect(field).toHaveValue('12,50');
+  });
+
+  it('ozel tutar bolusme alanina da harf yazilamaz', async () => {
+    renderDetail();
+    await openExpenseModal();
+
+    fillBasics('100');
+    chooseSplit('Ozel tutar');
+
+    const field = screen.getByLabelText('Deniz tutari');
+
+    fireEvent.change(field, { target: { value: '3x' } });
+    expect(field).toHaveValue('');
+
+    fireEvent.change(field, { target: { value: '30' } });
+    expect(field).toHaveValue('30');
+  });
+
   it('backend hatasi modalda gosterilir ve modal kapanmaz', async () => {
     mockedExpenses.createExpense.mockRejectedValue(
       apiError(400, 'Gecersiz harcama bilgileri', { amount: 'Tutar sifirdan buyuk olmali' })
